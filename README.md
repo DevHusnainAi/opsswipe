@@ -47,6 +47,18 @@ sequenceDiagram
 | **Swipe + fingerprint** | A deliberate swipe picks the fix; biometrics authorize it; a tap button and TalkBack actions do the same without dragging |
 | **Audit log** | Every attempt is recorded: executed, paywalled, failed, with PR links |
 
+## Connect in two minutes
+
+From the app's **Services** screen:
+
+| Connect | How | What OpsSwipe gets |
+| --- | --- | --- |
+| **GitHub** | Install the OpsSwipe GitHub App on the repos you pick | 1-hour tokens to open and merge PRs on those repos |
+| **Render** | Paste an API key once | Restart, roll back and read deploys; the key is encrypted and never shown again |
+| **GCP VM** | Run two `gcloud` commands the app shows you | A custom role on that one VM: read its status and reset it. Nothing else |
+| **Failure reports** | Set the two env vars the app shows once | Your app's 5xx responses, signed, the moment they happen |
+| **Proof in CI** | Tap "Add proof to repo" and merge the PR | A workflow that replays saved production failures on every PR, authenticated by GitHub OIDC |
+
 ## Monetization (RevenueCat)
 
 | Plan | What you get |
@@ -64,10 +76,13 @@ sequenceDiagram
 | Threat | Mitigation |
 | --- | --- |
 | Stolen or unlocked phone | Every fix requires biometrics, and the prompt names the consequence |
-| Leaked client secrets | The app holds only public keys; cloud, GitHub and RevenueCat secrets stay in Edge Function secrets |
-| Client picks what to run | The phone sends an incident id and an offered fix; the server checks the `TARGETS` allowlist and the incident |
-| Leaked GCP key | Its custom role can only `reset` and `get` one VM |
-| Forged failure reports or proofs | HMAC-SHA256 signatures, verified in constant time |
+| Leaked keys | The app holds only public keys. Users' Render keys and report secrets are encrypted in Supabase Vault; GitHub access uses 1-hour app tokens |
+| Client picks what to run | The phone sends an incident id and an offered fix; the server checks the service's validated config and the incident |
+| Another user's services | Row-level security on every table; a fix can only be claimed by the incident's owner |
+| Handing over cloud keys | Nobody does: users grant OpsSwipe's identity a custom role that can only `reset` and `get` one VM, revocable anytime |
+| Spoofed GitHub installation | Each installation is verified with the installing user's own OAuth token before it's stored |
+| Forged failure reports | Each service signs reports with its own secret (HMAC-SHA256, constant-time check) |
+| Forged CI proofs | Proofs carry a GitHub Actions OIDC token, verified against GitHub's keys; no secrets live in your repo |
 | Merging something other than what was proven | Proof is bound to the PR's head commit, and the merge is pinned to that `sha` (GitHub returns 409 otherwise) |
 | Replay causing side effects | Requests are replayed only against the PR build in CI, never production; samples carry no headers or cookies |
 | Double swipe | The incident is claimed atomically; the second request gets 409 |
@@ -77,8 +92,8 @@ More in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Quality
 
-- **Tests:** 24 Deno tests (providers, rollback, revert and merge PRs, signing, sample scrubbing, proof binding, incident flow, suggestions),
-  SQL tests for the free-fix meter and incident rules on Postgres 17, 4 tests for the demo service's reporting and replay, and
+- **Tests:** 29 Deno tests (providers, Connect keys and OIDC, rollback, revert and merge PRs, signing, sample scrubbing, proof binding, incident flow, suggestions),
+  SQL tests for the free-fix meter and tenant isolation (row-level security, Vault access) on Postgres 17, 2 tests for the demo service's reporting, and
   app tests for the recovery timeline.
 - **Eval:** 12 labeled incident scenarios score fix suggestions on allowlist safety (must be 100%), correctness and concision.
   `deno task eval` runs the rules in CI; `deno task eval vertex` scores Claude.

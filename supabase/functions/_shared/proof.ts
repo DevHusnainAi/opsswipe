@@ -16,14 +16,16 @@ export type Proof = ProofPayload['replay'] & {
   at: string;
 };
 
-export function parseProof(raw: unknown): ProofPayload | null {
-  const p = raw as ProofPayload;
+// The body CI sends. Which repo and PR it's for comes from the verified OIDC token, not the body.
+export type ProofBody = Omit<ProofPayload, 'repo' | 'pr'>;
+
+export function parseProof(raw: unknown): ProofBody | null {
+  const p = raw as ProofBody;
   const nat = (n: unknown) => Number.isInteger(n) && (n as number) >= 0;
-  if (!p || typeof p.repo !== 'string' || !Number.isInteger(p.pr) || !/^[0-9a-f]{40}$/.test(String(p.headSha))) {
-    return null;
-  }
+  if (!p || !/^[0-9a-f]{40}$/.test(String(p.headSha))) return null;
   if (!nat(p.replay?.passed) || !nat(p.replay?.total) || p.replay.passed > p.replay.total) return null;
   if (typeof p.tests?.passed !== 'boolean') return null;
+  if (p.runUrl !== undefined && !/^https:\/\/github\.com\//.test(String(p.runUrl))) return null;
   return p;
 }
 

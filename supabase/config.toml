@@ -1,7 +1,7 @@
 project_id = "opsswipe"
 
-# All functions authorize in code: JWT via auth.getUser (execute), shared secret (healthcheck),
-# HMAC signatures (report, proof).
+# All functions authorize in code: JWT via auth.getUser (execute, connect), shared secret
+# (healthcheck), per-service HMAC (report), GitHub OIDC (proof); github-callback only redirects.
 [functions.execute]
 verify_jwt = false
 
@@ -12,4 +12,10 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.proof]
+verify_jwt = false
+
+[functions.connect]
+verify_jwt = false
+
+[functions.github-callback]
 verify_jwt = false

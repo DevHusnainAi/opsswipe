@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowClockwise, ArrowSquareOut, Crown, ShieldCheck, WarningCircle } from 'phosphor-react-native';
+import { ArrowClockwise, ArrowSquareOut, Crown, Plug, ShieldCheck, WarningCircle } from 'phosphor-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
@@ -14,6 +14,7 @@ import { AuditEntry, Incident, ensureUser, execute, supabase } from './src/api';
 import { fixFor } from './src/fixes';
 import { recoveryLine, timeAgo } from './src/format';
 import { Onboarding } from './src/Onboarding';
+import { Services } from './src/Services';
 import { PROVIDER, SwipeCard } from './src/SwipeCard';
 import { c, radius, space, type } from './src/theme';
 import { Banner, type BannerState, Button, Chip, Section, Skeleton, useNow } from './src/ui';
@@ -40,16 +41,19 @@ export default function App() {
   const [freeUsed, setFreeUsed] = useState(0);
   const [banner, setBanner] = useState<BannerState>(null);
   const [cardHeight, setCardHeight] = useState(420);
+  const [serviceCount, setServiceCount] = useState<number | null>(null);
+  const [servicesOpen, setServicesOpen] = useState(false);
   const channel = useRef<ReturnType<typeof supabase.channel>>(undefined);
   const purchasesReady = useRef(false);
   const now = useNow();
 
   const refresh = useCallback(async () => {
-    const [i, r, a, u] = await Promise.all([
+    const [i, r, a, u, sv] = await Promise.all([
       supabase.from('incidents').select().in('status', ['active', 'resolving']).order('created_at'),
       supabase.from('incidents').select().eq('status', 'resolved').order('resolved_at', { ascending: false }).limit(3),
       supabase.from('audit_log').select().order('created_at', { ascending: false }).limit(5),
       supabase.from('usage').select('free_used').maybeSingle(),
+      supabase.from('services').select('id', { count: 'exact', head: true }),
     ]);
     const failed = i.error ?? r.error ?? a.error ?? u.error;
     if (failed) throw failed;
@@ -57,6 +61,7 @@ export default function App() {
     setFixed(r.data ?? []);
     setAudit(a.data ?? []);
     setFreeUsed(u.data?.free_used ?? 0);
+    setServiceCount(sv.count ?? 0);
   }, []);
 
   const boot = useCallback(async () => {
@@ -180,6 +185,15 @@ export default function App() {
                   <View style={styles.mark} />
                   <Text style={[type.monoStrong, { fontWeight: '600' }]}>opsswipe</Text>
                 </View>
+                <View style={styles.headerActions}>
+                <Pressable
+                  onPress={() => setServicesOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Services and connections"
+                  style={styles.iconButton}
+                >
+                  <Plug size={20} color={c.text} weight="bold" />
+                </Pressable>
                 <Pressable
                   onPress={() => !pro && RevenueCatUI.presentPaywall()}
                   hitSlop={8}
@@ -192,6 +206,7 @@ export default function App() {
                     {pro ? 'Pro' : `Free · ${fixesLeft} fix left`}
                   </Text>
                 </Pressable>
+                </View>
               </View>
 
               {phase === 'loading' && (
@@ -223,9 +238,13 @@ export default function App() {
                 <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                   <View style={styles.hero}>
                     <View style={styles.statusRow}>
-                      <View style={[styles.dot, { backgroundColor: down ? c.red : c.green }]} />
-                      <Text style={[type.label, { color: down ? c.red : c.green }]}>
-                        {down ? `${down} service${down > 1 ? 's' : ''} down` : 'All systems operational'}
+                      <View style={[styles.dot, { backgroundColor: down ? c.red : serviceCount ? c.green : c.muted }]} />
+                      <Text style={[type.label, { color: down ? c.red : serviceCount ? c.green : c.muted }]}>
+                        {down
+                          ? `${down} service${down > 1 ? 's' : ''} down`
+                          : serviceCount
+                          ? `Watching ${serviceCount} service${serviceCount > 1 ? 's' : ''}`
+                          : 'Not watching anything yet'}
                       </Text>
                     </View>
                     <Text style={type.display} accessibilityRole="header">
@@ -234,12 +253,21 @@ export default function App() {
                   </View>
 
                   <View style={[styles.stack, { height: down ? cardHeight + 24 : 300 }]}>
-                    {down === 0 ? (
+                    {down === 0 && serviceCount === 0 ? (
+                      <View style={styles.empty}>
+                        <Plug size={32} color={c.green} weight="bold" />
+                        <Text style={type.body}>Connect your first service</Text>
+                        <Text style={[type.caption, { textAlign: 'center' }]}>
+                          Add a Render service or a GCP VM. OpsSwipe watches it and pages you when it breaks.
+                        </Text>
+                        <Button label="Connect a service" icon={Plug} onPress={() => setServicesOpen(true)} />
+                      </View>
+                    ) : down === 0 ? (
                       <View style={styles.empty}>
                         <ShieldCheck size={32} color={c.green} weight="bold" />
-                        <Text style={type.body}>Health checks run every 15 seconds.</Text>
+                        <Text style={type.body}>Your apps report failures the moment they happen.</Text>
                         <Text style={[type.caption, { textAlign: 'center' }]}>
-                          You&apos;ll get an alert the moment one fails.
+                          A health check also runs every minute. You&apos;ll get an alert when something breaks.
                         </Text>
                       </View>
                     ) : (
@@ -311,6 +339,13 @@ export default function App() {
               )}
             </>
           )}
+          <Services
+            visible={servicesOpen}
+            onClose={() => {
+              setServicesOpen(false);
+              refresh().catch(() => {});
+            }}
+          />
         </SafeAreaView>
       </SafeAreaProvider>
     </GestureHandlerRootView>
@@ -321,6 +356,8 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: c.bg, paddingHorizontal: space.lg },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  iconButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   mark: { width: 12, height: 12, borderRadius: 3, backgroundColor: c.green },
   plan: {
     minHeight: 32,

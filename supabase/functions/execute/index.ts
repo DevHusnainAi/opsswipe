@@ -1,6 +1,6 @@
 // Swipe → authorize → remediate. The phone sends an incident id and which offered fix to run.
-// Who is asking comes from the verified JWT; what can run comes from the TARGETS allowlist
-// AND the fixes stored on the incident when it was opened. Nothing else is trusted.
+// Who is asking comes from the verified JWT and must own the incident; what can run comes from
+// the service's validated config AND the fixes stored on the incident. Nothing else is trusted.
 import { db, env, json } from '../_shared/db.ts';
 import { isActive } from '../_shared/entitlement.ts';
 import { resetInstance } from '../_shared/gcp.ts';
@@ -9,11 +9,11 @@ import { afterFix } from '../_shared/flow.ts';
 import { canMerge, type Proof, type PrRef } from '../_shared/proof.ts';
 import type { ReplaySample } from '../_shared/replay.ts';
 import { type Deploy, listDeploys, pickRollback, restartService, rollbackToPrevious } from '../_shared/render.ts';
-import { type Action, actionsFor, parseTargets, type Target } from '../_shared/targets.ts';
+import { getService, githubToken, platformSa, renderKey, type Service, toTarget } from '../_shared/services.ts';
+import { type Action, actionsFor } from '../_shared/targets.ts';
 
 const ENTITLEMENT = 'pro';
 const FREE_RUNS = 1;
-const TARGETS = parseTargets(env('TARGETS'));
 
 type Incident = {
   id: string;
@@ -24,6 +24,8 @@ type Incident = {
   action: string;
   reason: string | null;
   suggested_by: string | null;
+  service_id: string;
+  owner: string;
   context: { replay?: ReplaySample[]; pr?: PrRef; proof?: Proof; live?: Deploy | null; [k: string]: unknown };
 };
 
@@ -39,18 +41,19 @@ async function isPro(uid: string) {
 }
 
 // Runs one fix. The detail goes to the audit log (e.g. the PR link).
-async function runAction(t: Target, action: Action, inc: Incident): Promise<Outcome> {
+async function runAction(s: Service, action: Action, inc: Incident): Promise<Outcome> {
+  const t = toTarget(s);
   if (t.provider === 'gcp') {
-    await resetInstance(t, JSON.parse(env('GCP_SA_KEY')));
+    await resetInstance(t, platformSa());
     return { detail: 'vm reset issued' };
   }
-  const key = env('RENDER_API_KEY');
+  const key = await renderKey(s.owner);
   if (action === 'restart') {
     await restartService(t.serviceId, key);
     return { detail: 'restart issued' };
   }
   if (action === 'rollback') return { detail: await rollbackToPrevious(t.serviceId, key) };
-  if (action === 'merge_pr') return { detail: await mergePr(inc.context.pr!, env('GITHUB_TOKEN')) };
+  if (action === 'merge_pr') return { detail: await mergePr(inc.context.pr!, await githubToken(s.owner)) };
 
   // revert_pr: revert the release that was live when the incident opened. A rollback since then
   // changes what's live, but the bad commit is still the one to revert.
@@ -72,7 +75,7 @@ async function runAction(t: Target, action: Action, inc: Incident): Promise<Outc
       'OpsSwipe only lets you merge once they all pass. Roll back in OpsSwipe to restore service now.',
     ].filter((l) => l !== null).join('\n'),
     replay: inc.context.replay ?? [],
-  }, env('GITHUB_TOKEN'));
+  }, await githubToken(s.owner));
   return { detail: pr.url, pr };
 }
 
@@ -85,9 +88,10 @@ Deno.serve(async (req) => {
   if (typeof incidentId !== 'string') return json(400, { error: 'incidentId required' });
   if (requested !== undefined && typeof requested !== 'string') return json(400, { error: 'action must be a string' });
 
-  // claim the incident atomically: a double swipe can't run a fix twice
+  // Claim the incident atomically: a double swipe can't run a fix twice, and only its owner can
+  // claim it at all (someone else's incident looks exactly like a missing one).
   const { data: inc } = await db.from('incidents').update({ status: 'resolving' })
-    .eq('id', incidentId).eq('status', 'active').select().maybeSingle<Incident>();
+    .eq('id', incidentId).eq('owner', user.id).eq('status', 'active').select().maybeSingle<Incident>();
   if (!inc) return json(409, { error: 'incident is not active' });
 
   const action = (requested ?? inc.action) as Action;
@@ -102,8 +106,8 @@ Deno.serve(async (req) => {
       detail,
     });
 
-  const target = TARGETS[inc.target_server];
-  if (!target || !actionsFor(target).includes(action) || !inc.actions.includes(action)) {
+  const service = inc.service_id ? await getService(inc.service_id) : null;
+  if (!service || !actionsFor(toTarget(service)).includes(action) || !inc.actions.includes(action)) {
     await release();
     await audit('failed', 'fix not allowed for this target');
     return json(403, { error: 'fix not allowed' });
@@ -127,7 +131,7 @@ Deno.serve(async (req) => {
       }
       usedFreeRun = true;
     }
-    outcome = await runAction(target, action, inc);
+    outcome = await runAction(service, action, inc);
   } catch (e) {
     await release();
     if (usedFreeRun) await db.rpc('refund_free_run', { uid: user.id });

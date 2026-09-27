@@ -90,3 +90,40 @@ export async function mergePr(pr: PrRef, token: string) {
   }
   return `merged #${pr.number}`;
 }
+
+// Open a PR that adds files (e.g. the proof workflow) on top of the branch head. The user reviews
+// and merges it themselves; nothing lands in their repo without that.
+export async function openFilesPr(
+  { repo, branch, branchName, title, body, files }: {
+    repo: string;
+    branch: string;
+    branchName: string;
+    title: string;
+    body: string;
+    files: { path: string; content: string }[];
+  },
+  token: string,
+): Promise<string> {
+  const head = await gh(`${repo}/git/ref/heads/${branch}`, token);
+  const base = await gh(`${repo}/git/commits/${head.object.sha}`, token);
+  const tree = await gh(`${repo}/git/trees`, token, {
+    method: 'POST',
+    body: JSON.stringify({
+      base_tree: base.tree.sha,
+      tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })),
+    }),
+  });
+  const commit = await gh(`${repo}/git/commits`, token, {
+    method: 'POST',
+    body: JSON.stringify({ message: title, tree: tree.sha, parents: [head.object.sha] }),
+  });
+  await gh(`${repo}/git/refs`, token, {
+    method: 'POST',
+    body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: commit.sha }),
+  });
+  const pr = await gh(`${repo}/pulls`, token, {
+    method: 'POST',
+    body: JSON.stringify({ title, head: branchName, base: branch, body }),
+  });
+  return pr.html_url as string;
+}

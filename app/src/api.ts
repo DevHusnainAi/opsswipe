@@ -47,3 +47,25 @@ export async function execute(incidentId: string, action: string): Promise<Execu
   if (!error) return { result: 'ok', detail: data?.detail };
   return { result: (error as { context?: Response }).context?.status === 402 ? 'paywall' : 'error' };
 }
+
+export type Service = {
+  id: string;
+  name: string;
+  provider: 'gcp' | 'render';
+  config: { url: string; repo?: string; branch?: string; serviceId?: string; project?: string; zone?: string; instance?: string };
+};
+export type RenderOption = { id: string; name: string; url: string; repo?: string };
+export type ConnectStatus = {
+  github: { connected: boolean; account: string | null; installUrl: string };
+  render: { connected: boolean };
+  gcpIdentity: string | null;
+};
+export type NewService = { service: Service; report: { url: string; secret: string } };
+
+// Connect actions run on the server for the signed-in user; errors come back as plain sentences.
+export async function connect<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('connect', { body: { action, ...params } });
+  if (!error) return data as T;
+  const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+  throw new Error(body?.error ?? 'Could not reach OpsSwipe. Try again.');
+}

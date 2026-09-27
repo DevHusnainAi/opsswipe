@@ -47,3 +47,36 @@ export async function rollbackToPrevious(serviceId: string, apiKey: string) {
     previous.commit?.id?.slice(0, 7) ?? previous.id
   }`;
 }
+
+// Connect: the user's web services, and one service's details (for its URL, repo and branch).
+export type RenderService = { id: string; name: string; url: string; repo?: string; branch?: string };
+
+type RawService = {
+  id: string;
+  name: string;
+  type: string;
+  repo?: string;
+  branch?: string;
+  serviceDetails?: { url?: string };
+};
+
+// "https://github.com/owner/name(.git)" -> "owner/name"; other hosts aren't supported for PRs.
+export const githubRepo = (url?: string) =>
+  /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(\.git)?\/?$/.exec(url ?? '')?.[1];
+
+const toRenderService = (s: RawService): RenderService => ({
+  id: s.id,
+  name: s.name,
+  url: s.serviceDetails?.url ?? '',
+  repo: githubRepo(s.repo),
+  branch: s.branch,
+});
+
+export async function listServices(apiKey: string): Promise<RenderService[]> {
+  const rows = await call('/services?limit=100&type=web_service', apiKey);
+  return (rows ?? []).map((r: { service: RawService }) => toRenderService(r.service));
+}
+
+export async function getRenderService(serviceId: string, apiKey: string): Promise<RenderService> {
+  return toRenderService(await call(`/services/${serviceId}`, apiKey));
+}

@@ -22,12 +22,13 @@ const page = `<!doctype html><meta name=viewport content="width=device-width"><t
 <div>&#9679; opsswipe-demo-web is up<br><small style="color:#A1A1AA">process started ${bootedAt}</small></div>`;
 
 // Event-driven detection: every 5xx is reported to OpsSwipe the moment it happens (signed, fire-and-forget).
-// Only method, path and status are sent; headers and cookies never leave the app.
+// OPSSWIPE_REPORT_URL and REPORT_SECRET come from the app's Services screen when you connect this
+// service. Only method, path and status are sent; headers and cookies never leave the app.
 function reportFailure(req, status) {
   const url = process.env.OPSSWIPE_REPORT_URL;
   const secret = process.env.REPORT_SECRET;
   if (!url || !secret) return;
-  const body = JSON.stringify({ target: process.env.OPSSWIPE_TARGET || 'render-web', method: req.method, path: req.url, status });
+  const body = JSON.stringify({ method: req.method, path: req.url, status });
   const signature = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
   fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-opsswipe-signature': signature }, body })
     .catch(() => {});

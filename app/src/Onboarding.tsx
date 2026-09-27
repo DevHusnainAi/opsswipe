@@ -7,7 +7,7 @@ import { c, radius, space, type } from './theme';
 import { Button } from './ui';
 
 const POINTS: { icon: Icon; title: string; body: string }[] = [
-  { icon: Bell, title: 'Paged when it breaks', body: 'Health checks run every 15 seconds. A failure opens an incident and alerts you.' },
+  { icon: Bell, title: 'Paged when it breaks', body: 'Your app reports failures the moment they happen, and OpsSwipe alerts you.' },
   { icon: HandSwipeRight, title: 'One swipe to fix', body: 'Each incident comes with one pre-approved fix, like restarting the service.' },
   { icon: Fingerprint, title: 'Your fingerprint approves it', body: 'Nothing runs until you confirm. Every attempt lands in the audit log.' },
 ];

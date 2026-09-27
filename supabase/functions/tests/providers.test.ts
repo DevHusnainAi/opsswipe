@@ -2,7 +2,7 @@ import { assert, assertEquals, assertRejects, assertThrows } from 'jsr:@std/asse
 import { isActive } from '../_shared/entitlement.ts';
 import { resetInstance, type ServiceAccount, signJwt } from '../_shared/gcp.ts';
 import { restartService } from '../_shared/render.ts';
-import { actionsFor, parseTargets } from '../_shared/targets.ts';
+import { actionsFor, validateTarget } from '../_shared/targets.ts';
 
 const b64 = (s: string) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
 
@@ -28,15 +28,17 @@ function mockFetch(respond: (url: string) => Response) {
   return { calls, restore: () => (globalThis.fetch = real) };
 }
 
-Deno.test('parseTargets accepts both providers', () => {
-  const t = parseTargets(JSON.stringify({
-    vm: { provider: 'gcp', project: 'p', zone: 'us-central1-a', instance: 'i', url: 'http://1.2.3.4/' },
-    web: { provider: 'render', serviceId: 'srv-1', url: 'https://x.onrender.com/' },
-  }));
-  assertEquals(Object.keys(t), ['vm', 'web']);
-  assertEquals(actionsFor(t.vm), ['reset']);
-  assertEquals(actionsFor(t.web), ['restart', 'rollback']);
-  assertEquals(actionsFor({ provider: 'render', serviceId: 'srv-1', url: 'u', repo: 'me/app' }), [
+Deno.test('validateTarget accepts both providers and maps the fixes each allows', () => {
+  const vm = validateTarget('gcp', {
+    project: 'my-proj-1',
+    zone: 'us-central1-a',
+    instance: 'vm-1',
+    url: 'http://1.2.3.4/',
+  });
+  const web = validateTarget('render', { serviceId: 'srv-abc123', url: 'https://x.onrender.com/' });
+  assertEquals(actionsFor(vm), ['reset']);
+  assertEquals(actionsFor(web), ['restart', 'rollback']);
+  assertEquals(actionsFor(validateTarget('render', { serviceId: 'srv-abc123', url: 'https://x/', repo: 'me/app' })), [
     'restart',
     'rollback',
     'revert_pr',
@@ -44,16 +46,23 @@ Deno.test('parseTargets accepts both providers', () => {
   ]);
 });
 
-Deno.test('parseTargets rejects bad config instead of running with a hole in the allowlist', () => {
-  assertThrows(() => parseTargets('[]'), Error, 'JSON object');
-  assertThrows(() => parseTargets('{"x":{"provider":"aws","url":"u"}}'), Error, 'unknown provider');
-  assertThrows(() => parseTargets('{"x":{"provider":"render","url":"u"}}'), Error, 'missing serviceId');
+Deno.test('validateTarget rejects anything that could reach the wrong resource', () => {
+  assertThrows(() => validateTarget('aws', { url: 'u' }), Error, 'unknown provider');
+  assertThrows(() => validateTarget('render', { url: 'https://x/' }), Error, 'missing serviceId');
   assertThrows(
-    () => parseTargets('{"x":{"provider":"render","serviceId":"s","url":"u","repo":"nope"}}'),
+    () => validateTarget('render', { serviceId: 'srv-1/../x', url: 'https://x/' }),
     Error,
-    'owner/name',
+    'invalid serviceId',
   );
-  assertEquals(parseTargets(''), {});
+  assertThrows(
+    () => validateTarget('render', { serviceId: 'srv-1', url: 'https://x/', repo: 'nope' }),
+    Error,
+    'invalid repo',
+  );
+  const gcp = { project: 'my-proj-1', zone: 'us-central1-a', instance: 'vm-1', url: 'http://1.2.3.4/' };
+  assertThrows(() => validateTarget('gcp', { ...gcp, instance: 'vm/../other' }), Error, 'invalid instance');
+  assertThrows(() => validateTarget('gcp', { ...gcp, project: 'x' }), Error, 'invalid project');
+  assertThrows(() => validateTarget('gcp', { ...gcp, url: 'file:///etc/passwd' }), Error, 'invalid url');
 });
 
 Deno.test('signJwt produces a verifiable RS256 token with the claims Google expects', async () => {
@@ -80,7 +89,7 @@ Deno.test('resetInstance exchanges a token then resets exactly the configured VM
       : Response.json({ kind: 'compute#operation' })
   );
   try {
-    await resetInstance({ provider: 'gcp', project: 'p', zone: 'z', instance: 'vm1', url: 'u' }, sa);
+    await resetInstance({ project: 'p', zone: 'z', instance: 'vm1' }, sa);
   } finally {
     f.restore();
   }

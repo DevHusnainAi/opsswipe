@@ -1,32 +1,39 @@
-// CI reports whether a PR fixed the failing production requests. Signed with HMAC (PROOF_SECRET).
-// Accepted only for the exact head commit OpsSwipe opened; merge_pr unlocks only when the replay
-// and the test suite all passed.
-import { db, env, json } from '../_shared/db.ts';
-import { verify } from '../_shared/hmac.ts';
+// CI reports whether a PR fixed the failing production requests. No shared secrets: the request
+// carries a GitHub Actions OIDC token, which proves which repo and which PR the run was for.
+// Accepted only for the exact head commit OpsSwipe opened; merge_pr unlocks only on a full pass.
+import { db, json } from '../_shared/db.ts';
+import { prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
 import { canMerge, evaluateProof, parseProof, type Proof, type PrRef } from '../_shared/proof.ts';
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
-  const raw = await req.text();
-  if (!(await verify(env('PROOF_SECRET'), raw, req.headers.get('x-opsswipe-signature')))) {
-    return json(401, { error: 'bad signature' });
-  }
-  let payload;
+  let repo: string, prNumber: number | null;
   try {
-    payload = parseProof(JSON.parse(raw));
-  } catch {
-    payload = null;
+    const claims = await verifyGithubOidc(req.headers.get('Authorization')?.replace(/^Bearer /i, '') ?? '');
+    if (claims.event_name !== 'pull_request') throw new Error('not a pull_request run');
+    repo = claims.repository;
+    prNumber = prNumberFromRef(claims.ref);
+  } catch (e) {
+    return json(401, { error: `untrusted proof: ${(e as Error).message}` });
   }
-  if (!payload) return json(400, { error: 'invalid proof' });
+  if (!prNumber) return json(400, { error: 'run is not for a pull request' });
+
+  let body;
+  try {
+    body = parseProof(JSON.parse(await req.text()));
+  } catch {
+    body = null;
+  }
+  if (!body) return json(400, { error: 'invalid proof' });
 
   const { data: inc } = await db.from('incidents').select('id, actions, context')
     .in('status', ['active', 'resolving'])
-    .eq('context->pr->>repo', payload.repo)
-    .eq('context->pr->>number', String(payload.pr))
+    .eq('context->pr->>repo', repo)
+    .eq('context->pr->>number', String(prNumber))
     .maybeSingle<{ id: string; actions: string[]; context: { pr?: PrRef; proof?: Proof } }>();
   if (!inc) return json(404, { error: 'no open incident for this PR' });
 
-  const result = evaluateProof(inc.context.pr, payload);
+  const result = evaluateProof(inc.context.pr, { ...body, repo, pr: prNumber });
   if (result.status !== 'accepted') {
     return result.status === 'stale'
       ? json(409, { error: 'proof is for a different commit than OpsSwipe opened' })

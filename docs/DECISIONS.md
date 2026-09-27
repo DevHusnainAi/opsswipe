@@ -14,8 +14,8 @@ requests. A dead service can't report itself, so a once-a-minute health check re
 
 ## 3. The phone never holds power
 The phone sends an incident id and the name of an offered fix. Who is asking comes from a verified JWT; what can run comes
-from the `TARGETS` allowlist and the fixes stored on the incident. Cloud keys, the GitHub token and the RevenueCat secret live
-only in Edge Function secrets.
+from the owner's validated service config and the fixes stored on the incident. Platform keys live in Edge Function secrets;
+users' Render keys and report secrets live encrypted in Supabase Vault, readable only by server functions.
 
 ## 4. Swipe to choose, biometrics to authorize, tap as an alternative
 Swipe-to-act suits destructive actions but is easy to trigger by accident, so a fingerprint prompt that names the consequence
@@ -26,11 +26,12 @@ Sources: [NN/g contextual swipe](https://www.nngroup.com/articles/contextual-swi
 Every fix checks the `pro` entitlement with RevenueCat's REST API, and the free fix is counted by an atomic Postgres function
 that refunds on failure. Reinstalling the app or tampering with it can't unlock anything.
 
-## 6. CI pushes its proof; merges are pinned to the proven commit
-Fine-grained GitHub tokens can't read the Checks API, so the demo repo's workflow sends a signed result to `/proof`. A proof is
+## 6. CI pushes its proof with OIDC; merges are pinned to the proven commit
+The proof workflow sends its result to `/proof` with a GitHub Actions OIDC token, which OpsSwipe verifies against GitHub's keys:
+the token itself says which repo and which pull request the run was for, so users store no secrets in their repo. A proof is
 accepted only for the head commit OpsSwipe opened, and the merge passes that `sha`, so GitHub refuses (409) if anything was
 pushed after the proof.
-Sources: [fine-grained tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens), [merge a PR](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request).
+Sources: [GitHub OIDC reference](https://docs.github.com/en/actions/reference/security/oidc), [merge a PR](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request).
 
 ## 7. Replay only in CI, never against production
 Replaying a failed `POST /checkout` in production would create real orders. Failing requests are replayed only against the PR's
@@ -43,9 +44,24 @@ on Vertex AI may refine it in the background, constrained by a schema to the all
 rule's answer. A labeled eval gates the rules in CI at 100%.
 
 ## 9. Free, personal demo infrastructure
-A GCP e2-micro VM (free tier) and a Render free web service, both in personal accounts. The GCP key can only reset that one VM.
+A GCP e2-micro VM (free tier) and a Render free web service, both in personal accounts. OpsSwipe's GCP identity can only reset and read that one VM.
 No company infrastructure is involved, and the project stays solely ours as the hackathon rules require.
 
 ## 10. Few dependencies
 GCP auth signs its own JWT with WebCrypto; GitHub and Render are plain `fetch`; tests use `deno test` and Node's built-in runner.
 The one SDK is Anthropic's, for Claude.
+
+## 11. Connect without handing over keys where possible
+- **GitHub:** a GitHub App installed on chosen repos, acting with 1-hour installation tokens. The post-install
+  `installation_id` can be spoofed, so OpsSwipe accepts it only after checking, with the installing user's own OAuth token,
+  that the installation is theirs.
+  Source: [GitHub App tokens](https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app).
+- **GCP:** users grant OpsSwipe's service account a custom role (`compute.instances.reset`, `compute.instances.get`) on one
+  VM. No user key exists to leak, and deleting the binding revokes access instantly.
+- **Render:** Render has no OAuth and its keys cover the account, so the key is validated, stored in Supabase Vault, read
+  only by server functions, and never returned to the app.
+
+## 12. Multi-tenant by row-level security
+Every service, connection and incident has an owner. Row-level security lets each user read only their own rows, all writes
+go through Edge Functions, and a fix can only be claimed by the incident's owner. A SQL test proves one user can't see
+another's services, incidents or connections, and that users can't read the Vault.

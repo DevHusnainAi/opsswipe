@@ -53,10 +53,12 @@ Deno.test('mergeSamples: newest per route wins, capped', () => {
 });
 
 Deno.test('parseProof rejects malformed or impossible results', () => {
-  assert(parseProof(proof()));
-  assertEquals(parseProof({ ...proof(), headSha: 'abc' }), null);
-  assertEquals(parseProof({ ...proof(), replay: { passed: 4, total: 3 } }), null);
-  assertEquals(parseProof({ ...proof(), tests: {} }), null);
+  const { repo: _r, pr: _p, ...body } = proof();
+  assert(parseProof(body));
+  assertEquals(parseProof({ ...body, headSha: 'abc' }), null);
+  assertEquals(parseProof({ ...body, replay: { passed: 4, total: 3 } }), null);
+  assertEquals(parseProof({ ...body, tests: {} }), null);
+  assertEquals(parseProof({ ...body, runUrl: 'https://evil.test/run' }), null, 'run links must point at GitHub');
   assertEquals(parseProof(null), null);
 });
 
