@@ -12,7 +12,8 @@ SA=opsswipe
 SA_EMAIL="$SA@$PROJECT.iam.gserviceaccount.com"
 
 gcloud config set project "$PROJECT"
-gcloud services enable compute.googleapis.com iam.googleapis.com aiplatform.googleapis.com
+gcloud services enable compute.googleapis.com iam.googleapis.com aiplatform.googleapis.com \
+  cloudresourcemanager.googleapis.com   # also serves "Connect Google Cloud" calls made with users' tokens
 
 # 1. Platform identity. Its only project-level role is Vertex AI (Claude suggestions on your credits).
 gcloud iam service-accounts create "$SA" --display-name "OpsSwipe platform" || true

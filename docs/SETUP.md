@@ -3,7 +3,8 @@
 Two roles, both you for the demo:
 
 - **Operator** (once per OpsSwipe deployment): Supabase, the GitHub App, the GCP platform identity, RevenueCat.
-- **User** (anyone, from the app): connects GitHub and Render, adds services, installs the proof workflow.
+- **User** (anyone, from the app): signs in with GitHub, connects GitHub, Render and Google Cloud, adds services,
+  installs the proof workflow.
 
 About 2 hours the first time. All accounts are personal and free tier.
 
@@ -21,7 +22,9 @@ node --test "infra/demo-web/**/*.test.js"
 
 ### 1. Supabase
 
-1. New project. **Authentication → Providers → Anonymous sign-ins: on.**
+1. New project. **Authentication → Providers → Anonymous sign-ins: on.** Under **Authentication → Sign In / Providers**
+   also turn on **Allow manual linking**, and add `opsswipe://auth` to **URL Configuration → Redirect URLs**.
+   (The GitHub provider is turned on in step 3, with the GitHub App's credentials.)
 2. `npx supabase login && npx supabase link --project-ref <ref> && npx supabase db push`
 3. Run `infra/cron.sql` in the SQL editor (project URL + a `CRON_SECRET` you choose).
 
@@ -33,6 +36,16 @@ gcloud projects create opsswipe-<suffix>
 # link billing (your credits) in the console, then:
 PROJECT=opsswipe-<suffix> ./infra/gcp-setup.sh
 ```
+
+Then **Connect Google Cloud** sign-in, in the same project:
+
+1. **APIs & Services → OAuth consent screen**: External, publishing status **Testing**, add your Google account (and
+   any tester) under **Test users**. Scopes are requested at runtime: `openid`, `email`, `cloud-platform`.
+2. **Credentials → Create credentials → OAuth client ID → Web application**, authorized redirect URI
+   `https://<ref>.supabase.co/functions/v1/oauth-callback`. Keep the client ID and secret for step 5.
+
+Until Google verifies the app, users see an "unverified app" screen and at most 100 users can connect
+([Google](https://support.google.com/cloud/answer/7454865)). The `gcloud` commands in the app remain as a fallback.
 
 This creates `opsswipe@<project>.iam.gserviceaccount.com`, OpsSwipe's identity. It has **no access to any VM** until
 a user grants it a reset-only role on theirs. The script also creates a free-tier demo VM and grants it, exactly as the
@@ -46,13 +59,15 @@ GitHub → **Settings → Developer settings → GitHub Apps → New GitHub App*
 | Setting | Value |
 | --- | --- |
 | Name | e.g. `OpsSwipe-<you>` (the URL slug is used below) |
-| Callback URL | `https://<ref>.supabase.co/functions/v1/github-callback` |
+| Callback URLs | `https://<ref>.supabase.co/functions/v1/oauth-callback` (install) and `https://<ref>.supabase.co/auth/v1/callback` (Sign in with GitHub) |
 | Request user authorization (OAuth) during installation | **On** (OpsSwipe verifies each installation belongs to the user) |
 | Webhook | **Off** |
 | Repository permissions | Contents: **Read and write**, Pull requests: **Read and write**, Workflows: **Read and write**, Metadata: Read |
 | Where can it be installed | Any account (or only yours for the demo) |
 
-Then note the **App ID** and **Client ID**, generate a **client secret** and a **private key** (`.pem`).
+Then note the **App ID** and **Client ID**, generate a **client secret** and a **private key** (`.pem`). Under
+**Account permissions** set **Email addresses: Read-only**, so sign-in works. In Supabase, **Authentication → Providers
+→ GitHub**: on, with the same Client ID and client secret. One app does both install and sign-in.
 
 ### 4. RevenueCat
 
@@ -67,15 +82,30 @@ npx supabase secrets set \
   GCP_SA_KEY="$(cat gcp-sa-key.json)" \
   GITHUB_APP_ID=123456 GITHUB_APP_CLIENT_ID=Iv1.xxx GITHUB_APP_CLIENT_SECRET=xxx \
   GITHUB_APP_SLUG=opsswipe-you GITHUB_APP_PRIVATE_KEY="$(cat opsswipe.private-key.pem)" \
+  GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com GOOGLE_CLIENT_SECRET=xxx \
   REVENUECAT_SECRET_KEY=sk_... CRON_SECRET=<same as cron.sql> \
   AI_SUGGESTIONS=vertex   # optional; omit for rules only
-npx supabase functions deploy execute connect healthcheck report proof github-callback
+npx supabase functions deploy execute connect healthcheck report proof oauth-callback
 ```
 
 No per-service keys here: users' Render keys and report secrets live encrypted in Supabase Vault, and GitHub access
 comes from 1-hour installation tokens.
 
-### 6. App
+### 6. Push notifications
+
+Alerts are sent by the server through Expo's push service, so they reach a closed app
+([Expo](https://docs.expo.dev/push-notifications/push-notifications-setup/)):
+
+1. `cd app && npx eas-cli init`. This writes `extra.eas.projectId` into `app.json`; commit that.
+2. Firebase console: new project, **Add app → Android**, package `dev.husnainai.opsswipe`. Download
+   `google-services.json` into `app/` and set `"android": { "googleServicesFile": "./google-services.json" }`.
+3. Firebase **Project settings → Service accounts → Generate new private key**, then
+   `npx eas-cli credentials` → Android → **Google Service Account → FCM V1** and upload that key.
+   Keep the key file out of git.
+
+Without these, everything else works and the open app still updates in real time; only closed-app alerts are missing.
+
+### 7. App
 
 Fill `app/.env` (Supabase URL, publishable key, RevenueCat Test Store key), then one of:
 
@@ -91,7 +121,7 @@ does not see `.env` (it's gitignored), so first add the three `EXPO_PUBLIC_` val
 
 ## User setup (in the app)
 
-### 7. Demo service on Render
+### 8. Demo service on Render
 
 Render deploys from Git, so the demo service lives in its own public repo:
 
@@ -105,18 +135,22 @@ cd -
 Render: **New → Web Service → opsswipe-demo-target**, plan **Free**, start `npm start`, health check path `/livez`,
 env `CHAOS_KEY` (any long random string). Keep auto-deploy on. Create an API key (**Account settings → API keys**).
 
-### 8. Connect everything from the app
+### 9. Connect everything from the app
 
-1. **Services (plug icon) → GitHub → Connect**: install the GitHub App on `opsswipe-demo-target`.
+First launch: **Turn on alerts**, then **Sign in with GitHub** (it keeps your setup across phones), then **Connect a
+service**. Or open **Services** (plug icon) anytime.
+
+1. **Services → GitHub → Connect**: install the GitHub App on `opsswipe-demo-target`.
 2. **Render → paste the API key → Save key.**
 3. **Add a service → Render → `opsswipe-demo-target` → Add.** Copy the two values it shows once
    (`OPSSWIPE_REPORT_URL`, `REPORT_SECRET`) into the Render service's environment. It redeploys.
 4. **Your services → `opsswipe-demo-target` → Add proof to repo.** Merge the PR it opens (check the install, test and
    start commands first). From now on every PR runs the proof, authenticated by GitHub OIDC with no secrets.
-5. **Add a service → GCP VM:** project, zone, `opsswipe-demo`, `http://<ip>/` → **Verify access and add**.
-   (The script already granted access; a real user runs the two commands shown.)
+5. **Google Cloud → Connect**: sign in with Google (accept the unverified-app screen), pick the project, pick
+   `opsswipe-demo`, check the URL, **Add**. OpsSwipe grants its identity reset on that VM and deletes your Google token.
+   (`gcp-setup.sh` already granted the demo VM; adding it again is harmless.)
 
-## 9. Break things
+## 10. Break things
 
 ```bash
 RENDER_URL=https://<name>.onrender.com CHAOS_KEY=... ./infra/chaos.sh render   # wedged -> Restart
@@ -124,9 +158,13 @@ RENDER_URL=https://<name>.onrender.com CHAOS_KEY=... ./infra/chaos.sh render   #
 DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh release                    # bad release -> Roll back / Revert PR
 ```
 
-## 10. End-to-end checklist
+## 11. End-to-end checklist
 
-- [ ] Connect: GitHub shows "Connected as @you"; Render lists your services; both services appear under Your services
+- [ ] Onboarding: alerts on, Sign in with GitHub, Services opens; Account shows "Signed in as @you"
+- [ ] Connect: GitHub shows "Connected as @you"; Render lists your services; Google Cloud lists your VMs; both services
+      appear under Your services, and Google Cloud no longer shows as connected after adding
+- [ ] With the app **closed**, `chaos.sh gcp` sends a push; tapping it opens the card
+- [ ] Reinstall the app, Sign in with GitHub: your services and plan are back
 - [ ] A card appears after each chaos command, with a suggested fix and a reason
 - [ ] Swipe and the fingerprint button both run the selected fix after biometrics
 - [ ] The site comes back; **Recent fixes** shows "down Xm Ys · back Ns after fix"

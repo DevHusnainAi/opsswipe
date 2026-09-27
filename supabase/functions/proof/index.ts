@@ -3,6 +3,7 @@
 // Accepted only for the exact head commit OpsSwipe opened; merge_pr unlocks only on a full pass.
 import { db, json } from '../_shared/db.ts';
 import { prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
+import { notify } from '../_shared/services.ts';
 import { canMerge, evaluateProof, parseProof, type Proof, type PrRef } from '../_shared/proof.ts';
 
 Deno.serve(async (req) => {
@@ -26,11 +27,13 @@ Deno.serve(async (req) => {
   }
   if (!body) return json(400, { error: 'invalid proof' });
 
-  const { data: inc } = await db.from('incidents').select('id, actions, context')
+  const { data: inc } = await db.from('incidents').select('id, owner, target_server, actions, context')
     .in('status', ['active', 'resolving'])
     .eq('context->pr->>repo', repo)
     .eq('context->pr->>number', String(prNumber))
-    .maybeSingle<{ id: string; actions: string[]; context: { pr?: PrRef; proof?: Proof } }>();
+    .maybeSingle<
+      { id: string; owner: string; target_server: string; actions: string[]; context: { pr?: PrRef; proof?: Proof } }
+    >();
   if (!inc) return json(404, { error: 'no open incident for this PR' });
 
   const result = evaluateProof(inc.context.pr, { ...body, repo, pr: prNumber });
@@ -50,5 +53,13 @@ Deno.serve(async (req) => {
       : {}),
     context: { ...inc.context, proof: result.proof },
   }).eq('id', inc.id);
+  if (result.proof.ok) {
+    const { passed, total } = result.proof;
+    await notify(inc.owner, {
+      title: `Fix proven for ${inc.target_server}`,
+      body: `${passed}/${total} failing production requests now pass. Ready to merge.`,
+      data: { incidentId: inc.id },
+    });
+  }
   return json(200, { accepted: true, ok: result.proof.ok });
 });

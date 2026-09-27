@@ -1,18 +1,24 @@
-// Connect: link GitHub and Render, add the services OpsSwipe watches and fixes.
+// Connect: your account, GitHub, Render and Google Cloud, and the services OpsSwipe watches and fixes.
 // Keys go straight to the server (Supabase Vault); the app never stores or shows them again.
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
-import { Check, Cloud, Copy, GithubLogo, HardDrives, Key, Plus, Trash, X } from 'phosphor-react-native';
+import { CaretDown, CaretRight, Check, Cloud, Copy, GithubLogo, GoogleLogo, HardDrives, Key, Plus, Trash, UserCircle, X } from 'phosphor-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { type ConnectStatus, type NewService, type RenderOption, type Service, connect, supabase } from './api';
+import {
+  type ConnectStatus,
+  type GcpProject,
+  type NewService,
+  type RenderOption,
+  type Service,
+  type VmOption,
+  connect,
+  supabase,
+} from './api';
+import { paramsOf } from './format';
 import { TARGET, c, radius, space, type } from './theme';
 import { Button, Chip, Section } from './ui';
-
-// "opsswipe://connect?code=..&installation_id=.." -> params (RN's URL has no searchParams).
-const queryOf = (url: string) =>
-  Object.fromEntries((url.split('?')[1] ?? '').split('&').filter(Boolean).map((kv) => kv.split('=').map(decodeURIComponent)));
 
 function CopyRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -67,13 +73,23 @@ function Field(
   );
 }
 
-export function Services({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+type Props = { visible: boolean; onClose: () => void; onSignIn: () => Promise<unknown> };
+type Account = { guest: boolean; login: string | null };
+
+export function Services({ visible, onClose, onSignIn }: Props) {
   const [status, setStatus] = useState<ConnectStatus | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [renderOptions, setRenderOptions] = useState<RenderOption[] | null>(null);
   const [renderKey, setRenderKey] = useState('');
   const [tab, setTab] = useState<'render' | 'gcp'>('render');
   const [gcp, setGcp] = useState({ project: '', zone: 'us-central1-a', instance: '', url: '' });
+  const [account, setAccount] = useState<Account | null>(null);
+  const [projects, setProjects] = useState<GcpProject[] | null>(null);
+  const [project, setProject] = useState<string | null>(null);
+  const [vms, setVms] = useState<VmOption[] | null>(null);
+  const [vm, setVm] = useState<VmOption | null>(null);
+  const [vmUrl, setVmUrl] = useState('');
+  const [manual, setManual] = useState(false);
   const [created, setCreated] = useState<NewService | null>(null);
   const [notice, setNotice] = useState<{ text: string; url?: string } | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
@@ -81,12 +97,18 @@ export function Services({ visible, onClose }: { visible: boolean; onClose: () =
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [st, sv] = await Promise.all([
+    const [st, sv, me] = await Promise.all([
       connect<ConnectStatus>('status'),
       supabase.from('services').select('id, name, provider, config').order('created_at'),
+      supabase.auth.getUser(),
     ]);
     setStatus(st);
     setServices(sv.data ?? []);
+    const user = me.data.user;
+    setAccount({ guest: !user || !!user.is_anonymous, login: user?.user_metadata?.user_name ?? null });
+    if (st.google.connected) {
+      connect<{ projects: GcpProject[] }>('gcp_projects').then((r) => setProjects(r.projects)).catch(() => {});
+    }
     if (st.render.connected) {
       connect<{ services: RenderOption[] }>('render_services').then((r) => setRenderOptions(r.services)).catch(() => {});
     }
@@ -115,7 +137,7 @@ export function Services({ visible, onClose }: { visible: boolean; onClose: () =
     run('github', async () => {
       const r = await WebBrowser.openAuthSessionAsync(status!.github.installUrl, 'opsswipe://connect');
       if (r.type !== 'success') return;
-      const q = queryOf(r.url);
+      const q = paramsOf(r.url);
       if (!q.code || !q.installation_id) throw new Error('GitHub did not finish the install. Try again.');
       await connect('github_complete', { code: q.code, installationId: Number(q.installation_id) });
       await load();
@@ -138,6 +160,59 @@ export function Services({ visible, onClose }: { visible: boolean; onClose: () =
   const addGcp = () =>
     run('gcp', async () => {
       setCreated(await connect<NewService>('add_gcp', gcp));
+      await load();
+    });
+
+  const signIn = () =>
+    run('signin', async () => {
+      await onSignIn();
+      await load();
+    });
+
+  const pickProject = (id: string) =>
+    run('vms', async () => {
+      setProject(id);
+      setVm(null);
+      setVms(null);
+      setVms((await connect<{ vms: VmOption[] }>('gcp_vms', { project: id })).vms);
+    });
+
+  // Like installing a GitHub App: sign in with Google, pick a VM; the server grants itself reset on
+  // that VM with your token, then deletes the token.
+  const connectGoogle = () =>
+    run('google', async () => {
+      const { url, state } = await connect<{ url: string; state: string }>('gcp_start');
+      const r = await WebBrowser.openAuthSessionAsync(url, 'opsswipe://connect');
+      if (r.type !== 'success') return;
+      const q = paramsOf(r.url);
+      if (q.state !== state) throw new Error('That Google sign-in did not match this request. Try again.');
+      if (!q.code) throw new Error(q.error === 'access_denied' ? 'Google access was not allowed.' : 'Google did not finish the sign-in.');
+      const res = await connect<{ projects: GcpProject[] }>('gcp_complete', { code: q.code });
+      setProjects(res.projects);
+      setTab('gcp');
+      await load();
+      if (res.projects.length === 1) await pickProject(res.projects[0].id);
+    });
+
+  const chooseVm = (v: VmOption) => {
+    setVm(v);
+    setVmUrl(v.ip ? `http://${v.ip}/` : '');
+  };
+
+  const addVm = () =>
+    run('addvm', async () => {
+      const res = await connect<NewService & { vmStatus: string }>('gcp_add', {
+        project,
+        zone: vm!.zone,
+        instance: vm!.name,
+        url: vmUrl,
+      });
+      setCreated(res);
+      if (res.vmStatus === 'pending') setNotice({ text: 'Access is being applied by Google; resets work within a minute.' });
+      setProjects(null);
+      setProject(null);
+      setVms(null);
+      setVm(null);
       await load();
     });
 
@@ -194,6 +269,25 @@ export function Services({ visible, onClose }: { visible: boolean; onClose: () =
             </View>
           )}
 
+          <Section title="Account">
+            <View style={styles.group}>
+              <View style={styles.row}>
+                <UserCircle size={22} color={c.text} weight="bold" />
+                <View style={{ flex: 1 }}>
+                  <Text style={type.body}>{account?.guest ? 'Guest' : `Signed in${account?.login ? ` as @${account.login}` : ''}`}</Text>
+                  <Text style={type.caption}>
+                    {account?.guest
+                      ? 'Sign in to keep your services and plan when you switch phones.'
+                      : 'Your services and plan follow you to any phone.'}
+                  </Text>
+                </View>
+                {account?.guest && (
+                  <Button label={busy === 'signin' ? 'Opening…' : 'Sign in'} icon={GithubLogo} onPress={signIn} style={styles.small} />
+                )}
+              </View>
+            </View>
+          </Section>
+
           <Section title="Connections">
             <View style={styles.group}>
               <View style={styles.row}>
@@ -228,6 +322,21 @@ export function Services({ visible, onClose }: { visible: boolean; onClose: () =
                   <Button label={busy === 'render' ? 'Checking…' : 'Save key'} onPress={saveRenderKey} />
                 </View>
               )}
+
+              <View style={styles.row}>
+                <GoogleLogo size={22} color={c.text} weight="bold" />
+                <View style={{ flex: 1 }}>
+                  <Text style={type.body}>Google Cloud</Text>
+                  <Text style={type.caption}>
+                    {status?.google.connected
+                      ? `Signed in as ${status.google.account ?? 'you'}. Pick a VM below; the sign-in is deleted after.`
+                      : 'Sign in and pick a VM. OpsSwipe keeps only permission to reset that one VM.'}
+                  </Text>
+                </View>
+                {status?.google.available && !status.google.connected && (
+                  <Button label={busy === 'google' ? 'Opening…' : 'Connect'} onPress={connectGoogle} style={styles.small} />
+                )}
+              </View>
             </View>
           </Section>
 
@@ -317,23 +426,96 @@ export function Services({ visible, onClose }: { visible: boolean; onClose: () =
 
             {tab === 'gcp' && (
               <View style={styles.group}>
-                <Text style={type.body}>
-                  OpsSwipe never asks for a GCP key. You grant its identity one custom role on one VM: it can see the
-                  VM&apos;s status and reset it, nothing else. Delete the binding to revoke.
-                </Text>
-                <Field label="Project ID" value={gcp.project} onChange={(v) => setGcp({ ...gcp, project: v })} placeholder="my-project" />
-                <Field label="Zone" value={gcp.zone} onChange={(v) => setGcp({ ...gcp, zone: v })} />
-                <Field label="VM name" value={gcp.instance} onChange={(v) => setGcp({ ...gcp, instance: v })} placeholder="web-1" />
-                <Field
-                  label="URL to health-check"
-                  value={gcp.url}
-                  onChange={(v) => setGcp({ ...gcp, url: v })}
-                  placeholder="http://34.1.2.3/"
-                />
-                {commands
-                  ? <CopyRow label="Run in Google Cloud Shell" value={commands} />
-                  : <Text style={type.caption}>GCP isn&apos;t set up on this OpsSwipe server yet.</Text>}
-                <Button label={busy === 'gcp' ? 'Verifying…' : 'Verify access and add'} onPress={addGcp} />
+                {!projects
+                  ? (
+                    <View style={{ gap: space.md }}>
+                      <Text style={type.body}>
+                        Sign in with Google and pick a VM. OpsSwipe grants its own identity one custom role on that VM (see its
+                        status, reset it), then deletes your Google sign-in. Remove the role in Cloud console to revoke.
+                      </Text>
+                      {status?.google.available && (
+                        <Button label={busy === 'google' ? 'Opening…' : 'Connect Google Cloud'} icon={GoogleLogo} onPress={connectGoogle} />
+                      )}
+                    </View>
+                  )
+                  : (
+                    <View style={{ gap: space.md }}>
+                      <Text style={type.label}>Project</Text>
+                      {projects.length === 0 && <Text style={type.caption}>No projects on this Google account.</Text>}
+                      <View style={styles.chips}>
+                        {projects.map((pr) => (
+                          <Pressable
+                            key={pr.id}
+                            onPress={() => pickProject(pr.id)}
+                            accessibilityRole="radio"
+                            accessibilityState={{ selected: project === pr.id }}
+                            style={[styles.tab, styles.chipButton, project === pr.id && styles.tabOn]}
+                          >
+                            <Text style={[type.monoCaption, { color: project === pr.id ? c.green : c.text }]}>{pr.id}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      {busy === 'vms' && <Text style={type.caption}>Loading VMs…</Text>}
+                      {vms?.length === 0 && <Text style={type.caption}>No VMs in this project.</Text>}
+                      {vms?.map((v) => (
+                        <Pressable
+                          key={`${v.zone}/${v.name}`}
+                          onPress={() => chooseVm(v)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: vm?.name === v.name && vm.zone === v.zone }}
+                          style={[styles.vm, vm?.name === v.name && vm.zone === v.zone && styles.tabOn]}
+                        >
+                          <HardDrives size={20} color={c.text} weight="bold" />
+                          <View style={{ flex: 1, gap: 2 }}>
+                            <Text style={type.monoStrong}>{v.name}</Text>
+                            <Text style={type.caption}>{v.zone} · {v.status} · {v.ip ?? 'no public IP'}</Text>
+                          </View>
+                        </Pressable>
+                      ))}
+                      {vm && (
+                        <View style={{ gap: space.md }}>
+                          <Field
+                            label="URL to health-check"
+                            value={vmUrl}
+                            onChange={setVmUrl}
+                            placeholder="http://34.1.2.3/"
+                          />
+                          <Text style={type.caption}>
+                            OpsSwipe will be able to reset and read {vm.name}. Nothing else. Your Google sign-in is deleted
+                            after adding.
+                          </Text>
+                          <Button label={busy === 'addvm' ? 'Granting access…' : `Add ${vm.name}`} icon={Plus} onPress={addVm} />
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                <Pressable
+                  onPress={() => setManual(!manual)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: manual }}
+                  style={styles.disclosure}
+                >
+                  {manual ? <CaretDown size={16} color={c.muted} weight="bold" /> : <CaretRight size={16} color={c.muted} weight="bold" />}
+                  <Text style={[type.label, { color: c.muted }]}>Prefer commands? Grant access with gcloud</Text>
+                </Pressable>
+                {manual && (
+                  <View style={{ gap: space.md }}>
+                    <Field label="Project ID" value={gcp.project} onChange={(v) => setGcp({ ...gcp, project: v })} placeholder="my-project" />
+                    <Field label="Zone" value={gcp.zone} onChange={(v) => setGcp({ ...gcp, zone: v })} />
+                    <Field label="VM name" value={gcp.instance} onChange={(v) => setGcp({ ...gcp, instance: v })} placeholder="web-1" />
+                    <Field
+                      label="URL to health-check"
+                      value={gcp.url}
+                      onChange={(v) => setGcp({ ...gcp, url: v })}
+                      placeholder="http://34.1.2.3/"
+                    />
+                    {commands
+                      ? <CopyRow label="Run in Google Cloud Shell" value={commands} />
+                      : <Text style={type.caption}>GCP isn&apos;t set up on this OpsSwipe server yet.</Text>}
+                    <Button label={busy === 'gcp' ? 'Verifying…' : 'Verify access and add'} kind="secondary" onPress={addGcp} />
+                  </View>
+                )}
               </View>
             )}
           </Section>
@@ -384,4 +566,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabOn: { borderColor: c.green, backgroundColor: c.greenTint },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  chipButton: { flex: 0, paddingHorizontal: space.md },
+  vm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: TARGET,
+    padding: space.md,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  disclosure: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minHeight: TARGET },
 });

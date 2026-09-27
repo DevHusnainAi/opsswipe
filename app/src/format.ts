@@ -22,3 +22,16 @@ export function timeAgo(iso: string, now = Date.now()) {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   return `${Math.floor(s / 3600)}h ago`;
 }
+
+// "opsswipe://auth?a=1#b=2" -> { a: '1', b: '2' }. RN's URL has no searchParams, and OAuth
+// redirects put tokens after '#', with values that may themselves contain '='.
+export function paramsOf(url: string): Record<string, string> {
+  const query = url.split(/[?#]/).slice(1).join('&');
+  return Object.fromEntries(
+    query.split('&').filter(Boolean).map((kv) => {
+      const i = kv.includes('=') ? kv.indexOf('=') : kv.length;
+      const dec = (s: string) => decodeURIComponent(s.replace(/\+/g, ' '));
+      return [dec(kv.slice(0, i)), dec(kv.slice(i + 1))];
+    }),
+  );
+}

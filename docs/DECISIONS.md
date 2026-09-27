@@ -56,8 +56,13 @@ The one SDK is Anthropic's, for Claude.
   `installation_id` can be spoofed, so OpsSwipe accepts it only after checking, with the installing user's own OAuth token,
   that the installation is theirs.
   Source: [GitHub App tokens](https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app).
-- **GCP:** users grant OpsSwipe's service account a custom role (`compute.instances.reset`, `compute.instances.get`) on one
-  VM. No user key exists to leak, and deleting the binding revokes access instantly.
+- **GCP:** "Connect Google Cloud" works like a GitHub App install. The user signs in with Google (no refresh token),
+  picks a VM, and OpsSwipe uses that token once to grant its own service account a custom role
+  (`compute.instances.reset`, `compute.instances.get`) on that one VM, then deletes the token. What remains is exactly
+  what the manual `gcloud` commands (still offered) would grant; deleting the binding revokes it. Until Google verifies
+  the app, sign-in shows a warning and is capped at 100 users.
+  Sources: [instances.setIamPolicy](https://docs.cloud.google.com/compute/docs/reference/rest/v1/instances/setIamPolicy),
+  [unverified apps](https://support.google.com/cloud/answer/7454865).
 - **Render:** Render has no OAuth and its keys cover the account, so the key is validated, stored in Supabase Vault, read
   only by server functions, and never returned to the app.
 
@@ -65,3 +70,15 @@ The one SDK is Anthropic's, for Claude.
 Every service, connection and incident has an owner. Row-level security lets each user read only their own rows, all writes
 go through Edge Functions, and a fix can only be claimed by the incident's owner. A SQL test proves one user can't see
 another's services, incidents or connections, and that users can't read the Vault.
+
+## 13. Alerts are server push, not app-side
+A pager that only rings while its app is open isn't a pager. The server sends a high-priority push through Expo's push
+service when an incident opens and when CI proves a fix; tokens Expo reports as unregistered are deleted. Push tokens
+are server-only rows, and a push failure never blocks an incident. Realtime still refreshes the open app.
+Source: [Expo push](https://docs.expo.dev/push-notifications/sending-notifications/).
+
+## 14. Guest first, account by linking
+The app starts as an anonymous Supabase user so nothing blocks trying it. Sign in with GitHub links GitHub to that same
+user (`linkIdentity`), so the user id, which is also the RevenueCat appUserID, never changes: services, incidents and
+Pro carry over. If the GitHub account already has OpsSwipe (a new phone), the app signs into it and logs RevenueCat in.
+Source: [Supabase anonymous sign-ins](https://supabase.com/docs/guides/auth/auth-anonymous).

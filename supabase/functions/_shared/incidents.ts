@@ -5,7 +5,7 @@ import { db, env } from './db.ts';
 import { accessToken } from './gcp.ts';
 import { type Deploy, listDeploys, pickRollback } from './render.ts';
 import { mergeSamples, type ReplaySample } from './replay.ts';
-import { platformSa, renderKey, type Service, toTarget } from './services.ts';
+import { notify, platformSa, renderKey, type Service, toTarget } from './services.ts';
 import { suggest, toSuggestInput, vertexSuggester } from './suggest.ts';
 import { actionsFor } from './targets.ts';
 
@@ -70,6 +70,14 @@ export async function openIncident(s: Service, title: string, metric: string, sa
     suggested_by: 'rules',
     context: { live: deploys.live ?? null, previous: deploys.previous ?? null, replay: mergeSamples([], samples) },
   }).select('id').maybeSingle();
+
+  if (inc) {
+    EdgeRuntime.waitUntil(notify(s.owner, {
+      title: `${s.name} is failing`,
+      body: `${metric}. ${rules.reason}`,
+      data: { incidentId: inc.id },
+    }));
+  }
 
   const ai = aiSuggester();
   if (inc && ai) {

@@ -10,7 +10,7 @@ import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler
 import Purchases from 'react-native-purchases';
 import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { AuditEntry, Incident, ensureUser, execute, supabase } from './src/api';
+import { AuditEntry, Incident, ensureUser, execute, registerPush, signInWithGithub, supabase } from './src/api';
 import { fixFor } from './src/fixes';
 import { recoveryLine, timeAgo } from './src/format';
 import { Onboarding } from './src/Onboarding';
@@ -85,14 +85,10 @@ export default function App() {
         importance: Notifications.AndroidImportance.MAX,
       });
       await refresh();
+      // Alerts come as server push (they reach a closed app); realtime only keeps the open app fresh.
+      registerPush().catch(() => {});
       channel.current ??= supabase
         .channel('ops')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'incidents' }, ({ new: inc }) => {
-          Notifications.scheduleNotificationAsync({
-            content: { title: `${inc.severity}: ${inc.title}`, body: `${inc.target_server} · ${inc.metric}` },
-            trigger: { channelId: 'incidents' },
-          });
-        })
         .on('postgres_changes', { event: '*', schema: 'public' }, () => refresh().catch(() => {}))
         .subscribe();
       setPhase((await AsyncStorage.getItem(ONBOARDED)) ? 'ready' : 'onboarding');
@@ -111,10 +107,26 @@ export default function App() {
     };
   }, [boot]);
 
-  const finishOnboarding = async (askForAlerts: boolean) => {
-    if (askForAlerts) await Notifications.requestPermissionsAsync();
+  const enableAlerts = async (enable: boolean) => {
+    if (enable && (await Notifications.requestPermissionsAsync()).granted) await registerPush();
+  };
+
+  const finishOnboarding = async (openServices: boolean) => {
     await AsyncStorage.setItem(ONBOARDED, '1');
     setPhase('ready');
+    if (openServices) setServicesOpen(true);
+  };
+
+  // Linking keeps the same id; signing in to an existing account switches to it (new phone).
+  const signIn = async () => {
+    const res = await signInWithGithub();
+    if (res?.switched) {
+      await Purchases.logIn(res.uid);
+      setPro(!!(await Purchases.getCustomerInfo()).entitlements.active.pro);
+      registerPush().catch(() => {});
+    }
+    await refresh();
+    return res;
   };
 
   const run = async (inc: Incident, action: string) => {
@@ -175,7 +187,7 @@ export default function App() {
           <StatusBar style="light" />
 
           {phase === 'onboarding' && (
-            <Onboarding onEnableAlerts={() => finishOnboarding(true)} onSkip={() => finishOnboarding(false)} />
+            <Onboarding onAlerts={enableAlerts} onSignIn={signIn} onDone={finishOnboarding} />
           )}
 
           {phase !== 'onboarding' && (
@@ -341,6 +353,7 @@ export default function App() {
           )}
           <Services
             visible={servicesOpen}
+            onSignIn={signIn}
             onClose={() => {
               setServicesOpen(false);
               refresh().catch(() => {});

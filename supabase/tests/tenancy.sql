@@ -1,6 +1,6 @@
 -- Multi-tenant isolation and vault access. Run against a migrated DB (see meter.sql).
 begin;
-grant select on incidents, services, connections, audit_log to authenticated;
+grant select on incidents, services, connections, audit_log, push_tokens to authenticated;
 
 do $$
 declare
@@ -14,7 +14,8 @@ begin
     returning id into s_alice;
   insert into services (owner, name, provider, config) values (bob, 'web', 'render', '{"serviceId":"srv-2","url":"u"}');
   insert into incidents (title, target_server, metric, action, service_id, owner) values ('t', 'web', 'm', 'restart', s_alice, alice);
-  insert into connections (owner, kind, account) values (alice, 'github', 'alice-gh');
+  insert into connections (owner, kind, account) values (alice, 'github', 'alice-gh'), (alice, 'google', 'a@x.com');
+  insert into push_tokens (token, owner) values ('ExponentPushToken[alice]', alice), ('ExponentPushToken[bob]', bob);
 
   -- the same name on two accounts is fine; one open incident per service
   begin
@@ -37,6 +38,7 @@ begin
   assert (select count(*) from services) = 1, 'bob sees only his own service';
   assert (select count(*) from incidents) = 0, 'bob cannot see alice''s incidents';
   assert (select count(*) from connections) = 0, 'bob cannot see alice''s connections';
+  assert (select count(*) from push_tokens) = 0, 'push tokens are server-only, even your own';
 end $$;
 reset role;
 

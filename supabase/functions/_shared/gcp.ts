@@ -32,7 +32,7 @@ export async function accessToken(sa: ServiceAccount) {
   return access_token as string;
 }
 
-const vmUrl = (t: GcpVm) =>
+export const vmUrl = (t: GcpVm) =>
   `https://compute.googleapis.com/compute/v1/projects/${t.project}/zones/${t.zone}/instances/${t.instance}`;
 
 export async function resetInstance(t: GcpVm, sa: ServiceAccount) {

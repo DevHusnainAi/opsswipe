@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatDuration, recoveryLine, timeAgo } from './format.ts';
+import { formatDuration, paramsOf, recoveryLine, timeAgo } from './format.ts';
 
 test('formatDuration', () => {
   assert.equal(formatDuration(0), '0s');
@@ -31,4 +31,18 @@ test('timeAgo', () => {
   assert.equal(timeAgo('2026-09-27T09:57:00Z', now), '3m ago');
   assert.equal(timeAgo('2026-09-27T08:00:00Z', now), '2h ago');
   assert.equal(timeAgo('2026-09-27T10:00:09Z', now), 'just now', 'clock skew never shows negative time');
+});
+
+test('paramsOf reads OAuth redirects: query, fragment, and values with =', () => {
+  assert.deepEqual(paramsOf('opsswipe://connect?code=4%2F0Ab&installation_id=7'), { code: '4/0Ab', installation_id: '7' });
+  assert.deepEqual(paramsOf('opsswipe://auth#access_token=a.b=&refresh_token=r&token_type=bearer'), {
+    access_token: 'a.b=',
+    refresh_token: 'r',
+    token_type: 'bearer',
+  });
+  assert.deepEqual(paramsOf('opsswipe://auth?error=access_denied&error_description=Identity+is+already+linked'), {
+    error: 'access_denied',
+    error_description: 'Identity is already linked',
+  });
+  assert.deepEqual(paramsOf('opsswipe://connect'), {});
 });

@@ -40,6 +40,7 @@ sequenceDiagram
 | Feature | How |
 | --- | --- |
 | **Instant detection** | Your app signs and reports every 5xx; a 60 s liveness check covers services too dead to report |
+| **Paged on your lock screen** | A high-priority push when something breaks and again when CI proves the fix, even with the app closed |
 | **Fixes across clouds** | Restart or roll back a Render service; reset a GCP VM; open a revert PR; merge a proven PR |
 | **Suggested fix with a reason** | Rules answer instantly (recent deploy: roll back); Claude Opus 5 on Vertex AI refines it, and can only pick allowed fixes |
 | **Proof before merge** | Failing requests ride into the PR as `.opsswipe/replays/*.json`; CI replays them and runs your tests; merge unlocks only on a full pass, pinned to that commit |
@@ -53,9 +54,10 @@ From the app's **Services** screen:
 
 | Connect | How | What OpsSwipe gets |
 | --- | --- | --- |
+| **Account** | Sign in with GitHub | Your setup and plan on any phone (you start as a guest) |
 | **GitHub** | Install the OpsSwipe GitHub App on the repos you pick | 1-hour tokens to open and merge PRs on those repos |
 | **Render** | Paste an API key once | Restart, roll back and read deploys; the key is encrypted and never shown again |
-| **GCP VM** | Run two `gcloud` commands the app shows you | A custom role on that one VM: read its status and reset it. Nothing else |
+| **Google Cloud** | Sign in with Google, pick a VM | A custom role on that one VM: read its status and reset it. Your Google token is deleted right after |
 | **Failure reports** | Set the two env vars the app shows once | Your app's 5xx responses, signed, the moment they happen |
 | **Proof in CI** | Tap "Add proof to repo" and merge the PR | A workflow that replays saved production failures on every PR, authenticated by GitHub OIDC |
 
@@ -79,7 +81,7 @@ From the app's **Services** screen:
 | Leaked keys | The app holds only public keys. Users' Render keys and report secrets are encrypted in Supabase Vault; GitHub access uses 1-hour app tokens |
 | Client picks what to run | The phone sends an incident id and an offered fix; the server checks the service's validated config and the incident |
 | Another user's services | Row-level security on every table; a fix can only be claimed by the incident's owner |
-| Handing over cloud keys | Nobody does: users grant OpsSwipe's identity a custom role that can only `reset` and `get` one VM, revocable anytime |
+| Handing over cloud keys | Nobody does: Google sign-in is used once to grant OpsSwipe's identity a role that can only `reset` and `get` one VM, then deleted |
 | Spoofed GitHub installation | Each installation is verified with the installing user's own OAuth token before it's stored |
 | Forged failure reports | Each service signs reports with its own secret (HMAC-SHA256, constant-time check) |
 | Forged CI proofs | Proofs carry a GitHub Actions OIDC token, verified against GitHub's keys; no secrets live in your repo |
@@ -92,7 +94,7 @@ More in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Quality
 
-- **Tests:** 29 Deno tests (providers, Connect keys and OIDC, rollback, revert and merge PRs, signing, sample scrubbing, proof binding, incident flow, suggestions),
+- **Tests:** 34 Deno tests (providers, Connect keys and OIDC, Google grant, push, rollback, revert and merge PRs, signing, sample scrubbing, proof binding, incident flow, suggestions),
   SQL tests for the free-fix meter and tenant isolation (row-level security, Vault access) on Postgres 17, 2 tests for the demo service's reporting, and
   app tests for the recovery timeline.
 - **Eval:** 12 labeled incident scenarios score fix suggestions on allowlist safety (must be 100%), correctness and concision.
@@ -120,6 +122,7 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh release   # a bad release: ro
 - More fixes: scale up, restart a Kubernetes deployment, roll back on Fly and Vercel
 - An approval API so any AI SRE agent can ask a human to approve a proven fix
 - Team plan, two-person approval for risky fixes
+- Google OAuth verification, so Connect Google Cloud has no warning screen or 100-user cap
 
 ## License
 

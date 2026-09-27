@@ -3,6 +3,7 @@
 // back only non-secret info, plus each service's report secret exactly once, at creation.
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
+import { consentUrl, exchangeCode, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
 import { openFilesPr } from '../_shared/github.ts';
 import { installUrl, listRepos, verifyInstallation } from '../_shared/githubApp.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
@@ -10,8 +11,10 @@ import { getRenderService, listServices } from '../_shared/render.ts';
 import {
   connection,
   deleteSecret,
+  forgetConnection,
   getService,
   githubToken,
+  googleToken,
   platformSa,
   renderKey,
   storeSecret,
@@ -25,6 +28,7 @@ const randomSecret = () =>
 const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/;
 
 class UserError extends Error {}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const need = (ok: unknown, message: string) => {
   if (!ok) throw new UserError(message);
 };
@@ -57,10 +61,15 @@ async function addService(owner: string, name: string, provider: 'gcp' | 'render
 async function handle(owner: string, action: string, p: Record<string, unknown>) {
   switch (action) {
     case 'status': {
-      const [gh, rd] = await Promise.all([connection(owner, 'github'), connection(owner, 'render')]);
+      const [gh, rd, gc] = await Promise.all([
+        connection(owner, 'github'),
+        connection(owner, 'render'),
+        connection(owner, 'google'),
+      ]);
       return {
         github: { connected: !!gh?.installation_id, account: gh?.account ?? null, installUrl: installUrl() },
         render: { connected: !!rd?.secret_id },
+        google: { connected: !!gc?.secret_id, account: gc?.account ?? null, available: !!env('GOOGLE_CLIENT_ID') },
         gcpIdentity: env('GCP_SA_KEY') ? platformSa().client_email : null,
       };
     }
@@ -106,6 +115,66 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       return await addService(owner, String(p.name ?? r.name).toLowerCase(), 'render', config);
     }
 
+    // Connect Google Cloud: sign in, pick a VM, OpsSwipe grants itself reset on it, the token is deleted.
+    case 'gcp_start': {
+      need(env('GOOGLE_CLIENT_ID') && env('GCP_SA_KEY'), 'Google Cloud sign-in is not set up on this OpsSwipe server.');
+      const state = randomSecret().slice(0, 32); // the app checks it comes back unchanged
+      return { url: consentUrl(state), state };
+    }
+
+    case 'gcp_complete': {
+      const code = String(p.code ?? '');
+      need(code, 'Google did not finish the sign-in.');
+      const { token, email } = await exchangeCode(code);
+      const old = await connection(owner, 'google');
+      await db.from('connections').upsert({
+        owner,
+        kind: 'google',
+        secret_id: await storeSecret(token),
+        account: email,
+      });
+      await deleteSecret(old?.secret_id);
+      return { google: { connected: true, account: email }, projects: await listProjects(token) };
+    }
+
+    case 'gcp_projects':
+      return { projects: await listProjects(await googleToken(owner)) };
+
+    case 'gcp_vms': {
+      const project = String(p.project ?? '');
+      need(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project), 'Pick a project.');
+      return { vms: await listVms(await googleToken(owner), project) };
+    }
+
+    case 'gcp_add': {
+      const vm = { project: String(p.project ?? ''), zone: String(p.zone ?? ''), instance: String(p.instance ?? '') };
+      const config = { ...vm, url: String(p.url ?? '') };
+      try {
+        validateTarget('gcp', config);
+      } catch (e) {
+        throw new UserError(`Check the details: ${(e as Error).message}.`);
+      }
+      const sa = platformSa();
+      await grantReset(await googleToken(owner), vm, sa.client_email);
+      // IAM changes take a few seconds to apply; the service is added either way.
+      let vmStatus = 'pending';
+      for (let i = 0; i < 3 && vmStatus === 'pending'; i++) {
+        if (i) await sleep(3000);
+        vmStatus = await getInstanceStatus(vm, sa).catch(() => 'pending');
+      }
+      const added = await addService(owner, String(p.name ?? vm.instance).toLowerCase(), 'gcp', config);
+      await forgetConnection(owner, 'google');
+      return { ...added, vmStatus };
+    }
+
+    case 'register_push': {
+      const token = String(p.token ?? '');
+      need(/^Expo(nent)?PushToken\[[\w-]+\]$/.test(token), 'Not a push token.');
+      await db.from('push_tokens').upsert({ token, owner });
+      return { registered: true };
+    }
+
+    // Manual fallback: the user ran the two gcloud commands themselves.
     case 'add_gcp': {
       const config = {
         project: String(p.project ?? ''),
@@ -160,11 +229,9 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     }
 
     case 'disconnect': {
-      const kind = p.kind === 'github' || p.kind === 'render' ? p.kind : null;
+      const kind = p.kind === 'github' || p.kind === 'render' || p.kind === 'google' ? p.kind : null;
       need(kind, 'Unknown connection.');
-      const c = await connection(owner, kind!);
-      await db.from('connections').delete().eq('owner', owner).eq('kind', kind!);
-      await deleteSecret(c?.secret_id);
+      await forgetConnection(owner, kind!);
       return { disconnected: kind };
     }
 
@@ -181,7 +248,7 @@ Deno.serve(async (req) => {
   try {
     return json(200, await handle(user.id, String(action ?? ''), params));
   } catch (e) {
-    if (e instanceof UserError) return json(400, { error: e.message });
+    if (e instanceof UserError || e instanceof GoogleError) return json(400, { error: e.message });
     console.error('connect', action, e);
     return json(502, { error: 'Something went wrong talking to the provider. Try again.' });
   }

@@ -1,5 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
+import * as WebBrowser from 'expo-web-browser';
+import { paramsOf } from './format';
 
 export type Incident = {
   id: string;
@@ -58,8 +62,11 @@ export type RenderOption = { id: string; name: string; url: string; repo?: strin
 export type ConnectStatus = {
   github: { connected: boolean; account: string | null; installUrl: string };
   render: { connected: boolean };
+  google: { connected: boolean; account: string | null; available: boolean };
   gcpIdentity: string | null;
 };
+export type GcpProject = { id: string; name: string };
+export type VmOption = { name: string; zone: string; status: string; ip: string | null };
 export type NewService = { service: Service; report: { url: string; secret: string } };
 
 // Connect actions run on the server for the signed-in user; errors come back as plain sentences.
@@ -68,4 +75,39 @@ export async function connect<T>(action: string, params: Record<string, unknown>
   if (!error) return data as T;
   const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
   throw new Error(body?.error ?? 'Could not reach OpsSwipe. Try again.');
+}
+
+const AUTH_REDIRECT = 'opsswipe://auth';
+
+// Opens the provider in a browser sheet and returns the redirect's params, or null if cancelled.
+async function browserAuth(start: { data: { url: string | null }; error: unknown }) {
+  if (start.error) throw start.error;
+  const r = await WebBrowser.openAuthSessionAsync(start.data.url!, AUTH_REDIRECT);
+  return r.type === 'success' ? paramsOf(r.url) : null;
+}
+
+// Guest -> GitHub account, keeping the same user id, so services, incidents and Pro carry over.
+// If that GitHub account already has OpsSwipe (a new phone), sign in to it instead.
+export async function signInWithGithub(): Promise<{ uid: string; switched: boolean } | null> {
+  const before = (await supabase.auth.getUser()).data.user;
+  const options = { redirectTo: AUTH_REDIRECT, skipBrowserRedirect: true };
+  let p = before?.is_anonymous
+    ? await browserAuth(await supabase.auth.linkIdentity({ provider: 'github', options }))
+    : null;
+  if (!before?.is_anonymous || p?.error_code === 'identity_already_exists') {
+    p = await browserAuth(await supabase.auth.signInWithOAuth({ provider: 'github', options }));
+  }
+  if (!p) return null;
+  if (p.error) throw new Error(p.error_description || 'GitHub sign-in failed. Try again.');
+  const { data, error } = await supabase.auth.setSession({ access_token: p.access_token, refresh_token: p.refresh_token });
+  if (error) throw error;
+  return { uid: data.user!.id, switched: data.user!.id !== before?.id };
+}
+
+// Lets the server page this phone even when the app is closed. Needs the EAS projectId (eas init).
+export async function registerPush() {
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+  if (!projectId || (await Notifications.getPermissionsAsync()).status !== 'granted') return;
+  const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
+  await connect('register_push', { token: data });
 }
