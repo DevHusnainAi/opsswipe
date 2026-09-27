@@ -1,0 +1,29 @@
+{
+  "tasks": {
+    "test": "deno test --allow-env supabase/functions/tests/",
+    "check": "deno check supabase/functions/execute/index.ts supabase/functions/healthcheck/index.ts supabase/functions/report/index.ts supabase/functions/proof/index.ts evals/suggest/run.ts",
+    "lint": "deno lint",
+    "fmt": "deno fmt",
+    "eval": "deno run --allow-read --allow-env --allow-net evals/suggest/run.ts"
+  },
+  "fmt": {
+    "singleQuote": true,
+    "lineWidth": 120,
+    "include": [
+      "supabase/functions",
+      "evals"
+    ]
+  },
+  "lint": {
+    "include": [
+      "supabase/functions",
+      "evals"
+    ],
+    "rules": {
+      "exclude": [
+        "no-import-prefix"
+      ]
+    }
+  },
+  "//": "no-import-prefix is off because Supabase Edge Functions deploy with inline npm:/jsr: specifiers."
+}

@@ -1,0 +1,51 @@
+# Decisions
+
+Short records of the choices that shape OpsSwipe, and why.
+
+## 1. Verify fixes, don't just generate them
+AI tools already draft fixes and open PRs (Sentry Seer does both), but a human still reviews and merges them against the same
+tests that missed the bug. OpsSwipe's job is proof: a fix is only mergeable once it passes the exact production requests that
+failed, and only "done" once production recovers.
+Sources: [Seer Autofix](https://sentry.io/product/seer/autofix/), [Seer self-healing workflow](https://sentry.io/cookbook/self-healing-workflow-seer/).
+
+## 2. Event-driven detection, polling only for liveness
+The app reports its own 5xx responses to `/report` the moment they happen, so incidents open in seconds and carry the failing
+requests. A dead service can't report itself, so a once-a-minute health check remains, and it also stamps recovery.
+
+## 3. The phone never holds power
+The phone sends an incident id and the name of an offered fix. Who is asking comes from a verified JWT; what can run comes
+from the `TARGETS` allowlist and the fixes stored on the incident. Cloud keys, the GitHub token and the RevenueCat secret live
+only in Edge Function secrets.
+
+## 4. Swipe to choose, biometrics to authorize, tap as an alternative
+Swipe-to-act suits destructive actions but is easy to trigger by accident, so a fingerprint prompt that names the consequence
+confirms every fix. A button and TalkBack actions do the same job without dragging (WCAG 2.2, 2.5.7).
+Sources: [NN/g contextual swipe](https://www.nngroup.com/articles/contextual-swipe/), [WCAG 2.5.7](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html).
+
+## 5. Entitlements checked on the server, metered in Postgres
+Every fix checks the `pro` entitlement with RevenueCat's REST API, and the free fix is counted by an atomic Postgres function
+that refunds on failure. Reinstalling the app or tampering with it can't unlock anything.
+
+## 6. CI pushes its proof; merges are pinned to the proven commit
+Fine-grained GitHub tokens can't read the Checks API, so the demo repo's workflow sends a signed result to `/proof`. A proof is
+accepted only for the head commit OpsSwipe opened, and the merge passes that `sha`, so GitHub refuses (409) if anything was
+pushed after the proof.
+Sources: [fine-grained tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens), [merge a PR](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request).
+
+## 7. Replay only in CI, never against production
+Replaying a failed `POST /checkout` in production would create real orders. Failing requests are replayed only against the PR's
+build in CI; production is verified by watching it recover. Samples are scrubbed: no headers or cookies, secret-looking query
+values redacted, bodies capped at 2 KB.
+
+## 8. Rules first, AI second
+A deterministic rule picks the fix and writes the reason immediately (recent deploy: roll back, otherwise restart). Claude Opus 5
+on Vertex AI may refine it in the background, constrained by a schema to the allowed fixes; any error or refusal keeps the
+rule's answer. A labeled eval gates the rules in CI at 100%.
+
+## 9. Free, personal demo infrastructure
+A GCP e2-micro VM (free tier) and a Render free web service, both in personal accounts. The GCP key can only reset that one VM.
+No company infrastructure is involved, and the project stays solely ours as the hackathon rules require.
+
+## 10. Few dependencies
+GCP auth signs its own JWT with WebCrypto; GitHub and Render are plain `fetch`; tests use `deno test` and Node's built-in runner.
+The one SDK is Anthropic's, for Claude.

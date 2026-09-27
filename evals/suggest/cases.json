@@ -1,0 +1,139 @@
+[
+  {
+    "id": "fresh-deploy-503",
+    "expected": "rollback",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart", "rollback"],
+      "symptom": "GET web.onrender.com -> 503 (80ms)",
+      "liveDeploy": { "commit": "a1b2c3d4", "message": "Switch session store to Redis", "minutesBeforeFailure": 3 },
+      "previousDeploy": { "commit": "9f8e7d6c" }
+    }
+  },
+  {
+    "id": "deploy-25m-500",
+    "expected": "rollback",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart", "rollback"],
+      "symptom": "GET web.onrender.com -> 500 (41ms)",
+      "liveDeploy": { "commit": "b2c3d4e5", "message": "Upgrade ORM", "minutesBeforeFailure": 25 },
+      "previousDeploy": { "commit": "a1b2c3d4" }
+    }
+  },
+  {
+    "id": "old-deploy-503",
+    "expected": "restart",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart", "rollback"],
+      "symptom": "GET web.onrender.com -> 503 (95ms)",
+      "liveDeploy": { "commit": "c3d4e5f6", "message": "Copy tweaks", "minutesBeforeFailure": 190 },
+      "previousDeploy": { "commit": "b2c3d4e5" }
+    }
+  },
+  {
+    "id": "no-deploy-info",
+    "expected": "restart",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart", "rollback"],
+      "symptom": "GET web.onrender.com -> 503 (120ms)"
+    }
+  },
+  {
+    "id": "fresh-deploy-no-previous",
+    "expected": "restart",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart", "rollback"],
+      "symptom": "GET web.onrender.com -> 502 (60ms)",
+      "liveDeploy": { "commit": "d4e5f6a7", "message": "Initial deploy", "minutesBeforeFailure": 5 }
+    }
+  },
+  {
+    "id": "gcp-connection-refused",
+    "expected": "reset",
+    "input": {
+      "target": "vm",
+      "provider": "gcp",
+      "actions": ["reset"],
+      "symptom": "GET 34.121.8.207 -> TypeError (12ms)"
+    }
+  },
+  {
+    "id": "rollback-not-offered",
+    "expected": "restart",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart"],
+      "symptom": "GET web.onrender.com -> 503 (70ms)",
+      "liveDeploy": { "commit": "e5f6a7b8", "message": "Tune pool size", "minutesBeforeFailure": 2 },
+      "previousDeploy": { "commit": "d4e5f6a7" }
+    }
+  },
+  {
+    "id": "deploy-45m-boundary",
+    "expected": "restart",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart", "rollback"],
+      "symptom": "GET web.onrender.com -> 503 (88ms)",
+      "liveDeploy": { "commit": "f6a7b8c9", "message": "Add metrics", "minutesBeforeFailure": 45 },
+      "previousDeploy": { "commit": "e5f6a7b8" }
+    }
+  },
+  {
+    "id": "fresh-deploy-502",
+    "expected": "rollback",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart", "rollback"],
+      "symptom": "GET web.onrender.com -> 502 (33ms)",
+      "liveDeploy": { "commit": "a7b8c9d0", "message": "Change start command", "minutesBeforeFailure": 1 },
+      "previousDeploy": { "commit": "f6a7b8c9" }
+    }
+  },
+  {
+    "id": "timeout-no-deploy",
+    "expected": "restart",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart", "rollback"],
+      "symptom": "GET web.onrender.com -> TimeoutError (4001ms)",
+      "liveDeploy": { "commit": "b8c9d0e1", "message": "Docs", "minutesBeforeFailure": 600 },
+      "previousDeploy": { "commit": "a7b8c9d0" }
+    }
+  },
+  {
+    "id": "revert-offered-still-rollback",
+    "expected": "rollback",
+    "input": {
+      "target": "web",
+      "provider": "render",
+      "actions": ["restart", "rollback", "revert_pr"],
+      "symptom": "GET web.onrender.com -> 500 (52ms)",
+      "liveDeploy": { "commit": "c9d0e1f2", "message": "Refactor auth middleware", "minutesBeforeFailure": 6 },
+      "previousDeploy": { "commit": "b8c9d0e1" }
+    }
+  },
+  {
+    "id": "gcp-timeout",
+    "expected": "reset",
+    "input": {
+      "target": "vm",
+      "provider": "gcp",
+      "actions": ["reset"],
+      "symptom": "GET 34.121.8.207 -> TimeoutError (4002ms)"
+    }
+  }
+]

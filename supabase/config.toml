@@ -1,0 +1,15 @@
+project_id = "opsswipe"
+
+# All functions authorize in code: JWT via auth.getUser (execute), shared secret (healthcheck),
+# HMAC signatures (report, proof).
+[functions.execute]
+verify_jwt = false
+
+[functions.healthcheck]
+verify_jwt = false
+
+[functions.report]
+verify_jwt = false
+
+[functions.proof]
+verify_jwt = false

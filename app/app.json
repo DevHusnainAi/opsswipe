@@ -1,0 +1,91 @@
+{
+  "expo": {
+    "name": "OpsSwipe",
+    "slug": "opsswipe",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.husnainai.opsswipe"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "dev.husnainai.opsswipe"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "opsswipe",
+    "backgroundColor": "#0A0A0A",
+    "plugins": [
+      "expo-notifications",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Authorize remediation actions on your servers."
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "Geist",
+                "fontDefinitions": [
+                  {
+                    "path": "./node_modules/@expo-google-fonts/geist/400Regular/Geist_400Regular.ttf",
+                    "weight": 400
+                  },
+                  {
+                    "path": "./node_modules/@expo-google-fonts/geist/500Medium/Geist_500Medium.ttf",
+                    "weight": 500
+                  },
+                  {
+                    "path": "./node_modules/@expo-google-fonts/geist/600SemiBold/Geist_600SemiBold.ttf",
+                    "weight": 600
+                  }
+                ]
+              },
+              {
+                "fontFamily": "GeistMono",
+                "fontDefinitions": [
+                  {
+                    "path": "./node_modules/@expo-google-fonts/geist-mono/400Regular/GeistMono_400Regular.ttf",
+                    "weight": 400
+                  },
+                  {
+                    "path": "./node_modules/@expo-google-fonts/geist-mono/500Medium/GeistMono_500Medium.ttf",
+                    "weight": 500
+                  },
+                  {
+                    "path": "./node_modules/@expo-google-fonts/geist-mono/600SemiBold/GeistMono_600SemiBold.ttf",
+                    "weight": 600
+                  }
+                ]
+              }
+            ]
+          },
+          "ios": {
+            "fonts": [
+              "./node_modules/@expo-google-fonts/geist/400Regular/Geist_400Regular.ttf",
+              "./node_modules/@expo-google-fonts/geist/500Medium/Geist_500Medium.ttf",
+              "./node_modules/@expo-google-fonts/geist/600SemiBold/Geist_600SemiBold.ttf",
+              "./node_modules/@expo-google-fonts/geist-mono/400Regular/GeistMono_400Regular.ttf",
+              "./node_modules/@expo-google-fonts/geist-mono/500Medium/GeistMono_500Medium.ttf",
+              "./node_modules/@expo-google-fonts/geist-mono/600SemiBold/GeistMono_600SemiBold.ttf"
+            ]
+          }
+        }
+      ]
+    ]
+  }
+}

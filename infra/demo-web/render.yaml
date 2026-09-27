@@ -1,0 +1,12 @@
+# Render Blueprint for the demo target (free plan).
+services:
+  - type: web
+    name: opsswipe-demo-web
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /livez
+    envVars:
+      - key: CHAOS_KEY
+        generateValue: true
