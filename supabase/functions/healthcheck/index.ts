@@ -3,6 +3,7 @@
 // App-level failures arrive event-driven through /report instead.
 import { env, json } from '../_shared/db.ts';
 import { markRecovered, openIncident } from '../_shared/incidents.ts';
+import { scrubSample } from '../_shared/replay.ts';
 import { parseTargets, type Target } from '../_shared/targets.ts';
 
 const TARGETS = parseTargets(env('TARGETS'));
@@ -18,8 +19,19 @@ async function check(name: string, t: Target) {
     await markRecovered(name);
     return { name, up: true, ms };
   }
-  const metric = `GET ${new URL(t.url).host} → ${status} (${ms}ms)`;
-  const { opened } = await openIncident(name, t, 'HTTP health check failing', metric);
+  const url = new URL(t.url);
+  const metric = `GET ${url.host} → ${status} (${ms}ms)`;
+  // The failing probe becomes a replay sample, so a PR can still be proven when the app didn't
+  // report anything itself. Network errors count as 599; a 4xx isn't an outage to replay.
+  const code = Number(status);
+  const sample = scrubSample({ method: 'GET', path: url.pathname + url.search, status: code >= 500 ? code : 599 });
+  const { opened } = await openIncident(
+    name,
+    t,
+    'HTTP health check failing',
+    metric,
+    !code || code >= 500 ? [sample!] : [],
+  );
   return { name, up: false, opened };
 }
 

@@ -77,7 +77,7 @@ More in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Quality
 
-- **Tests:** 20 Deno tests (providers, rollback, revert and merge PRs, signing, sample scrubbing, proof binding, suggestions),
+- **Tests:** 24 Deno tests (providers, rollback, revert and merge PRs, signing, sample scrubbing, proof binding, incident flow, suggestions),
   SQL tests for the free-fix meter and incident rules on Postgres 17, 4 tests for the demo service's reporting and replay, and
   app tests for the recovery timeline.
 - **Eval:** 12 labeled incident scenarios score fix suggestions on allowlist safety (must be 100%), correctness and concision.

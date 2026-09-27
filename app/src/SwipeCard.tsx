@@ -34,21 +34,26 @@ type Props = {
   now: number;
   // done: card leaves · stay: fix ran but the incident stays open (revert PR) · failed: snap back + error haptic
   onFix: (incident: Incident, action: string) => Promise<'done' | 'stay' | 'failed'>;
+  onMeasure?: (height: number) => void; // top card reports its height so the stack fits it
 };
 
-export function SwipeCard({ incident, depth, now, onFix }: Props) {
+export function SwipeCard({ incident, depth, now, onFix, onMeasure }: Props) {
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const limit = width * THRESHOLD;
   const x = useSharedValue(0);
   const stage = useSharedValue(0);
   const top = depth === 0;
-  const live = top && incident.status === 'active';
+
   // The suggested fix is preselected; the engineer can pick another allowlisted one.
   const [picked, setPicked] = useState<string | null>(null);
-  const choice = picked ?? incident.action;
+  const options = incident.actions ?? [];
+  // Offered fixes change (a PR opens, a proof lands); never keep a selection that's gone.
+  const wanted = picked ?? incident.action;
+  const choice = options.includes(wanted) ? wanted : options[0] ?? wanted;
   const fix = fixFor(choice);
-  const options = incident.actions?.length ? incident.actions : [incident.action];
+  const live = top && incident.status === 'active' && options.includes(choice);
+  const waiting = top && incident.status === 'active' && options.length === 0;
 
   const commit = async (action: string = choice) => {
     const outcome = await onFix(incident, action);
@@ -107,6 +112,7 @@ export function SwipeCard({ incident, depth, now, onFix }: Props) {
     <GestureDetector gesture={pan}>
       <Animated.View
         style={[styles.card, { zIndex: 10 - depth, opacity: depth > 2 ? 0 : 1 - depth * 0.25 }, cardStyle]}
+        onLayout={(e) => top && onMeasure?.(e.nativeEvent.layout.height)}
         accessible={top}
         importantForAccessibility={top ? 'yes' : 'no-hide-descendants'}
         accessibilityLabel={`${incident.severity} incident. ${incident.title} on ${incident.target_server}. ${incident.metric}. ${proofText(incident.context) ?? ''}`}
@@ -115,12 +121,14 @@ export function SwipeCard({ incident, depth, now, onFix }: Props) {
           ? [
             { name: 'activate', label: `${fix.verb} ${incident.target_server}` },
             ...options.filter((a) => a !== choice).map((a) => ({ name: `fix_${a}`, label: `${fixFor(a).verb} ${incident.target_server}` })),
+            ...(incident.context?.pr ? [{ name: 'open_proof', label: 'Open the PR and its proof' }] : []),
           ]
           : []}
         onAccessibilityAction={(e) => {
           const name = e.nativeEvent.actionName;
           if (name === 'activate') tapFix();
           else if (name.startsWith('fix_')) tapFix(name.slice(4));
+          else if (name === 'open_proof') Linking.openURL(incident.context?.proof?.runUrl ?? incident.context!.pr!.url);
         }}
       >
         <View style={styles.meta}>
@@ -178,7 +186,7 @@ export function SwipeCard({ incident, depth, now, onFix }: Props) {
             <ArrowRight size={18} color={live ? c.green : c.muted} weight="bold" />
             <View style={{ flex: 1 }}>
               <Animated.Text style={[type.label, idleLabel]} numberOfLines={1}>
-                {live ? fix.rail : 'Fix in progress'}
+                {live ? fix.rail : waiting ? 'Waiting for the CI proof' : 'Fix in progress'}
               </Animated.Text>
               <Animated.Text style={[type.label, styles.armed, armedLabel]} numberOfLines={1}>
                 Release to {fix.label.toLowerCase()}

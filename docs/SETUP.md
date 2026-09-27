@@ -93,6 +93,10 @@ cd app && npx expo run:ios          # iOS simulator (macOS). Enroll Face ID: Fea
 cd app && npx eas-cli build -p android --profile development   # cloud build, install the APK
 ```
 
+A development build loads `app/.env` from your machine through Metro. A standalone build (`--profile preview`)
+does not see `.env` (it's gitignored), so first add the three `EXPO_PUBLIC_` values with
+`npx eas-cli env:create --environment preview`.
+
 ## 7. Break things
 
 ```bash
@@ -110,5 +114,6 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh release                    # 
 - [ ] **Revert PR** opens a real PR containing `.opsswipe/replays/<sha>.json`; the card shows "CI is replaying..."
 - [ ] The proof workflow runs; the card shows "N/N failing production requests now pass" and offers **Merge PR**
 - [ ] **Merge PR** merges; Render deploys; the card shows recovery. Pushing to the PR after the proof makes merge refuse
+- [ ] Roll back while the PR is open: the site comes back, the card stays open saying "Waiting for the CI proof", and Merge PR still works after
 - [ ] Second fix on the free plan: card snaps back, paywall, Test Store purchase, fix runs
 - [ ] Activity shows Executed / Paywalled / Failed; the PR row opens the PR

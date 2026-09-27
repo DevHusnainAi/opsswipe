@@ -5,9 +5,10 @@ import { db, env, json } from '../_shared/db.ts';
 import { isActive } from '../_shared/entitlement.ts';
 import { resetInstance } from '../_shared/gcp.ts';
 import { mergePr, openRevertPr } from '../_shared/github.ts';
+import { afterFix } from '../_shared/flow.ts';
 import { canMerge, type Proof, type PrRef } from '../_shared/proof.ts';
 import type { ReplaySample } from '../_shared/replay.ts';
-import { listDeploys, pickRollback, restartService, rollbackToPrevious } from '../_shared/render.ts';
+import { type Deploy, listDeploys, pickRollback, restartService, rollbackToPrevious } from '../_shared/render.ts';
 import { type Action, actionsFor, parseTargets, type Target } from '../_shared/targets.ts';
 
 const ENTITLEMENT = 'pro';
@@ -23,11 +24,11 @@ type Incident = {
   action: string;
   reason: string | null;
   suggested_by: string | null;
-  context: { replay?: ReplaySample[]; pr?: PrRef; proof?: Proof; [k: string]: unknown };
+  context: { replay?: ReplaySample[]; pr?: PrRef; proof?: Proof; live?: Deploy | null; [k: string]: unknown };
 };
 
 // What a fix did, and how the incident should change afterwards.
-type Outcome = { detail: string; keepOpen?: boolean; update?: Record<string, unknown> };
+type Outcome = { detail: string; pr?: PrRef };
 
 async function isPro(uid: string) {
   const res = await fetch(`https://api.revenuecat.com/v1/subscribers/${uid}`, {
@@ -51,9 +52,10 @@ async function runAction(t: Target, action: Action, inc: Incident): Promise<Outc
   if (action === 'rollback') return { detail: await rollbackToPrevious(t.serviceId, key) };
   if (action === 'merge_pr') return { detail: await mergePr(inc.context.pr!, env('GITHUB_TOKEN')) };
 
-  // revert_pr: re-read the live deploy now, so we revert what is actually running.
-  const { live } = pickRollback(await listDeploys(t.serviceId, key));
-  if (!live?.commit?.id) throw new Error('live deploy has no commit to revert');
+  // revert_pr: revert the release that was live when the incident opened. A rollback since then
+  // changes what's live, but the bad commit is still the one to revert.
+  const live = inc.context.live?.commit?.id ? inc.context.live : pickRollback(await listDeploys(t.serviceId, key)).live;
+  if (!live?.commit?.id) throw new Error('no deploy commit to revert');
   const pr = await openRevertPr({
     repo: t.repo!,
     branch: t.branch ?? 'main',
@@ -71,13 +73,7 @@ async function runAction(t: Target, action: Action, inc: Incident): Promise<Outc
     ].filter((l) => l !== null).join('\n'),
     replay: inc.context.replay ?? [],
   }, env('GITHUB_TOKEN'));
-  // A PR fixes the code, not production: keep the incident open (rollback still available)
-  // until CI proves the PR and it's merged.
-  return {
-    detail: pr.url,
-    keepOpen: true,
-    update: { context: { ...inc.context, pr }, actions: inc.actions.filter((a) => a !== 'revert_pr') },
-  };
+  return { detail: pr.url, pr };
 }
 
 Deno.serve(async (req) => {
@@ -139,10 +135,11 @@ Deno.serve(async (req) => {
     return json(502, { error: 'remediation failed' });
   }
 
-  const after = outcome.keepOpen
-    ? { status: 'active', ...outcome.update }
-    : { status: 'resolved', resolved_at: new Date().toISOString(), ...outcome.update };
-  await db.from('incidents').update(after).eq('id', inc.id);
+  const next = afterFix(action, inc, { pr: outcome.pr });
+  await db.from('incidents').update(next.keepOpen ? { status: 'active', ...next.update } : next.update).eq(
+    'id',
+    inc.id,
+  );
   await audit('executed', `${outcome.detail}${usedFreeRun ? ' (free run)' : ''}`);
   return json(200, { ok: true, action, detail: outcome.detail });
 });

@@ -14,6 +14,7 @@ case "${1:-}" in
     curl -fsS -X POST -H "X-Chaos-Key: $CHAOS_KEY" "$RENDER_URL/chaos" ;;
   release)
     : "${DEMO_REPO:?set DEMO_REPO to your local clone of the demo service repo}"
+    git -C "$DEMO_REPO" pull -q --rebase   # a merged revert PR may have moved main
     sed -i 's/^const RELEASE_OK = true;/const RELEASE_OK = false;/' "$DEMO_REPO/server.js"
     git -C "$DEMO_REPO" commit -qam "Ship new homepage" && git -C "$DEMO_REPO" push -q
     echo "bad release pushed; Render deploys it in ~1 min" ;;

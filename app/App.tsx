@@ -39,6 +39,7 @@ export default function App() {
   const [pro, setPro] = useState(false);
   const [freeUsed, setFreeUsed] = useState(0);
   const [banner, setBanner] = useState<BannerState>(null);
+  const [cardHeight, setCardHeight] = useState(420);
   const channel = useRef<ReturnType<typeof supabase.channel>>(undefined);
   const purchasesReady = useRef(false);
   const now = useNow();
@@ -65,6 +66,12 @@ export default function App() {
         Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_RC_KEY!, appUserID: uid });
         Purchases.addCustomerInfoUpdateListener((info) => setPro(!!info.entitlements.active.pro));
         purchasesReady.current = true;
+      }
+      // The listener only fires on changes; read the current plan once at startup.
+      try {
+        setPro(!!(await Purchases.getCustomerInfo()).entitlements.active.pro);
+      } catch {
+        // offline or not configured: the server still enforces the plan on every fix
       }
       // Creating a channel doesn't prompt on Android 13+; the permission is asked in onboarding.
       await Notifications.setNotificationChannelAsync('incidents', {
@@ -138,7 +145,13 @@ export default function App() {
       cancelLabel: 'Cancel',
     });
     if (!auth.success) {
-      setBanner({ kind: 'warn', text: 'Cancelled. Nothing was changed.' });
+      const noLock = ['not_enrolled', 'not_available', 'passcode_not_set'].includes(auth.error);
+      setBanner({
+        kind: 'warn',
+        text: noLock
+          ? 'Set up a screen lock or fingerprint on this phone to approve fixes.'
+          : 'Cancelled. Nothing was changed.',
+      });
       return 'failed' as const;
     }
     const result = await run(inc, action);
@@ -220,7 +233,7 @@ export default function App() {
                     </Text>
                   </View>
 
-                  <View style={styles.stack}>
+                  <View style={[styles.stack, { height: down ? cardHeight + 24 : 300 }]}>
                     {down === 0 ? (
                       <View style={styles.empty}>
                         <ShieldCheck size={32} color={c.green} weight="bold" />
@@ -231,7 +244,16 @@ export default function App() {
                       </View>
                     ) : (
                       incidents
-                        .map((inc, i) => <SwipeCard key={inc.id} incident={inc} depth={i} now={now} onFix={onFix} />)
+                        .map((inc, i) => (
+                          <SwipeCard
+                            key={inc.id}
+                            incident={inc}
+                            depth={i}
+                            now={now}
+                            onFix={onFix}
+                            onMeasure={setCardHeight}
+                          />
+                        ))
                         .reverse()
                     )}
                   </View>
@@ -316,7 +338,7 @@ const styles = StyleSheet.create({
   hero: { gap: space.sm, marginTop: space.md, marginBottom: space.xl },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  stack: { height: 490, marginBottom: space.md },
+  stack: { marginBottom: space.md },
   empty: {
     flex: 1,
     borderWidth: 1,
