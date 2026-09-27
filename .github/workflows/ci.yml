@@ -47,4 +47,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
-      - run: node --test infra/demo-web/
+      - run: node --test "infra/demo-web/**/*.test.js"

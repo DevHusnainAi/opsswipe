@@ -10,7 +10,7 @@ git clone git@github.com:DevHusnainAi/opsswipe.git && cd opsswipe
 (cd app && npm ci && cp .env.example .env)
 deno task test && deno task eval && deno task lint
 (cd app && npm run typecheck && npm run lint && npm test)
-node --test infra/demo-web/
+node --test "infra/demo-web/**/*.test.js"
 ```
 
 ## 1. GCP demo VM (personal account with credits)
