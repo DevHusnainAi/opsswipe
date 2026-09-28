@@ -194,3 +194,54 @@ Deno.test('any model: suggestions stay inside the allowlist, patches still go th
   );
   assertEquals(checkPatch(await patcher(pin), pin).files.map((f) => f.path), ['server.js']);
 });
+
+Deno.test('an overloaded provider is retried, then the backup provider answers', async () => {
+  const { openaiLlm, withFallback } = await import('../_shared/llm.ts');
+  const real = globalThis.fetch;
+  const hosts: string[] = [];
+  globalThis.fetch = ((u: string) => {
+    const host = new URL(u).host;
+    hosts.push(host);
+    return Promise.resolve(
+      host === 'busy.example'
+        ? Response.json({ error: 'Service temporarily overloaded' }, { status: 503 })
+        : Response.json({ choices: [{ message: { content: '{"action":"revert_pr","reason":"r"}' } }] }),
+    );
+  }) as typeof fetch;
+  try {
+    const noWait = () => Promise.resolve();
+    const llm = withFallback(
+      openaiLlm('https://busy.example/v1', 'k', 'm', 100, noWait),
+      openaiLlm('https://api.groq.example/openai/v1', 'k', 'm', 100, noWait),
+    );
+    assertEquals(await llm('s', 'u', {}), { action: 'revert_pr', reason: 'r' });
+    assertEquals(
+      hosts,
+      ['busy.example', 'busy.example', 'busy.example', 'api.groq.example'],
+      '3 tries, then the backup',
+    );
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+Deno.test("the model may explain the rules' fix, never overrule it", async () => {
+  const { llmSuggester, suggest } = await import('../_shared/suggest.ts');
+  const vm500 = {
+    target: 'api',
+    provider: 'gcp' as const,
+    actions: ['reset' as const, 'revert_pr' as const, 'fix_pr' as const],
+    symptom: 'POST /checkout → 500 (reported by the app)',
+  };
+  const disagrees = llmSuggester(() => Promise.resolve({ action: 'reset', reason: 'Reboot the hung VM.' }));
+  const r = await suggest(vm500, disagrees);
+  assertEquals([r.action, r.source], ['revert_pr', 'rules'], 'a reboot would boot the same bad code');
+  const agrees = llmSuggester(() =>
+    Promise.resolve({ action: 'revert_pr', reason: 'Checkout broke in the last release; revert it.' })
+  );
+  assertEquals(await suggest(vm500, agrees), {
+    action: 'revert_pr',
+    reason: 'Checkout broke in the last release; revert it.',
+    source: 'ai',
+  });
+});

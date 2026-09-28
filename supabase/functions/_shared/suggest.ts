@@ -57,12 +57,15 @@ export function ruleSuggest(i: SuggestInput): Suggestion {
   };
 }
 
+// Rules decide which fix the card suggests; the model's words are used only when it independently
+// agrees. Measured: Nemotron picked a worse fix than the rules on 7-27% of labeled cases (a reboot for
+// a failing release, a rollback with nothing to roll back to), so it may explain, never overrule.
 export async function suggest(i: SuggestInput, ai?: Suggester): Promise<Suggestion> {
   const base = ruleSuggest(i);
   if (!ai) return base;
   try {
     const r = await ai(i);
-    return i.actions.includes(r.action) && r.reason.trim() ? { ...r, source: 'ai' } : base;
+    return r.action === base.action && r.reason.trim() ? { ...r, source: 'ai' } : base;
   } catch (e) {
     console.warn('ai suggestion failed, using rules:', String(e));
     return base;
@@ -73,7 +76,7 @@ const SYSTEM = `You are the triage step of OpsSwipe, a pager that lets an on-cal
 Given a failing health check and deploy context, choose exactly one action from the allowed list and give a reason.
 - rollback: restores the previous release now. Prefer it when a deploy landed shortly before the failure.
 - restart: restarts the running process. Prefer it when nothing was deployed recently.
-- reset: reboots a VM (a power-cycle; disk data stays, memory is lost). Fixes a stopped or hung app, but boots the same code, so it can't fix a bad release. Call it a reboot in the reason, never a reset.
+- reset: reboots a VM (a power-cycle; disk data stays, memory is lost). Only for a VM that stopped answering (a timeout or a connection error). If the app answers with a 5xx status, it is running and its code is failing: a reboot boots the same code and cannot fix it, so choose revert_pr (or fix_pr) when offered. Call it a reboot in the reason, never a reset.
 - revert_pr: opens a pull request reverting the bad commit. It fixes the code but only helps after it is merged and deployed, so prefer rollback for restoring service.
 - fix_pr: Claude writes the smallest code fix for the bad commit as a pull request. Prefer it over revert_pr when the commit also shipped work worth keeping; like revert_pr, it only helps after merge.
 The reason is one plain sentence under 20 words, naming the evidence (the commit, the timing, the status code). No speculation beyond the input.`;

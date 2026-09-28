@@ -152,3 +152,11 @@ Claude on Vertex needs Model Garden access that isn't available on every account
 The safety doesn't depend on the model: suggestions are checked against the allowlist, patches go through `checkPatch`,
 and nothing merges without the CI proof. `deno task eval nvidia` scores a model on the same labeled cases before it's
 switched on. Source: [NVIDIA API reference](https://docs.api.nvidia.com/nim/reference/llm-apis).
+
+## 24. Rules decide, the model explains (and writes code CI must prove)
+Measured on the labeled eval, NVIDIA Nemotron 3 Super picked a worse fix than the rules on 7–27% of cases across runs
+(a reboot for a VM whose code is failing, a rollback with no earlier deploy). A pager that swaps a right answer for a
+wrong one at 3am is worse than no AI. So the suggested fix is always the rules'; the model's reason is used only when it
+independently picks the same fix. The model's real job is Fix with AI, where every patch is limited by `checkPatch` and
+merges only after CI replays the failing requests. NVIDIA calls retry on 429/5xx and can fall back to a second
+OpenAI-compatible provider (e.g. Groq) via `AI_FALLBACK_BASE_URL`, `AI_FALLBACK_API_KEY`, `AI_FALLBACK_MODEL`.

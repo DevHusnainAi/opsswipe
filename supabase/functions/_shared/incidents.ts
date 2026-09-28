@@ -8,7 +8,7 @@ import { mergeSamples, type ReplaySample } from './replay.ts';
 import { connection, notify, platformSa, readSecret, renderKey, type Service, toTarget } from './services.ts';
 import { confirmsReport, selfHealed } from './flow.ts';
 import { money, type Revenue, revenuePerHour } from './revenue.ts';
-import { nvidiaLlm } from './llm.ts';
+import { nvidiaLlm, openaiLlm, withFallback } from './llm.ts';
 import { llmPatcher, type Patcher, vertexPatcher } from './patch.ts';
 import { llmSuggester, suggest, toSuggestInput, vertexSuggester } from './suggest.ts';
 import { actionsFor, CODE_FIXES } from './targets.ts';
@@ -26,8 +26,15 @@ export const aiEnabled = () =>
   (env('AI_SUGGESTIONS') === 'nvidia' && !!env('NVIDIA_API_KEY'));
 
 const NVIDIA_DEFAULT = 'nvidia/nemotron-3-super-120b-a12b';
+// Optional backup provider for when NVIDIA is overloaded: any OpenAI-compatible API, e.g. Groq
+// (AI_FALLBACK_BASE_URL=https://api.groq.com/openai/v1, AI_FALLBACK_API_KEY, AI_FALLBACK_MODEL).
 const nvidia = (maxTokens?: number) =>
-  nvidiaLlm(env('NVIDIA_API_KEY'), env('NVIDIA_MODEL') || NVIDIA_DEFAULT, maxTokens);
+  withFallback(
+    nvidiaLlm(env('NVIDIA_API_KEY'), env('NVIDIA_MODEL') || NVIDIA_DEFAULT, maxTokens),
+    env('AI_FALLBACK_BASE_URL') && env('AI_FALLBACK_API_KEY') && env('AI_FALLBACK_MODEL')
+      ? openaiLlm(env('AI_FALLBACK_BASE_URL'), env('AI_FALLBACK_API_KEY'), env('AI_FALLBACK_MODEL'), maxTokens)
+      : undefined,
+  );
 
 function aiSuggester() {
   if (!aiEnabled()) return undefined;

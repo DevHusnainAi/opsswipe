@@ -154,9 +154,16 @@ Deno.test('ruleSuggest: recent deploy -> rollback, otherwise restart or reset', 
   assertEquals(ruleSuggest({ ...render(), provider: 'gcp', actions: ['reset'] }).action, 'reset');
 });
 
-Deno.test('suggest: AI result is used only when valid, otherwise rules win', async () => {
+Deno.test('suggest: AI words are used only when valid and in agreement, otherwise rules win', async () => {
   const input = render();
-  assertEquals((await suggest(input, () => Promise.resolve({ action: 'rollback', reason: 'r' }))).source, 'ai');
+  const rules = ruleSuggest(input).action;
+  const other = input.actions.find((a) => a !== rules)!;
+  assertEquals((await suggest(input, () => Promise.resolve({ action: rules, reason: 'r' }))).source, 'ai');
+  assertEquals(
+    (await suggest(input, () => Promise.resolve({ action: other, reason: 'r' }))).source,
+    'rules',
+    'an allowed but different fix does not overrule the rules',
+  );
   assertEquals((await suggest(input, () => Promise.reject(new Error('refusal')))).source, 'rules');
   const outside = await suggest(
     { ...input, actions: ['restart'] },

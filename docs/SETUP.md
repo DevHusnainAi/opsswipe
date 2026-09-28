@@ -189,6 +189,8 @@ Two providers, pick one:
   `npx supabase secrets set AI_SUGGESTIONS=nvidia NVIDIA_API_KEY=nvapi-... NVIDIA_MODEL=<model id>`
   (default model `nvidia/nemotron-3-super-120b-a12b`). Score it first:
   `NVIDIA_API_KEY=nvapi-... deno task eval nvidia` (allowed must be 100%).
+  Optional backup when NVIDIA is overloaded, any OpenAI-compatible API, e.g. Groq:
+  `npx supabase secrets set AI_FALLBACK_BASE_URL=https://api.groq.com/openai/v1 AI_FALLBACK_API_KEY=gsk_... AI_FALLBACK_MODEL=<model>`
 - **Claude on Vertex AI**: in the platform GCP project, **Vertex AI → Model Garden → Claude Opus 5 → Enable**, then
   `npx supabase secrets set AI_SUGGESTIONS=vertex`.
 

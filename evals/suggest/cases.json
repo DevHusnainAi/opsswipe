@@ -251,5 +251,19 @@
       ],
       "symptom": "GET 34.135.145.87 \u2192 TypeError (9ms)"
     }
+  },
+  {
+    "id": "gcp-500-no-release",
+    "expected": "revert_pr",
+    "input": {
+      "target": "api",
+      "provider": "gcp",
+      "actions": [
+        "reset",
+        "revert_pr",
+        "fix_pr"
+      ],
+      "symptom": "POST /checkout \u2192 500 (reported by the app)"
+    }
   }
 ]

@@ -68,7 +68,7 @@ sequenceDiagram
 | **Repo linking** | Any service (Render or a GCP VM) can be linked to the repo it deploys from; the app can report its running commit (`release`) so OpsSwipe knows exactly what broke |
 | **Revenue at risk** | Connect your RevenueCat (a read-only v2 key): incidents show *~$X/h at risk* and recoveries *about $Y lost*, estimated from your last 28 days of revenue |
 | **Approval layer for AI agents** | An AI SRE or script proposes a fix with a token from Settings; it appears as a card with the agent's name, runs only after your swipe and fingerprint, and the agent can poll the result |
-| **Suggested fix with a reason** | Rules answer instantly (recent deploy: roll back); an AI model (NVIDIA Nemotron, or Claude on Vertex AI) refines it, and can only pick allowed fixes |
+| **Suggested fix with a reason** | Deterministic rules pick the fix instantly (recent deploy: roll back; a VM answering 500: revert). An AI model (NVIDIA Nemotron, or Claude on Vertex AI) may rephrase the reason only when it independently agrees: measured on our eval, it picked a worse fix 7–27% of the time, so it explains and never overrules |
 | **Proof before merge** | Failing requests ride into the PR as `.opsswipe/replays/*.json`; CI replays them and runs your tests; merge unlocks only on a full pass, pinned to that commit |
 | **Proof after deploy** | The first healthy check after a fix records it: "down 3m 12s, back 41s after fix" |
 | **A failed proof isn't a dead end** | If CI says 2/3, the card offers Fix with AI again with those failures (and a revert, unless the revert is what failed) |
