@@ -171,7 +171,7 @@ Deno.test('suggest: AI words are used only when valid and in agreement, otherwis
   );
   assertEquals(
     outside,
-    { ...ruleSuggest({ ...input, actions: ['restart'] }), second: { action: 'rollback', agreed: false } },
+    { ...ruleSuggest({ ...input, actions: ['restart'] }), second: { action: 'rollback', reason: 'r', agreed: false } },
     'AI cannot pick a fix outside the allowlist; what it said is kept for the record',
   );
   assertEquals((await suggest(input, () => Promise.resolve({ action: 'restart', reason: '  ' }))).source, 'rules');

@@ -243,9 +243,13 @@ Deno.test("the model may explain the rules' fix, never overrule it", async () =>
     action: 'revert_pr',
     reason: 'Checkout broke in the last release; revert it.',
     source: 'ai',
-    second: { action: 'revert_pr', agreed: true },
+    second: { action: 'revert_pr', reason: 'Checkout broke in the last release; revert it.', agreed: true },
   });
-  assertEquals(r.second, { action: 'reset', agreed: false }, 'the disagreement is on record');
+  assertEquals(
+    r.second,
+    { action: 'reset', reason: 'Reboot the hung VM.', agreed: false },
+    'the disagreement is on record',
+  );
   const down = await suggest(vm500, () => Promise.reject(new Error('api.groq.com 429: rate limit')));
   assertEquals(down.second, { error: 'Error: api.groq.com 429: rate limit' }, 'so is a failed call');
 });

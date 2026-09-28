@@ -24,6 +24,9 @@ export type Incident = {
   context: {
     agent?: { name: string };
     self_healed?: boolean;
+    // the model's second opinion: agreed or not (with its reason), or why it was unavailable
+    ai?: { action: string; reason: string; agreed: boolean } | { error: string };
+    live?: { commit?: { id: string; message?: string } } | null; // the release running when it broke
     revenue?: { perHour: number; currency: string }; // estimate from the owner's RevenueCat, last 28 days
     replay?: { method: string; path: string; status: number }[];
     pr?: { number: number; url: string; headSha: string };

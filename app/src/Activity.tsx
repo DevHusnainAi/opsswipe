@@ -22,7 +22,9 @@ const dayLabel = (iso: string, now: number) => {
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 };
 
-export function Activity({ audit, fixed, now }: { audit: AuditEntry[]; fixed: Incident[]; now: number }) {
+export function Activity(
+  { audit, fixed, now, onOpen }: { audit: AuditEntry[]; fixed: Incident[]; now: number; onOpen?: (i: Incident) => void },
+) {
   const days: [string, AuditEntry[]][] = [];
   for (const a of audit) {
     const label = dayLabel(a.created_at, now);
@@ -50,12 +52,18 @@ export function Activity({ audit, fixed, now }: { audit: AuditEntry[]; fixed: In
             {fixed.map((f) => (
               <View key={f.id} style={styles.row}>
                 <View style={[styles.dot, { backgroundColor: f.recovered_at ? c.green : c.amber }]} />
-                <View style={{ flex: 1, gap: 2 }}>
+                <Pressable
+                  onPress={() => onOpen?.(f)}
+                  disabled={!onOpen}
+                  accessibilityRole="button"
+                  accessibilityHint="Opens the incident: cause, AI opinion and timeline"
+                  style={{ flex: 1, gap: 2 }}
+                >
                   <Text style={type.mono}>{f.target_server}</Text>
                   <Text style={type.caption}>
                     {dismissed(f.id) ? 'Dismissed as a false alarm' : [fixUsed(f.id), recoveryLine(f)].filter(Boolean).join(' · ')}
                   </Text>
-                </View>
+                </Pressable>
                 {/* Telling users what happened, in one tap: post it to a status page, X or Discord. */}
                 {f.recovered_at && !dismissed(f.id) && (
                   <Pressable

@@ -36,9 +36,10 @@ type Props = {
   onFix: (incident: Incident, action: string) => Promise<'done' | 'stay' | 'failed'>;
   onMeasure?: (height: number) => void; // top card reports its height so the stack fits it
   onDecline?: (incident: Incident) => void; // close without a fix: decline an agent's proposal, dismiss a false alarm
+  onOpen?: (incident: Incident) => void; // the full incident: cause, AI opinion, timeline
 };
 
-export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline }: Props) {
+export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline, onOpen }: Props) {
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const limit = width * THRESHOLD;
@@ -139,10 +140,17 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline }:
           <Text style={[type.monoCaption, styles.time]}>{timeAgo(incident.created_at, now)}</Text>
         </View>
 
-        <View style={{ gap: space.xs }}>
+        <Pressable
+          onPress={() => onOpen?.(incident)}
+          disabled={!onOpen}
+          accessibilityRole="button"
+          accessibilityHint="Opens the details: cause, AI opinion and timeline"
+          style={{ gap: space.xs }}
+        >
           <Text style={type.title}>{incident.title}</Text>
           <Text style={type.monoStrong}>{incident.target_server}</Text>
-        </View>
+          {onOpen && <Text style={[type.label, { color: c.green }]}>Details: cause, AI opinion, timeline</Text>}
+        </Pressable>
 
         <View style={styles.evidence}>
           <Text style={type.mono}>{incident.metric}</Text>

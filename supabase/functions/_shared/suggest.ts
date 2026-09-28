@@ -20,7 +20,7 @@ export type Suggestion = {
   action: Action;
   reason: string;
   source: 'rules' | 'ai';
-  second?: { action: string; agreed: boolean } | { error: string };
+  second?: { action: string; reason: string; agreed: boolean } | { error: string };
 };
 export type Suggester = (i: SuggestInput) => Promise<{ action: Action; reason: string }>;
 
@@ -72,7 +72,7 @@ export async function suggest(i: SuggestInput, ai?: Suggester): Promise<Suggesti
   try {
     const r = await ai(i);
     const agreed = r.action === base.action && !!r.reason.trim();
-    const second = { action: String(r.action), agreed };
+    const second = { action: String(r.action), reason: String(r.reason ?? '').trim().slice(0, 300), agreed };
     return agreed ? { ...r, source: 'ai', second } : { ...base, second };
   } catch (e) {
     console.warn('ai suggestion failed, using rules:', String(e));

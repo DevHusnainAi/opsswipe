@@ -22,6 +22,7 @@ import {
   supabase,
 } from './src/api';
 import { Activity } from './src/Activity';
+import { IncidentDetail } from './src/IncidentDetail';
 import { Auth, type AuthMode, NewPassword } from './src/Auth';
 import { inExpoGo, Notifications } from './src/env';
 import { fixFor } from './src/fixes';
@@ -92,6 +93,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('incidents');
   const [sample, setSample] = useState<Incident | null>(null);
   const [recovered, setRecovered] = useState<Incident | null>(null);
+  const [detail, setDetail] = useState<Incident | null>(null); // the incident opened in full
   const seenRecovered = useRef<Set<string>>(null); // null until the first load, so old recoveries don't pop up
   const channel = useRef<ReturnType<typeof supabase.channel>>(undefined);
   const purchasesReady = useRef(false);
@@ -546,6 +548,7 @@ export default function App() {
                             depth={i}
                             now={now}
                             onFix={onFix}
+                            onOpen={inc.id === SAMPLE_ID ? undefined : setDetail}
                             onDecline={decline}
                             onMeasure={setCardHeight}
                           />
@@ -563,7 +566,7 @@ export default function App() {
                   <Services active={tab === 'services'} />
                 </View>
                 <View style={[styles.screen, tab !== 'activity' && styles.hidden]}>
-                  <Activity audit={audit} fixed={fixed} now={now} />
+                  <Activity audit={audit} fixed={fixed} now={now} onOpen={setDetail} />
                 </View>
                 <View style={[styles.screen, tab !== 'settings' && styles.hidden]}>
                   <Settings
@@ -592,6 +595,7 @@ export default function App() {
               )}
             </>
           )}
+          {detail && <IncidentDetail incident={detail} audit={audit} onClose={() => setDetail(null)} />}
         </SafeAreaView>
       </SafeAreaProvider>
     </GestureHandlerRootView>
