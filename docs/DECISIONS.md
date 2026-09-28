@@ -129,3 +129,19 @@ the app. Alerts also post to one Discord or Slack incoming webhook, allowlisted 
 else. Railway joins Render as a host with restart and rollback over its GraphQL API. Sources:
 [Sentry webhooks](https://docs.sentry.io/organization/integrations/integration-platform/webhooks/),
 [Railway API](https://docs.railway.com/integrations/api/manage-deployments).
+
+## 21. Revenue at risk, from the user's own RevenueCat
+Indie developers feel an outage as lost revenue, and they already keep that revenue in RevenueCat. With a read-only v2
+key (Charts & Metrics), OpsSwipe reads the last 28 days of revenue and spreads it per hour: a plain estimate, labelled as
+one on every screen, used on the card ("~$4.20/h at risk"), on the recovery ("about $0.08 lost") and next to the price
+on the paywall. 28 days smooths weekly swings without going stale; per-endpoint attribution would need the app's
+analytics, which OpsSwipe deliberately doesn't collect. The key lives in Vault and is tested before it's stored; the
+revenue figure is never put in the shareable incident report. Source:
+[RevenueCat Charts & Metrics API](https://www.revenuecat.com/docs/api-v2/charts-and-metrics).
+
+## 22. Confirmed reports, pinned proofs
+A single reported 500 no longer pages: it's held, and a second within a minute opens the incident with both samples
+(Sentry alerts are already thresholded by their rule). Reported incidents close themselves after 10 quiet minutes on a
+healthy service. Code fixes are offered only when there's a request to replay. Proofs are accepted only from the
+`opsswipe-proof.yml` workflow of the same repo (the OIDC `job_workflow_ref` claim), and RevenueCat webhooks only when
+newer than the stored plan. Source: [GitHub OIDC claims](https://docs.github.com/en/actions/reference/security/oidc).

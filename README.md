@@ -1,11 +1,19 @@
 # OpsSwipe
 
-**Your app's backend breaks while you're at dinner. Fix it from your phone, and OpsSwipe proves it worked.**
+**AI writes your code now. OpsSwipe makes sure its fixes are proven before they touch production, and shows what every
+minute of downtime costs, from your lock screen.**
 
-OpsSwipe is a pager for indie developers and small teams. When production fails, you get an incident card with one suggested
-fix. Swipe, confirm with your fingerprint, and it runs. It is the first phone pager that won't let a code fix merge (yours,
-a revert, or one Claude wrote) until CI passes **the exact requests that failed in production**, and then it confirms
-production actually recovered.
+OpsSwipe is a pager for indie developers and small teams, built on three ideas:
+
+1. **Who checks the fix AI writes at 3am?** When production breaks, OpsSwipe suggests one fix. Code fixes (yours, a
+   revert, or one Claude wrote) can't merge until CI passes **the exact requests that failed in production**, and
+   nothing runs without your swipe and fingerprint. OpsSwipe then confirms production actually recovered.
+2. **Every AI agent that touches production asks your phone first.** Agents propose fixes through the Approval API;
+   you approve or decline with biometrics, and every answer is logged.
+3. **You see what the outage costs.** Connect your RevenueCat and every incident shows *~$4.20/h at risk*; the recovery
+   shows *about $0.08 lost*.
+
+As far as we could find, it's the first phone pager that proves a fix against real failing traffic before it can merge.
 
 Built for the RevenueCat Shipaton 2026 (Next Gen Award), with Claude Code.
 
@@ -16,10 +24,11 @@ Built for the RevenueCat Shipaton 2026 (Next Gen Award), with Claude Code.
 >   after a swipe and a fingerprint, and proves code fixes against the real failing traffic before they can merge.
 > - **Working core:** real fixes on a real cloud: a Google Cloud VM reboot, a revert or AI fix PR replayed in GitHub
 >   Actions, and a merge pinned to the proven commit. [The loop](#the-verified-fix-loop).
-> - **RevenueCat, thoughtfully:** your first *outage* is free, start to finish; the paywall appears at the moment of need
->   and names the service that's down; Pro is checked on the server, with a webhook-kept copy so a billing outage never
->   blocks a fix. [Monetization](#monetization-revenuecat).
-> - **Technical care:** least-privilege cloud access, OIDC-signed proofs, row-level security, 59 backend tests, a
+> - **RevenueCat, thoughtfully:** RevenueCat is part of the product, not just the paywall: your own RevenueCat revenue
+>   turns every incident into *$ per hour at risk*. Your first *outage* is free, start to finish; the paywall appears at
+>   the moment of need with the outage's cost next to $4.99/month; Pro is checked on the server, with a webhook-kept
+>   copy so a billing outage never blocks a fix. [Monetization](#monetization-revenuecat).
+> - **Technical care:** least-privilege cloud access, OIDC-signed proofs, row-level security, 64 backend tests, a
 >   100%-safety eval, SQL tests on Postgres 17, CI on every push. [Security model](#security-model), [Quality](#quality).
 
 ## Why
@@ -57,7 +66,8 @@ sequenceDiagram
 | **Fixes across clouds** | Restart or roll back a Render or Railway service; reboot a Google Cloud VM; open a revert PR; merge a proven PR |
 | **Fix with AI** | Claude writes the smallest code fix, touching only the files the bad commit changed; it ships as a PR that must pass the same replay proof before Merge unlocks |
 | **Repo linking** | Any service (Render or a GCP VM) can be linked to the repo it deploys from; the app can report its running commit (`release`) so OpsSwipe knows exactly what broke |
-| **Approval API for AI agents** | An AI SRE or script proposes a fix with a token from Settings; it appears as a card with the agent's name, runs only after your swipe and fingerprint, and the agent can poll the result |
+| **Revenue at risk** | Connect your RevenueCat (a read-only v2 key): incidents show *~$X/h at risk* and recoveries *about $Y lost*, estimated from your last 28 days of revenue |
+| **Approval layer for AI agents** | An AI SRE or script proposes a fix with a token from Settings; it appears as a card with the agent's name, runs only after your swipe and fingerprint, and the agent can poll the result |
 | **Suggested fix with a reason** | Rules answer instantly (recent deploy: roll back); Claude Opus 5 on Vertex AI refines it, and can only pick allowed fixes |
 | **Proof before merge** | Failing requests ride into the PR as `.opsswipe/replays/*.json`; CI replays them and runs your tests; merge unlocks only on a full pass, pinned to that commit |
 | **Proof after deploy** | The first healthy check after a fix records it: "down 3m 12s, back 41s after fix" |
@@ -135,7 +145,9 @@ app.use((req, res, next) => {
 | Spoofed GitHub installation | Each installation is verified with the installing user's own OAuth token before it's stored |
 | Forged failure reports | Each service signs reports with its own secret (HMAC-SHA256, constant-time check); Sentry webhooks are verified with the integration's Client Secret; RevenueCat webhooks with a shared Authorization value |
 | Alert channel as a way into your network | Only `https://discord.com/api/webhooks/…` and `https://hooks.slack.com/services/…` are accepted, and a test message must succeed before the URL is kept |
-| Account deletion | Settings → Delete account revokes Google, deletes every secret, service, incident and log row |
+| Account deletion | Settings → Delete account revokes Google, deletes every secret, service, incident and log row (the audit log goes with the account) |
+| Replaying untrusted traffic | Replays run your users' failing requests in CI, never in production; the job has read-only repo access, and only the OpsSwipe proof workflow's OIDC token is accepted, for the exact commit OpsSwipe opened |
+| One stray error at 3am | A single reported 500 is held; a second within a minute pages you. Health checks retry once before paging |
 | Forged CI proofs | Proofs carry a GitHub Actions OIDC token, verified against GitHub's keys; no secrets live in your repo |
 | Merging something other than what was proven | Proof is bound to the PR's head commit, and the merge is pinned to that `sha` (GitHub returns 409 otherwise) |
 | Replay causing side effects | Requests are replayed only against the PR build in CI, never production; samples carry no headers or cookies |
@@ -146,7 +158,7 @@ More in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Quality
 
-- **Tests:** 59 Deno tests (providers incl. Railway, Connect keys and OIDC, Google grant, push, alert-webhook allowlist,
+- **Tests:** 64 Deno tests (providers incl. Railway, revenue at risk, proof-workflow pinning, report confirmation, Connect keys and OIDC, Google grant, push, alert-webhook allowlist,
   Sentry and RevenueCat webhooks, confirm-before-paging, rollback, revert and merge PRs, signing, sample scrubbing, proof
   binding, the incident flow incl. failed proofs, suggestions), SQL tests for the free-outage meter and tenant isolation
   (row-level security, Vault access) on Postgres 17, 2 tests for the demo service's reporting, and app tests for the
@@ -176,6 +188,7 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh release   # a bad release: re
 - Reports from Datadog and Alertmanager
 - More fixes: scale up, restart a Kubernetes deployment, roll back on Fly, Vercel and Coolify
 - Escalation: call or SMS when a push goes unanswered; a hosted status page
+- iOS build (the app is cross-platform; this entry ships Android)
 - Team plan, two-person approval for risky fixes
 - Google OAuth verification, so Connect Google Cloud has no warning screen or 100-user cap
 

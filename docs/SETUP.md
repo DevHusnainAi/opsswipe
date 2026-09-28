@@ -90,7 +90,8 @@ npx supabase functions deploy execute connect healthcheck report proof oauth-cal
 ```
 
 RevenueCat → Project → Integrations → Webhooks: URL `https://<ref>.supabase.co/functions/v1/revenuecat-webhook`,
-Authorization header = the exact `RC_WEBHOOK_AUTH` value. It keeps a copy of each plan so a RevenueCat API outage never
+Authorization header = the exact `RC_WEBHOOK_AUTH` value. For **Revenue at risk** (in the app, Services → Revenue at risk), create a v2 secret
+key with **Charts & Metrics** read access (Project settings → API keys) and note the project id. It keeps a copy of each plan so a RevenueCat API outage never
 blocks a paying user's fix. Optional, for the Monetization story: a 7-day trial on the annual product, a second offering
 whose paywall copy talks about outages, and an Experiment between the two.
 
@@ -211,6 +212,9 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh heal     # between rehearsals
 - [ ] The whole first outage is free (revert and merge both run); a fix on a second outage: card snaps back, paywall
       names the service, Test Store purchase, fix runs
 - [ ] A one-off blip (stop and start the demo app within 10 s) pages nobody; a stop that lasts pages once
+- [ ] One reported 500 (a single request to a broken path) pages nobody; two within a minute open a card
+- [ ] With RevenueCat connected, the card shows "~$X/h at risk" and the recovery "about $Y lost"; the practice card
+      shows a sample figure
 - [ ] Start the app again yourself: the card closes and "recovered on its own" arrives
 - [ ] **Dismiss, it's a false alarm** closes a card; Activity shows Dismissed and no "back up" push follows
 - [ ] A PR whose proof fails (push a broken commit to it): the card offers Fix with AI again
