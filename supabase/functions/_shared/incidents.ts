@@ -6,9 +6,9 @@ import { accessToken } from './gcp.ts';
 import { type Deploy, listDeploys, pickRollback } from './render.ts';
 import { mergeSamples, type ReplaySample } from './replay.ts';
 import { notify, platformSa, renderKey, type Service, toTarget } from './services.ts';
-import { selfHealed } from './flow.ts';
+import { confirmsReport, selfHealed } from './flow.ts';
 import { suggest, toSuggestInput, vertexSuggester } from './suggest.ts';
-import { actionsFor } from './targets.ts';
+import { actionsFor, CODE_FIXES } from './targets.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
@@ -66,7 +66,10 @@ export async function openIncident(
   }
   // merge_pr is never offered up front: /proof adds it once CI has proven a PR. The AI fix needs
   // Claude, so it's offered only when this server has it switched on.
-  const actions = actionsFor(t).filter((a) => a !== 'merge_pr' && (a !== 'fix_pr' || aiEnabled()));
+  // Code fixes need something to replay: without samples, a PR could never be proven.
+  const actions = actionsFor(t).filter((a) =>
+    a !== 'merge_pr' && (a !== 'fix_pr' || aiEnabled()) && (samples.length > 0 || !CODE_FIXES.includes(a))
+  );
   const input = toSuggestInput(s.name, t.provider, actions, metric, deploys);
   const rules = await suggest(input);
 
@@ -109,28 +112,46 @@ export async function openIncident(
 
 // Recovery proof: the first healthy check after a fix stamps recovered_at.
 export const HEALTH_TITLE = 'HTTP health check failing';
+export const REPORT_TITLE = 'Requests are failing';
+
+type Pending = { sample: ReplaySample | null; release?: string };
 
 // A failure the service's own app (or its Sentry) reported: joins the open incident as one more
-// replay sample, or opens a new one.
-export async function reportFailure(s: Service, sample: ReplaySample | null, metric: string, release?: string) {
+// replay sample. Otherwise a first report is only held; a second within a minute opens the incident
+// with both (no 3am page for one stray 500). `confirmed`: the source already applied a threshold
+// (a Sentry alert rule).
+export async function reportFailure(
+  s: Service & { pending_report?: Pending | null; pending_at?: string | null },
+  sample: ReplaySample | null,
+  metric: string,
+  release?: string,
+  confirmed = false,
+) {
   const open = await openIncidentFor(s.id);
   if (open) {
     if (sample) await addSamples(open.id, open.context ?? {}, [sample]);
     return { added: true };
   }
-  return await openIncident(s, 'Requests are failing', metric, sample ? [sample] : [], release);
+  const held = confirmsReport(s.pending_at) ? s.pending_report : null;
+  if (!confirmed && !held) {
+    await db.from('services').update({ pending_report: { sample, release }, pending_at: new Date().toISOString() })
+      .eq('id', s.id);
+    return { held: true };
+  }
+  await db.from('services').update({ pending_report: null, pending_at: null }).eq('id', s.id);
+  const samples = mergeSamples(held?.sample ? [held.sample] : [], sample ? [sample] : []);
+  return await openIncident(s, REPORT_TITLE, metric, samples, release ?? held?.release);
 }
 
-// A health-check incident whose service came back with no fix run (a blip, a deploy that settled):
-// close the card instead of leaving a fix on offer for a healthy service. Incidents the app reported
-// stay open: its health URL can be fine while /checkout still fails.
+// An incident whose service came back with no fix run (a blip, a deploy that settled): close the
+// card instead of leaving a fix on offer for a healthy service (reported ones after 10 quiet minutes).
 export async function closeSelfHealed(serviceId: string) {
-  const { data } = await db.from('incidents').select('id, owner, target_server, created_at, context')
-    .eq('service_id', serviceId).eq('status', 'active').eq('title', HEALTH_TITLE);
+  const { data } = await db.from('incidents').select('id, owner, target_server, created_at, context, title')
+    .eq('service_id', serviceId).eq('status', 'active').in('title', [HEALTH_TITLE, REPORT_TITLE]);
   for (const i of data ?? []) {
     const { count } = await db.from('audit_log').select('id', { count: 'exact', head: true })
       .eq('incident_id', i.id).eq('outcome', 'executed');
-    if (!selfHealed(i.context ?? {}, count ?? 0)) continue;
+    if (!selfHealed(i.context ?? {}, count ?? 0, i.title === REPORT_TITLE)) continue;
     const now = new Date().toISOString();
     const { data: closed } = await db.from('incidents').update({
       status: 'resolved',

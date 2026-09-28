@@ -4,7 +4,8 @@
 import { db, json } from '../_shared/db.ts';
 import { afterProof } from '../_shared/flow.ts';
 import { aiEnabled } from '../_shared/incidents.ts';
-import { prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
+import { fromWorkflow, prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
+import { PROOF_WORKFLOW_PATH } from '../_shared/proofKit.ts';
 import { notify } from '../_shared/services.ts';
 import { canMerge, evaluateProof, parseProof, type Proof, type PrRef } from '../_shared/proof.ts';
 
@@ -14,6 +15,7 @@ Deno.serve(async (req) => {
   try {
     const claims = await verifyGithubOidc(req.headers.get('Authorization')?.replace(/^Bearer /i, '') ?? '');
     if (claims.event_name !== 'pull_request') throw new Error('not a pull_request run');
+    if (!fromWorkflow(claims, PROOF_WORKFLOW_PATH)) throw new Error(`not the ${PROOF_WORKFLOW_PATH} workflow`);
     repo = claims.repository;
     prNumber = prNumberFromRef(claims.ref);
   } catch (e) {
@@ -34,7 +36,13 @@ Deno.serve(async (req) => {
     .eq('context->pr->>repo', repo)
     .eq('context->pr->>number', String(prNumber))
     .maybeSingle<
-      { id: string; owner: string; target_server: string; actions: string[]; context: { pr?: PrRef; proof?: Proof } }
+      {
+        id: string;
+        owner: string;
+        target_server: string;
+        actions: string[];
+        context: { pr?: PrRef; proof?: Proof; replay?: unknown[] };
+      }
     >();
   if (!inc) return json(404, { error: 'no open incident for this PR' });
 
@@ -45,7 +53,10 @@ Deno.serve(async (req) => {
       : json(404, { error: 'PR does not match' });
   }
 
-  const next = afterProof(inc, result.proof, canMerge(inc.context.pr, result.proof), { ai: aiEnabled(), repo: true });
+  const next = afterProof(inc, result.proof, canMerge(inc.context.pr, result.proof), {
+    ai: aiEnabled(),
+    repo: (inc.context.replay?.length ?? 0) > 0,
+  });
   await db.from('incidents').update({
     ...next,
     ...(next.action ? { suggested_by: 'rules' } : {}),

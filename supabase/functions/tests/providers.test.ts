@@ -140,8 +140,14 @@ Deno.test('isActive: lifetime, future and expired entitlements', () => {
 Deno.test('RevenueCat webhook events become a plan row; anonymous ids and other entitlements are ignored', () => {
   const uid = '11111111-2222-4333-8444-555555555555';
   assertEquals(
-    planFromEvent({ type: 'RENEWAL', app_user_id: uid, entitlement_ids: ['pro'], expiration_at_ms: 1790000000000 }),
-    { owner: uid, pro_until: new Date(1790000000000).toISOString() },
+    planFromEvent({
+      type: 'RENEWAL',
+      app_user_id: uid,
+      entitlement_ids: ['pro'],
+      expiration_at_ms: 1790000000000,
+      event_timestamp_ms: 1780000000000,
+    }),
+    { owner: uid, pro_until: new Date(1790000000000).toISOString(), event_at: new Date(1780000000000).toISOString() },
   );
   assertEquals(
     planFromEvent({ app_user_id: uid, entitlement_ids: ['pro'], expiration_at_ms: null })?.pro_until,

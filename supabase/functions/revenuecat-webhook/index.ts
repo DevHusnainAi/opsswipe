@@ -14,7 +14,12 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => null);
   const plan = planFromEvent(body?.event ?? {});
   if (!plan) return json(200, { ignored: true }); // TEST events, other entitlements, anonymous ids
-  const { error } = await db.from('entitlements').upsert({ ...plan, updated_at: new Date().toISOString() });
+  // Stored only if newer than what's there: deliveries can arrive out of order.
+  const { error } = await db.rpc('store_entitlement', {
+    p_owner: plan.owner,
+    p_until: plan.pro_until,
+    p_at: plan.event_at,
+  });
   // A user deleted meanwhile violates the foreign key: nothing to keep, and no reason to retry.
   if (error && error.code !== '23503') return json(500, { error: 'could not store the plan' }); // RevenueCat retries
   return json(200, { stored: !error });

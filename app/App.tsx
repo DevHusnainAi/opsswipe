@@ -298,6 +298,14 @@ export default function App() {
             text: `${action === 'fix_pr' ? 'Claude opened a fix PR' : 'Revert PR opened'}. CI is proving it against the failing requests.`,
             link: { label: 'Open PR', url: res.detail },
           }
+          : action === 'merge_pr'
+          // A merge changes production only where the host deploys main; say so, and what to do on a VM.
+          ? {
+            kind: 'ok',
+            text: `Merged. Your host deploys it; OpsSwipe tells you when ${inc.target_server} is back up.${
+              inc.provider === 'gcp' ? ' No auto-deploy on this VM? Deploy main yourself; the next healthy check confirms it.' : ''
+            }`,
+          }
           : { kind: 'ok', text: `${fix.verb} sent. Waiting for ${inc.target_server} to come back.` },
       );
     }

@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
 import { b64url, pkcs1ToPkcs8, signRs256 } from '../_shared/jwt.ts';
-import { AUDIENCE, ISSUER, prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
+import { AUDIENCE, fromWorkflow, ISSUER, prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
 import { PROOF_SCRIPT, proofWorkflow } from '../_shared/proofKit.ts';
 import { githubRepo } from '../_shared/render.ts';
 
@@ -89,4 +89,20 @@ Deno.test('proof kit: workflow asks for OIDC, points at our endpoint, and the sc
   assert(wf.includes('${{ steps.tests.outputs.passed }}'), 'GitHub expression survives the template');
   const mod = await import(`data:text/javascript,${encodeURIComponent(PROOF_SCRIPT)}`);
   assertEquals(typeof mod.replayAll, 'function');
+});
+
+Deno.test('only the OpsSwipe proof workflow of that same repo can prove a fix', () => {
+  const base = { repository: 'me/app', ref: 'refs/pull/7/merge', event_name: 'pull_request', run_id: '1', exp: 0 };
+  const path = '.github/workflows/opsswipe-proof.yml';
+  assertEquals(fromWorkflow({ ...base, job_workflow_ref: `me/app/${path}@refs/pull/7/merge` }, path), true);
+  assertEquals(
+    fromWorkflow({ ...base, job_workflow_ref: 'me/app/.github/workflows/other.yml@refs/pull/7/merge' }, path),
+    false,
+  );
+  assertEquals(
+    fromWorkflow({ ...base, job_workflow_ref: `evil/lib/${path}@refs/heads/main` }, path),
+    false,
+    'a reusable workflow elsewhere',
+  );
+  assertEquals(fromWorkflow(base, path), false, 'no claim, no proof');
 });

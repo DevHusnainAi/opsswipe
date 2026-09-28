@@ -12,14 +12,19 @@ export type RcEvent = {
   app_user_id?: string;
   entitlement_ids?: string[] | null;
   expiration_at_ms?: number | null;
+  event_timestamp_ms?: number;
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export function planFromEvent(e: RcEvent, entitlement = 'pro'): { owner: string; pro_until: string } | null {
+export function planFromEvent(
+  e: RcEvent,
+  entitlement = 'pro',
+): { owner: string; pro_until: string; event_at: string } | null {
   if (!e.app_user_id || !UUID.test(e.app_user_id) || !e.entitlement_ids?.includes(entitlement)) return null;
   // EXPIRATION carries the moment access ended; every other event the moment it will end (null = lifetime).
   const until = e.expiration_at_ms == null ? 'infinity' : new Date(e.expiration_at_ms).toISOString();
-  return { owner: e.app_user_id, pro_until: until };
+  const at = new Date(e.event_timestamp_ms ?? Date.now()).toISOString(); // orders late deliveries
+  return { owner: e.app_user_id, pro_until: until, event_at: at };
 }
 
 export const proFromRow = (row: { pro_until: string | null } | null, now = new Date()) =>

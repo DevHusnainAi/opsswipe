@@ -21,3 +21,18 @@ begin
   raise notice 'meter.sql: all assertions passed';
 end $$;
 rollback;
+
+-- RevenueCat webhooks arrive out of order: an older event never overwrites a newer plan.
+begin;
+do $$
+declare u uuid := gen_random_uuid();
+begin
+  insert into auth.users (id) values (u);
+  perform store_entitlement(u, '2026-11-01', '2026-09-29 10:00');
+  perform store_entitlement(u, '2026-10-01', '2026-09-29 09:00'); -- older event, delivered late
+  assert (select pro_until from entitlements where owner = u) = '2026-11-01', 'older event ignored';
+  perform store_entitlement(u, '2026-09-29 11:00', '2026-09-29 11:00'); -- a newer EXPIRATION
+  assert (select pro_until from entitlements where owner = u) = '2026-09-29 11:00', 'newer event applies';
+  raise notice 'entitlement ordering: all assertions passed';
+end $$;
+rollback;

@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
   if (!parsed) return json(200, { ignored: true });
   // Sentry expects an answer within a second; opening an incident (deploy history, suggestion) can take longer.
   EdgeRuntime.waitUntil(
-    reportFailure(service, parsed.sample, parsed.metric, parsed.release).catch((e) => {
+    reportFailure(service, parsed.sample, parsed.metric, parsed.release, true).catch((e) => {
       console.error('sentry incident failed:', String(e));
     }),
   );

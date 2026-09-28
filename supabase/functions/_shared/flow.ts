@@ -49,8 +49,22 @@ export function afterFix(action: string, inc: Inc, extra: { pr?: PrRef } = {}, n
   return { keepOpen: false, update: { status: 'resolved', resolved_at: now.toISOString() } };
 }
 
-// A health-check incident closes on its own when nothing was run and no PR waits for its proof.
-export const selfHealed = (context: { pr?: unknown }, executed: number) => !context.pr && executed === 0;
+// An incident closes on its own when nothing was run and no PR waits for its proof. One the app
+// reported also needs 10 quiet minutes: its health URL can be fine while /checkout still fails.
+const QUIET_MS = 10 * 60_000;
+export const selfHealed = (
+  context: { pr?: unknown; replay?: { at: string }[] },
+  executed: number,
+  reported = false,
+  now = Date.now(),
+) =>
+  !context.pr && executed === 0 &&
+  (!reported || (context.replay ?? []).every((s) => now - Date.parse(s.at) > QUIET_MS));
+
+// A single reported failure is held; a second one within a minute confirms an outage worth a page.
+// ponytail: two reports in 60 s; a per-service threshold if someone's traffic needs it.
+export const confirmsReport = (pendingAt: string | null | undefined, now = Date.now()) =>
+  !!pendingAt && now - Date.parse(pendingAt) <= 60_000;
 
 type ProofResult = { ok: boolean; passed: number; total: number };
 

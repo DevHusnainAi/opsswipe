@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { afterFix, afterProof, selfHealed } from '../_shared/flow.ts';
+import { afterFix, afterProof, confirmsReport, selfHealed } from '../_shared/flow.ts';
 import type { PrRef } from '../_shared/proof.ts';
 
 const now = new Date('2026-09-28T10:00:00Z');
@@ -87,4 +87,27 @@ Deno.test('a self-healed incident closes only when nothing ran and no PR waits',
   assertEquals(selfHealed({}, 0), true);
   assertEquals(selfHealed({}, 1), false, 'a fix ran: that is a recovery, not a self-heal');
   assertEquals(selfHealed({ pr }, 0), false, 'the PR still needs its proof and merge');
+});
+
+Deno.test('one reported 500 is held; a second within a minute pages', () => {
+  const now = Date.parse('2026-09-29T03:00:00Z');
+  assertEquals(confirmsReport(null, now), false, 'first report: held, nobody paged');
+  assertEquals(confirmsReport('2026-09-29T02:59:30Z', now), true, 'second within 60 s: an outage');
+  assertEquals(confirmsReport('2026-09-29T02:58:00Z', now), false, 'a stray 500 two minutes ago is not a trend');
+});
+
+Deno.test('a reported incident closes itself only after 10 quiet minutes', () => {
+  const now = Date.parse('2026-09-29T03:20:00Z');
+  const recent = { replay: [{ at: '2026-09-29T03:15:00Z' }] }, quiet = { replay: [{ at: '2026-09-29T03:05:00Z' }] };
+  assertEquals(selfHealed(recent, 0, true, now), false, 'still failing 5 minutes ago');
+  assertEquals(selfHealed(quiet, 0, true, now), true);
+  assertEquals(selfHealed(recent, 0, false, now), true, 'a health-check incident closes on the healthy check');
+});
+
+Deno.test('no code fixes are re-offered when there is nothing to replay', () => {
+  const r = afterProof({ actions: [], context: { pr: { ...pr, kind: 'fix_pr' } } }, failed, false, {
+    ai: true,
+    repo: false,
+  });
+  assertEquals(r.actions, []);
 });

@@ -5,7 +5,14 @@ import { b64urlDecode } from './jwt.ts';
 export const ISSUER = 'https://token.actions.githubusercontent.com';
 export const AUDIENCE = 'opsswipe';
 
-export type GithubClaims = { repository: string; ref: string; event_name: string; run_id: string; exp: number };
+export type GithubClaims = {
+  repository: string;
+  ref: string;
+  event_name: string;
+  run_id: string;
+  exp: number;
+  job_workflow_ref?: string;
+};
 type Jwk = JsonWebKey & { kid: string };
 
 let jwksCache: { keys: Jwk[]; at: number } | undefined;
@@ -45,6 +52,11 @@ export async function verifyGithubOidc(
   if (typeof c.exp !== 'number' || c.exp < now) throw new Error('expired');
   return c;
 }
+
+// Only the OpsSwipe proof workflow may prove a fix, not any other workflow in the repo that can mint a
+// token. job_workflow_ref looks like "owner/repo/.github/workflows/opsswipe-proof.yml@refs/pull/7/merge".
+export const fromWorkflow = (c: GithubClaims, path: string) =>
+  typeof c.job_workflow_ref === 'string' && c.job_workflow_ref.startsWith(`${c.repository}/${path}@`);
 
 // A pull_request run checks out refs/pull/<n>/merge; bind the proof to that PR in that repo.
 export const prNumberFromRef = (ref: string) => {
