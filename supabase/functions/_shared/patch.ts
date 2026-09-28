@@ -19,13 +19,17 @@ export type Patch = { summary: string; files: { path: string; content: string }[
 export type Patcher = (i: PatchInput) => Promise<Patch>;
 
 const MAX_FILE = 60_000;
+// CI config and the replay files decide whether a fix is "proven"; the failing requests the model
+// reads are attacker-controlled, so it may never touch them, even if the bad commit did.
+const PROTECTED = /^\.(github|opsswipe)\//;
 
 // The model's answer, checked: only files the commit touched and that still exist, real changes
 // only, sane sizes. An empty result means the model declined; that's an error the user sees.
 export function checkPatch(p: Patch, input: PatchInput): Patch {
   const current = new Map(input.files.filter((f) => f.content !== null).map((f) => [f.path, f.content!]));
   const files = p.files.filter((f) =>
-    current.has(f.path) && f.content.trim() && f.content.length <= MAX_FILE && f.content !== current.get(f.path)
+    current.has(f.path) && !PROTECTED.test(f.path) && f.content.trim() && f.content.length <= MAX_FILE &&
+    f.content !== current.get(f.path)
   );
   if (!files.length) {
     throw new Error(`AI could not write a confident fix${p.summary ? `: ${p.summary}` : ''}. Try a revert instead.`);

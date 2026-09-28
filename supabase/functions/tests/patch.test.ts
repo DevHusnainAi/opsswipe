@@ -34,6 +34,10 @@ Deno.test('checkPatch drops files outside the commit, removed files, no-op and e
     checkPatch({ summary: 's', files: [{ path: 'server.js', content: 'const ok = false;\n' }] }, input)
   );
   assertThrows(() => checkPatch({ summary: 's', files: [{ path: 'server.js', content: '   ' }] }, input));
+  const ci = { ...input, files: [{ path: '.github/workflows/opsswipe-proof.yml', patch: '', content: 'real' }] };
+  assertThrows(() =>
+    checkPatch({ summary: 's', files: [{ path: '.github/workflows/opsswipe-proof.yml', content: 'forged' }] }, ci)
+  );
 });
 
 Deno.test('a declined fix becomes a plain error that points to the revert', () => {
