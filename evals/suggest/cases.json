@@ -5,10 +5,19 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart", "rollback"],
+      "actions": [
+        "restart",
+        "rollback"
+      ],
       "symptom": "GET web.onrender.com -> 503 (80ms)",
-      "liveDeploy": { "commit": "a1b2c3d4", "message": "Switch session store to Redis", "minutesBeforeFailure": 3 },
-      "previousDeploy": { "commit": "9f8e7d6c" }
+      "liveDeploy": {
+        "commit": "a1b2c3d4",
+        "message": "Switch session store to Redis",
+        "minutesBeforeFailure": 3
+      },
+      "previousDeploy": {
+        "commit": "9f8e7d6c"
+      }
     }
   },
   {
@@ -17,10 +26,19 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart", "rollback"],
+      "actions": [
+        "restart",
+        "rollback"
+      ],
       "symptom": "GET web.onrender.com -> 500 (41ms)",
-      "liveDeploy": { "commit": "b2c3d4e5", "message": "Upgrade ORM", "minutesBeforeFailure": 25 },
-      "previousDeploy": { "commit": "a1b2c3d4" }
+      "liveDeploy": {
+        "commit": "b2c3d4e5",
+        "message": "Upgrade ORM",
+        "minutesBeforeFailure": 25
+      },
+      "previousDeploy": {
+        "commit": "a1b2c3d4"
+      }
     }
   },
   {
@@ -29,10 +47,19 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart", "rollback"],
+      "actions": [
+        "restart",
+        "rollback"
+      ],
       "symptom": "GET web.onrender.com -> 503 (95ms)",
-      "liveDeploy": { "commit": "c3d4e5f6", "message": "Copy tweaks", "minutesBeforeFailure": 190 },
-      "previousDeploy": { "commit": "b2c3d4e5" }
+      "liveDeploy": {
+        "commit": "c3d4e5f6",
+        "message": "Copy tweaks",
+        "minutesBeforeFailure": 190
+      },
+      "previousDeploy": {
+        "commit": "b2c3d4e5"
+      }
     }
   },
   {
@@ -41,7 +68,10 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart", "rollback"],
+      "actions": [
+        "restart",
+        "rollback"
+      ],
       "symptom": "GET web.onrender.com -> 503 (120ms)"
     }
   },
@@ -51,9 +81,16 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart", "rollback"],
+      "actions": [
+        "restart",
+        "rollback"
+      ],
       "symptom": "GET web.onrender.com -> 502 (60ms)",
-      "liveDeploy": { "commit": "d4e5f6a7", "message": "Initial deploy", "minutesBeforeFailure": 5 }
+      "liveDeploy": {
+        "commit": "d4e5f6a7",
+        "message": "Initial deploy",
+        "minutesBeforeFailure": 5
+      }
     }
   },
   {
@@ -62,7 +99,9 @@
     "input": {
       "target": "vm",
       "provider": "gcp",
-      "actions": ["reset"],
+      "actions": [
+        "reset"
+      ],
       "symptom": "GET 34.121.8.207 -> TypeError (12ms)"
     }
   },
@@ -72,10 +111,18 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart"],
+      "actions": [
+        "restart"
+      ],
       "symptom": "GET web.onrender.com -> 503 (70ms)",
-      "liveDeploy": { "commit": "e5f6a7b8", "message": "Tune pool size", "minutesBeforeFailure": 2 },
-      "previousDeploy": { "commit": "d4e5f6a7" }
+      "liveDeploy": {
+        "commit": "e5f6a7b8",
+        "message": "Tune pool size",
+        "minutesBeforeFailure": 2
+      },
+      "previousDeploy": {
+        "commit": "d4e5f6a7"
+      }
     }
   },
   {
@@ -84,10 +131,19 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart", "rollback"],
+      "actions": [
+        "restart",
+        "rollback"
+      ],
       "symptom": "GET web.onrender.com -> 503 (88ms)",
-      "liveDeploy": { "commit": "f6a7b8c9", "message": "Add metrics", "minutesBeforeFailure": 45 },
-      "previousDeploy": { "commit": "e5f6a7b8" }
+      "liveDeploy": {
+        "commit": "f6a7b8c9",
+        "message": "Add metrics",
+        "minutesBeforeFailure": 45
+      },
+      "previousDeploy": {
+        "commit": "e5f6a7b8"
+      }
     }
   },
   {
@@ -96,10 +152,19 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart", "rollback"],
+      "actions": [
+        "restart",
+        "rollback"
+      ],
       "symptom": "GET web.onrender.com -> 502 (33ms)",
-      "liveDeploy": { "commit": "a7b8c9d0", "message": "Change start command", "minutesBeforeFailure": 1 },
-      "previousDeploy": { "commit": "f6a7b8c9" }
+      "liveDeploy": {
+        "commit": "a7b8c9d0",
+        "message": "Change start command",
+        "minutesBeforeFailure": 1
+      },
+      "previousDeploy": {
+        "commit": "f6a7b8c9"
+      }
     }
   },
   {
@@ -108,10 +173,19 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart", "rollback"],
+      "actions": [
+        "restart",
+        "rollback"
+      ],
       "symptom": "GET web.onrender.com -> TimeoutError (4001ms)",
-      "liveDeploy": { "commit": "b8c9d0e1", "message": "Docs", "minutesBeforeFailure": 600 },
-      "previousDeploy": { "commit": "a7b8c9d0" }
+      "liveDeploy": {
+        "commit": "b8c9d0e1",
+        "message": "Docs",
+        "minutesBeforeFailure": 600
+      },
+      "previousDeploy": {
+        "commit": "a7b8c9d0"
+      }
     }
   },
   {
@@ -120,10 +194,20 @@
     "input": {
       "target": "web",
       "provider": "render",
-      "actions": ["restart", "rollback", "revert_pr"],
+      "actions": [
+        "restart",
+        "rollback",
+        "revert_pr"
+      ],
       "symptom": "GET web.onrender.com -> 500 (52ms)",
-      "liveDeploy": { "commit": "c9d0e1f2", "message": "Refactor auth middleware", "minutesBeforeFailure": 6 },
-      "previousDeploy": { "commit": "b8c9d0e1" }
+      "liveDeploy": {
+        "commit": "c9d0e1f2",
+        "message": "Refactor auth middleware",
+        "minutesBeforeFailure": 6
+      },
+      "previousDeploy": {
+        "commit": "b8c9d0e1"
+      }
     }
   },
   {
@@ -132,8 +216,40 @@
     "input": {
       "target": "vm",
       "provider": "gcp",
-      "actions": ["reset"],
+      "actions": [
+        "reset"
+      ],
       "symptom": "GET 34.121.8.207 -> TimeoutError (4002ms)"
+    }
+  },
+  {
+    "id": "gcp-500-bad-release",
+    "expected": "revert_pr",
+    "input": {
+      "target": "opsswipe-demo",
+      "provider": "gcp",
+      "actions": [
+        "reset",
+        "revert_pr"
+      ],
+      "symptom": "GET /?page=2 \u2192 500 (reported by the app)",
+      "liveDeploy": {
+        "commit": "d4e5f6a7b8",
+        "minutesBeforeFailure": 0
+      }
+    }
+  },
+  {
+    "id": "gcp-down-with-repo",
+    "expected": "reset",
+    "input": {
+      "target": "opsswipe-demo",
+      "provider": "gcp",
+      "actions": [
+        "reset",
+        "revert_pr"
+      ],
+      "symptom": "GET 34.135.145.87 \u2192 TypeError (9ms)"
     }
   }
 ]

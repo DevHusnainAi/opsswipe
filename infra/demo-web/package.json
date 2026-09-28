@@ -2,6 +2,6 @@
   "name": "opsswipe-demo-web",
   "private": true,
   "license": "MIT",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=18" },
   "scripts": { "start": "node server.js" }
 }

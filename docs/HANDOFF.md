@@ -36,8 +36,8 @@ latest status at the top).
      `delete from audit_log, usage, incidents, services, connections, push_tokens, agent_tokens`, then `delete from auth.users`.
    - Keep Vault secrets `project_url` and `cron_secret` (used by the cron job).
    - Then: uninstall the OpsSwipe GitHub App on GitHub (Settings → Applications), clear the app's data on the phone.
-3. Render demo service (docs/SETUP.md step 8): create public repo `opsswipe-demo-target` from `infra/demo-web`, deploy on
-   Render free, Render API key.
+3. Demo service on the GCP VM (docs/SETUP.md step 8; Render is dropped): create public repo `opsswipe-demo-target`
+   from `infra/demo-web`, point the VM at it (metadata + reset), then give it the report URL and secret.
 4. Walk docs/SETUP.md step 11 (end-to-end checklist) on the dev build, then chaos tests (`infra/chaos.sh`).
 5. Optional: enable AI fixes (Vertex Model Garden → Claude Opus 5 → Enable; `supabase secrets set AI_SUGGESTIONS=vertex`).
 6. Merge the branch, video, Devpost (docs/SUBMISSION.md). Decide on Sentry/Datadog/Alertmanager webhooks (parked).

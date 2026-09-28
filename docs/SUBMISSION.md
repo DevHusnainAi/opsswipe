@@ -70,9 +70,9 @@ Word budget: ~270 words of narration at a natural pace. Times are targets; fit t
 | --- | --- | --- | --- |
 | 0:00–0:08 | Evening, phone face-down on a dinner table (real or a Higgsfield shot). Buzz. | "You shipped your app. It's Friday night. And your backend just went down." | *Your app. Your backend. You're not at your laptop.* |
 | 0:08–0:14 | Logo reveal over the incident card | "This is Ops Swipe. Fix production from your lock screen, and prove it worked." | **OpsSwipe** |
-| 0:14–0:26 | Phone: Services → GitHub Connect → Render key → Google Cloud: sign in, pick VM, Add (sped up 3x) | "Connect GitHub, Render and Google Cloud in a few taps. Ops Swipe only gets permission to restart what you pick." | *No cloud keys stored. Reset-only access to one VM.* |
-| 0:26–1:02 | **Split screen, one take, stopwatch visible:** left laptop runs `chaos.sh render`, site shows 503; right phone locked → push → open → card with suggested fix and reason → swipe → fingerprint → banner → laptop site back | "Let's break production for real." *(pause for the buzz)* "My phone wakes me, even with the app closed. Ops Swipe already knows what broke and suggests a fix, with a reason. I swipe. My fingerprint approves it." *(pause)* "Back online." | Stopwatch. Then: **down 1m 12s · back 38s after fix** |
-| 1:02–1:32 | Laptop: `chaos.sh release`; phone card suggests Roll back / Revert PR → Revert PR → GitHub PR page showing `.opsswipe/replays/<sha>.json` → Actions run → phone card "3/3 failing production requests now pass" → Merge PR → merged | "But what if a bad release caused it? Other tools write a fix and hope. Ops Swipe proves it. The pull request carries the exact requests that failed in production. CI replays them against the fix. Three out of three now pass. Only then can I merge, and only that exact commit." | *Replayed: the real failing requests* → **3/3 pass** → *Merge pinned to the proven commit* |
+| 0:14–0:26 | Phone: Services → GitHub Connect → Google Cloud: sign in, pick project and VM, link repo, Add (sped up 3x) | "Connect GitHub and Google Cloud in a few taps. Ops Swipe only gets permission to restart what you pick." | *No cloud keys stored. Reset-only access to one VM.* |
+| 0:26–1:02 | **Split screen, one take, stopwatch visible:** left laptop runs `chaos.sh gcp`, site stops answering; right phone locked → push → open → card with suggested fix and reason → swipe → fingerprint → banner → laptop site back | "Let's break production for real." *(pause for the buzz)* "My phone wakes me, even with the app closed. Ops Swipe already knows what broke and suggests a fix, with a reason. I swipe. My fingerprint approves it." *(pause)* "Back online." | Stopwatch. Then: **down 1m 12s · back 38s after fix** |
+| 1:02–1:32 | Laptop: `chaos.sh release`, site shows 500; phone card offers Revert PR / Fix with AI → Revert PR → GitHub PR page showing `.opsswipe/replays/<sha>.json` → Actions run → phone card "3/3 failing production requests now pass" → Merge PR → site back, "back up" push | "But what if a bad release caused it? Other tools write a fix and hope. Ops Swipe proves it. The pull request carries the exact requests that failed in production. CI replays them against the fix. Three out of three now pass. Only then can I merge, and only that exact commit." | *Replayed: the real failing requests* → **3/3 pass** → *Merge pinned to the proven commit* |
 | 1:32–1:45 | Second incident → swipe → card snaps back → RevenueCat paywall → Test Store purchase → fix runs | "Your first fix is free. After that, the paywall appears exactly when you need it. Revenue Cat entitlements are checked on the server, so nothing can be unlocked on the phone." | *RevenueCat: server-side entitlement check* |
 | 1:45–1:55 | End card: logo, the one line, repo URL, "Built by a first-semester student" | "Other tools write fixes. Ops Swipe proves them. Open source. Built by a first-semester student." | **Other tools write fixes. OpsSwipe proves them.** github.com/DevHusnainAi/opsswipe |
 
@@ -89,7 +89,7 @@ doesn't show.
       same wallpaper throughout. Set a lock screen (fingerprint needs it).
 - [ ] Laptop: big terminal font (20pt+), dark theme, browser zoomed to 125%, only the demo site tab open.
 - [ ] **Hide secrets.** No `.env`, API keys, report secrets, emails or tokens anywhere in frame. Pause if a secret field appears.
-- [ ] Render service already warm (a cold free-tier start makes the take slow). Hit it once a minute before rolling.
+- [ ] Demo reset before each take: `chaos.sh heal`, wait for the site, resolve old cards. The VM needs ~40s to boot after a reset; start the stopwatch at the swipe, not the boot.
 
 ### Capture
 
@@ -142,7 +142,7 @@ Put a short **"For the judges"** box at the very top, mapped to the four criteri
 
 > **Idea:** A pager for solo devs that fixes production from the lock screen, and the only tool that proves a fix works: CI
 > replays the exact requests that failed in production before you can merge.
-> **Working app:** Real fixes on real clouds in the video: Render restart and rollback, GCP VM reset, revert and merge PRs.
+> **Working app:** Real fixes on a real cloud in the video: a Google Cloud VM reset, a revert PR proven in CI, and the merge that deploys it.
 > Push alerts with the app closed. One continuous take with a clock.
 > **RevenueCat:** Free first fix, paywall at the moment of need, entitlement checked on the server with RevenueCat's REST API,
 > metered atomically in Postgres, so nothing unlocks on the phone.
@@ -160,7 +160,7 @@ Then Devpost's standard sections:
 - **Accomplishments:** the live save under a minute; the verified-fix loop; security without shortcuts.
 - **What we learned:** honest and short.
 - **What's next:** the README roadmap (Sentry/Datadog alerts in, an approval API for AI SRE agents, team plan).
-- **Built with:** expo, react-native, typescript, supabase, postgresql, deno, revenuecat, github-actions, google-cloud, render,
+- **Built with:** expo, react-native, typescript, supabase, postgresql, deno, revenuecat, github-actions, google-cloud,
   claude.
 - Images: 3–5 real phone screenshots (card, proof strip, paywall, Services), not mockups.
 

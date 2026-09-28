@@ -31,6 +31,17 @@ export function ruleSuggest(i: SuggestInput): Suggestion {
       source: 'rules',
     };
   }
+  // A VM has no rollback. If its app answers 500, the code broke, not the machine: a reset would
+  // just boot the same bad release, so the fix is a revert (proven in CI before merge).
+  if (!i.actions.includes('rollback') && i.actions.includes('revert_pr') && /(→|->) 500\b/.test(i.symptom)) {
+    return {
+      action: 'revert_pr',
+      reason: `The app answers 500, so the code broke. Revert ${
+        d?.commit ? d.commit.slice(0, 7) : 'the release'
+      }; CI proves it first.`,
+      source: 'rules',
+    };
+  }
   if (i.actions.includes('restart')) {
     return {
       action: 'restart',
@@ -61,7 +72,7 @@ const SYSTEM = `You are the triage step of OpsSwipe, a pager that lets an on-cal
 Given a failing health check and deploy context, choose exactly one action from the allowed list and give a reason.
 - rollback: restores the previous release now. Prefer it when a deploy landed shortly before the failure.
 - restart: restarts the running process. Prefer it when nothing was deployed recently.
-- reset: hard-reboots a VM. The only option for VM targets.
+- reset: hard-reboots a VM. Fixes a stopped or hung app, but boots the same code, so it can't fix a bad release.
 - revert_pr: opens a pull request reverting the bad commit. It fixes the code but only helps after it is merged and deployed, so prefer rollback for restoring service.
 - fix_pr: Claude writes the smallest code fix for the bad commit as a pull request. Prefer it over revert_pr when the commit also shipped work worth keeping; like revert_pr, it only helps after merge.
 The reason is one plain sentence under 20 words, naming the evidence (the commit, the timing, the status code). No speculation beyond the input.`;

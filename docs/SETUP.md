@@ -121,9 +121,10 @@ does not see `.env` (it's gitignored), so first add the three `EXPO_PUBLIC_` val
 
 ## User setup (in the app)
 
-### 8. Demo service on Render
+### 8. Demo service on the GCP VM
 
-Render deploys from Git, so the demo service lives in its own public repo:
+The demo VM runs the demo app from its own public repo and redeploys within ~30s whenever `main` moves, like a PaaS
+(`infra/demo-box.sh`). Create the repo:
 
 ```bash
 cp -r infra/demo-web ../opsswipe-demo-target && cd ../opsswipe-demo-target
@@ -132,8 +133,16 @@ gh repo create opsswipe-demo-target --public --source . --push
 cd -
 ```
 
-Render: **New → Web Service → opsswipe-demo-target**, plan **Free**, start `npm start`, health check path `/livez`,
-env `CHAOS_KEY` (any long random string). Keep auto-deploy on. Create an API key (**Account settings → API keys**).
+Point the VM at it and apply (gcloud on your **personal** account; `gcp-setup.sh` does this for a new VM):
+
+```bash
+gcloud compute instances add-metadata opsswipe-demo --zone us-central1-a \
+  --metadata-from-file startup-script=infra/demo-box.sh \
+  --metadata demo-repo=https://github.com/<you>/opsswipe-demo-target
+gcloud compute instances reset opsswipe-demo --zone us-central1-a   # the startup script deploys on boot
+```
+
+Render works too (New → Web Service from the same repo, env `CHAOS_KEY`, health check `/livez`); the demo uses the VM.
 
 ### 9. Connect everything from the app
 
@@ -141,17 +150,14 @@ First launch: the welcome tour, **Create account** (Continue with GitHub, or ema
 then the **Services** tab's setup checklist.
 
 1. **Connections → GitHub → Connect**: install the GitHub App on `opsswipe-demo-target`.
-2. **Add → Render web service**: paste the API key once, pick `opsswipe-demo-target`, confirm the **Linked repo**
-   (Render's repo is preselected) → **Add**. Copy the two values it shows once (`OPSSWIPE_REPORT_URL`,
-   `REPORT_SECRET`) into the Render service's environment. It redeploys.
-3. **Your services → `opsswipe-demo-target` → Add proof to repo.** Merge the PR it opens (check the install, test and
-   start commands first). From now on every PR runs the proof, authenticated by GitHub OIDC with no secrets.
-4. **Add → Google Cloud VM**: sign in with Google once (accept the unverified-app screen), pick the project, then
-   `opsswipe-demo`, check the URL, optionally link a repo, **Add**. Google stays connected, so the next VM is just
-   project → VM. (`gcp-setup.sh` already granted the demo VM; adding it again is harmless.)
-
-Optional: have the app send the running commit as `release` in each failure report (a `GIT_SHA` set at deploy), so a
-VM's revert or AI fix targets the exact commit instead of the branch head.
+2. **Add → Google Cloud VM**: sign in with Google once (accept the unverified-app screen), pick the project, then
+   `opsswipe-demo`, check the URL, link `opsswipe-demo-target` as the repo, **Add**. Google stays connected, so the
+   next VM is just project → VM. (`gcp-setup.sh` already granted the demo VM; adding it again is harmless.)
+3. Give the VM the two values the app shows once, then reset it so the app reports its 5xx with the deployed commit:
+   `gcloud compute instances add-metadata opsswipe-demo --zone us-central1-a --metadata opsswipe-report-url=<URL>,report-secret=<SECRET>`
+   and `gcloud compute instances reset opsswipe-demo --zone us-central1-a`.
+4. **Setup checklist → Turn on proof.** Merge the PR it opens (check the install, test and start commands first).
+   From now on every PR runs the proof, authenticated by GitHub OIDC with no secrets.
 
 ### Fix with AI (optional)
 
@@ -174,26 +180,28 @@ curl -H "Authorization: Bearer ops_..." "https://<ref>.supabase.co/functions/v1/
 ## 10. Break things
 
 ```bash
-RENDER_URL=https://<name>.onrender.com CHAOS_KEY=... ./infra/chaos.sh render   # wedged -> Restart
-./infra/chaos.sh gcp                                                          # nginx down -> Reset VM
-DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh release                    # bad release -> Roll back / Revert PR
+./infra/chaos.sh gcp                                        # demo app stopped -> Reset VM
+DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh release  # bad release -> Revert PR / Fix with AI -> proof -> Merge
+DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh heal     # between rehearsals: good release again
 ```
 
 ## 11. End-to-end checklist
 
 - [ ] Onboarding: alerts on, Sign in with GitHub, Services opens; Account shows "Signed in as @you"
-- [ ] Connect: GitHub shows "Connected as @you"; Render lists your services; Google Cloud lists your VMs; both services
-      appear under Your services, and Google Cloud no longer shows as connected after adding
+- [ ] Connect: GitHub shows "Connected as @you"; Google Cloud lists your projects and VMs; the VM appears under
+      Watching with `opsswipe-demo-target` linked; the checklist ticks off Turn on proof
 - [ ] With the app **closed**, `chaos.sh gcp` sends a push; tapping it opens the card
 - [ ] Reinstall the app, Sign in with GitHub: your services and plan are back
 - [ ] A card appears after each chaos command, with a suggested fix and a reason
 - [ ] Swipe and the fingerprint button both run the selected fix after biometrics
-- [ ] The site comes back; **Recent fixes** shows "down Xm Ys · back Ns after fix"
-- [ ] Bad release: the card appears within seconds (reported by the app, not polling); suggestion is **Roll back**
+- [ ] The site comes back; the home screen shows "<service> is back up" with the times, and a push arrives if closed
+- [ ] Try a sample incident (fresh account): swipe, fingerprint, practice recovery; nothing real changes
+- [ ] Bad release: the card appears within seconds (reported by the app, not polling); fixes offered are **Reset**,
+      **Revert PR** and **Fix with AI**
 - [ ] **Revert PR** opens a real PR containing `.opsswipe/replays/<sha>.json`; the card shows "CI is replaying..."
 - [ ] The proof workflow runs; the card shows "N/N failing production requests now pass" and offers **Merge PR**
-- [ ] **Merge PR** merges; Render deploys; the card shows recovery. Pushing to the PR after the proof makes merge refuse
-- [ ] Roll back while the PR is open: the site comes back, the card says "Waiting for the CI proof", Merge PR still works
+- [ ] **Merge PR** merges; the VM deploys `main` within ~30s; "back up" arrives. Pushing to the PR after the proof
+      makes merge refuse
 - [ ] Second fix on the free plan: card snaps back, paywall, Test Store purchase, fix runs
 - [ ] Activity shows Executed / Paywalled / Failed; the PR row opens the PR
 - [ ] A second test user (another phone, or reinstall) sees none of your services or incidents

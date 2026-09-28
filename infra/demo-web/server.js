@@ -1,11 +1,11 @@
 // OpsSwipe demo target: healthy until POST /chaos wedges it, like a hung process.
-// Only a restart clears it, which is exactly what OpsSwipe's Render action does.
-// /livez always answers so Render's own health check doesn't auto-heal it before a human approves.
+// Only a restart clears it (Render restart, or a reset of the demo VM, infra/demo-box.sh).
+// /livez always answers so a platform health check doesn't auto-heal it before a human approves.
 const http = require('node:http');
 const { createHmac, timingSafeEqual } = require('node:crypto');
 
-// Bad-release demo: commit this as false and push. Render deploys it, the health check fails,
-// and OpsSwipe offers "Roll back" (restores the last good deploy) and "Revert PR" (fixes main).
+// Bad-release demo: commit this as false and push (infra/chaos.sh release). The host deploys it,
+// requests fail, and OpsSwipe offers a revert or AI fix PR, proven in CI before it can merge.
 const RELEASE_OK = true;
 
 const KEY = Buffer.from(process.env.CHAOS_KEY ?? '');
@@ -28,7 +28,9 @@ function reportFailure(req, status) {
   const url = process.env.OPSSWIPE_REPORT_URL;
   const secret = process.env.REPORT_SECRET;
   if (!url || !secret) return;
-  const body = JSON.stringify({ method: req.method, path: req.url, status });
+  // release = the deployed commit (the demo VM sets GIT_SHA; Render sets RENDER_GIT_COMMIT).
+  const release = process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT;
+  const body = JSON.stringify({ method: req.method, path: req.url, status, release });
   const signature = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
   fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-opsswipe-signature': signature }, body })
     .catch(() => {});
