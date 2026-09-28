@@ -2,7 +2,7 @@
 // accounts it's connected to. Adding a service happens in the AddService sheet.
 import * as WebBrowser from 'expo-web-browser';
 import type { Icon } from 'phosphor-react-native';
-import { Bug, CheckCircle, Cloud, GitBranch, GithubLogo, GoogleLogo, HardDrives, Key, Plus, ShieldCheck, Train, Trash } from 'phosphor-react-native';
+import { Bug, CheckCircle, CurrencyDollar, Cloud, GitBranch, GithubLogo, GoogleLogo, HardDrives, Key, Plus, ShieldCheck, Train, Trash } from 'phosphor-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AddService, CopyRow, type StartAt } from './AddService';
@@ -23,6 +23,7 @@ export function Services({ active }: { active: boolean }) {
   const [notice, setNotice] = useState<{ text: string; url?: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null); // service whose repo is being changed
   const [repoDraft, setRepoDraft] = useState<string | null>(null);
+  const [rc, setRc] = useState<{ key: string; projectId: string } | null>(null); // RevenueCat form, when open
 
   const load = useCallback(async () => {
     const [st, sv] = await Promise.all([
@@ -69,7 +70,7 @@ export function Services({ active }: { active: boolean }) {
       await load();
     });
 
-  const disconnect = (kind: 'github' | 'render' | 'google' | 'railway') =>
+  const disconnect = (kind: 'github' | 'render' | 'google' | 'railway' | 'revenuecat') =>
     armed(`dc-${kind}`, () =>
       run(`dc-${kind}`, async () => {
         await connect('disconnect', { kind });
@@ -87,6 +88,16 @@ export function Services({ active }: { active: boolean }) {
     run(`repo-${s.id}`, async () => {
       await connect('link_repo', { serviceId: s.id, repo: repoDraft ?? '' });
       setEditing(null);
+      await load();
+    });
+
+  // Revenue at risk: a read-only RevenueCat key; the server tests it before storing it in Vault.
+  const saveRevenueCat = () =>
+    run('rc', async () => {
+      const r = await connect<{ perHour: number; currency: string }>('set_revenuecat', rc!);
+      setRc(null);
+      const hourly = new Intl.NumberFormat('en-US', { style: 'currency', currency: r.currency }).format(r.perHour);
+      setNotice({ text: `Connected. Your app earns about ${hourly} an hour (last 28 days): that's what an outage puts at risk.` });
       await load();
     });
 
@@ -295,6 +306,46 @@ export function Services({ active }: { active: boolean }) {
                   onConnect={() => setSheet('railway')}
                   onDisconnect={() => disconnect('railway')}
                 />
+                <Connection
+                  icon={CurrencyDollar}
+                  name="Revenue at risk"
+                  detail={status.revenuecat.connected ? `RevenueCat · ${status.revenuecat.project}` : 'Show what each outage costs, from your RevenueCat'}
+                  connected={status.revenuecat.connected}
+                  busy={busy === 'rc' || busy === 'dc-revenuecat'}
+                  confirming={confirm === 'dc-revenuecat'}
+                  onConnect={() => setRc(rc ? null : { key: '', projectId: '' })}
+                  onDisconnect={() => disconnect('revenuecat')}
+                />
+                {rc && (
+                  <View style={{ gap: space.sm, paddingVertical: space.md }}>
+                    <Text style={type.caption}>
+                      In RevenueCat: Project settings → API keys → New secret key (v2) with Charts &amp; Metrics read
+                      access, and the project id from Project settings. OpsSwipe only reads your revenue total.
+                    </Text>
+                    <TextInput
+                      value={rc.key}
+                      onChangeText={(key) => setRc({ ...rc, key })}
+                      placeholder="sk_…"
+                      placeholderTextColor={c.muted}
+                      secureTextEntry
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      style={styles.input}
+                      accessibilityLabel="RevenueCat secret key"
+                    />
+                    <TextInput
+                      value={rc.projectId}
+                      onChangeText={(projectId) => setRc({ ...rc, projectId })}
+                      placeholder="Project id"
+                      placeholderTextColor={c.muted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      style={styles.input}
+                      accessibilityLabel="RevenueCat project id"
+                    />
+                    <Button label={busy === 'rc' ? 'Checking with RevenueCat…' : 'Connect'} onPress={saveRevenueCat} />
+                  </View>
+                )}
                 {status.google.available && (
                   <Connection
                     icon={GoogleLogo}

@@ -5,8 +5,9 @@ import { db, env } from './db.ts';
 import { accessToken } from './gcp.ts';
 import { type Deploy, listDeploys, pickRollback } from './render.ts';
 import { mergeSamples, type ReplaySample } from './replay.ts';
-import { notify, platformSa, renderKey, type Service, toTarget } from './services.ts';
+import { connection, notify, platformSa, readSecret, renderKey, type Service, toTarget } from './services.ts';
 import { confirmsReport, selfHealed } from './flow.ts';
+import { money, type Revenue, revenuePerHour } from './revenue.ts';
 import { suggest, toSuggestInput, vertexSuggester } from './suggest.ts';
 import { actionsFor, CODE_FIXES } from './targets.ts';
 
@@ -60,7 +61,7 @@ export async function openIncident(
   if (count) return { opened: false };
 
   const t = toTarget(s);
-  const deploys = await deployHistory(s);
+  const [deploys, revenue] = await Promise.all([deployHistory(s), revenueAtRisk(s.owner)]);
   if (!deploys.live && release) {
     deploys.live = { id: 'reported', status: 'live', createdAt: new Date().toISOString(), commit: { id: release } };
   }
@@ -85,13 +86,20 @@ export async function openIncident(
     action: rules.action,
     reason: rules.reason,
     suggested_by: 'rules',
-    context: { live: deploys.live ?? null, previous: deploys.previous ?? null, replay: mergeSamples([], samples) },
+    context: {
+      live: deploys.live ?? null,
+      previous: deploys.previous ?? null,
+      replay: mergeSamples([], samples),
+      ...(revenue?.perHour ? { revenue } : {}),
+    },
   }).select('id').maybeSingle();
 
   if (inc) {
     EdgeRuntime.waitUntil(notify(s.owner, {
       title: `${s.name} is failing`,
-      body: `${metric}. ${rules.reason}`,
+      body: `${
+        revenue?.perHour ? `~${money(revenue.perHour, revenue.currency)}/h at risk. ` : ''
+      }${metric}. ${rules.reason}`,
       data: { incidentId: inc.id },
     }));
   }
@@ -112,6 +120,18 @@ export async function openIncident(
 
 // Recovery proof: the first healthy check after a fix stamps recovered_at.
 export const HEALTH_TITLE = 'HTTP health check failing';
+
+// What this outage costs per hour, if the owner connected RevenueCat. Never blocks an incident.
+async function revenueAtRisk(owner: string): Promise<Revenue | null> {
+  try {
+    const c = await connection(owner, 'revenuecat');
+    const key = c?.secret_id && c.account ? await readSecret(c.secret_id) : null;
+    return key ? await revenuePerHour(key, c!.account!) : null;
+  } catch (e) {
+    console.warn('revenue at risk unavailable:', String(e));
+    return null;
+  }
+}
 export const REPORT_TITLE = 'Requests are failing';
 
 type Pending = { sample: ReplaySample | null; release?: string };

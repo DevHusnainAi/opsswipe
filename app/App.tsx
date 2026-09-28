@@ -25,7 +25,7 @@ import { Activity } from './src/Activity';
 import { Auth, type AuthMode, NewPassword } from './src/Auth';
 import { inExpoGo, Notifications } from './src/env';
 import { fixFor } from './src/fixes';
-import { recoveryLine } from './src/format';
+import { atRisk, lostLine, recoveryLine } from './src/format';
 import { AlertsPrimer, Logo, Welcome } from './src/Onboarding';
 import { Services } from './src/Services';
 import { Settings } from './src/Settings';
@@ -63,6 +63,7 @@ const sampleIncident = (): Incident => {
     reason: 'a1b2c3d deployed 4m before the failure. Roll back to the last good release.',
     suggested_by: 'rules',
     context: {
+      revenue: { perHour: 4.2, currency: 'USD' }, // sample figure; real ones come from your RevenueCat
       replay,
       pr: { number: 42, url: 'https://github.com/DevHusnainAi/opsswipe#the-verified-fix-loop', headSha: 'sample' },
       proof: { ok: true, passed: 3, total: 3, tests: true, headSha: 'sample' },
@@ -314,7 +315,13 @@ export default function App() {
 
   // FR-12 → FR-14: the card snaps back first, then the paywall slides up, saying what's at stake.
   const upsell = async (inc: Incident, action: string) => {
-    setBanner({ kind: 'warn', text: `${inc.target_server} is down and your free outage is used. Pro fixes it now.` });
+    const cost = atRisk(inc);
+    setBanner({
+      kind: 'warn',
+      text: cost
+        ? `${inc.target_server} is down (${cost}) and your free outage is used. Pro is $4.99/month.`
+        : `${inc.target_server} is down and your free outage is used. Pro fixes it now.`,
+    });
     try {
       if (await paywall()) await run(inc, action); // already authorized
     } catch (e) {
@@ -501,6 +508,9 @@ export default function App() {
                         <CheckCircle size={48} color={c.green} weight="fill" />
                         <Text style={type.title}>{recovered.target_server} is back up</Text>
                         <Text style={[type.mono, { textAlign: 'center' }]}>{recoveryLine(recovered)}</Text>
+                        {lostLine(recovered) && (
+                          <Text style={[type.label, { color: c.amber, textAlign: 'center' }]}>{lostLine(recovered)}</Text>
+                        )}
                         <Text style={[type.caption, { textAlign: 'center' }]}>
                           {recovered.id === SAMPLE_ID
                             ? 'That was a practice run. With a real service, OpsSwipe runs the fix and the health check confirms it came back.'

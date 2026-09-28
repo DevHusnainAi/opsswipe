@@ -48,7 +48,7 @@ export async function deleteSecret(id: string | null | undefined) {
 
 type Connection = { secret_id: string | null; installation_id: number | null; account: string | null };
 
-export type ConnectionKind = 'github' | 'render' | 'google' | 'railway' | 'alerts';
+export type ConnectionKind = 'github' | 'render' | 'google' | 'railway' | 'alerts' | 'revenuecat';
 
 export async function connection(owner: string, kind: ConnectionKind) {
   const { data } = await db.from('connections').select('secret_id, installation_id, account')

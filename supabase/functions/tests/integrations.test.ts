@@ -128,3 +128,34 @@ Deno.test('Sentry webhooks are verified with the integration Client Secret over 
   assert(!(await verifyHex('0'.repeat(64), raw, hex)), 'another secret fails');
   assert(!(await verifyHex(secret, raw, null)));
 });
+
+Deno.test('revenue at risk: 28 days of revenue spread per hour, lost money by downtime, readable amounts', async () => {
+  const { lostSoFar, money, perHour, revenuePerHour } = await import('../_shared/revenue.ts');
+  assertEquals(perHour(2822.4), 4.2, '$2,822.40 over 28 days is $4.20 an hour');
+  assertEquals(perHour(0), 0);
+  assertEquals(Math.round(lostSoFar(4.2, 72_000) * 100) / 100, 0.08, '1m 12s down at $4.20/h');
+  assertEquals(money(4.2), '$4.20');
+  assertEquals(money(1234.5), '$1,235');
+
+  const real = globalThis.fetch;
+  let url = '';
+  globalThis.fetch = ((u: string) => {
+    url = u;
+    return Promise.resolve(Response.json({ object: 'revenue_metric', value: 2822.4, currency: 'EUR' }));
+  }) as typeof fetch;
+  try {
+    assertEquals(await revenuePerHour('sk_x', 'proj1', new Date('2026-09-29T00:00:00Z')), {
+      perHour: 4.2,
+      currency: 'EUR',
+    });
+    assert(url.endsWith('/projects/proj1/metrics/revenue?start_date=2026-09-02&end_date=2026-09-29'), url);
+  } finally {
+    globalThis.fetch = real;
+  }
+  globalThis.fetch = (() => Promise.resolve(new Response('', { status: 403 }))) as typeof fetch;
+  try {
+    await assertRejects(() => revenuePerHour('sk_x', 'proj1'), Error, 'Charts & Metrics');
+  } finally {
+    globalThis.fetch = real;
+  }
+});

@@ -24,6 +24,7 @@ export type Incident = {
   context: {
     agent?: { name: string };
     self_healed?: boolean;
+    revenue?: { perHour: number; currency: string }; // estimate from the owner's RevenueCat, last 28 days
     replay?: { method: string; path: string; status: number }[];
     pr?: { number: number; url: string; headSha: string };
     proof?: { ok: boolean; passed: number; total: number; tests: boolean; runUrl?: string; headSha: string };
@@ -75,6 +76,7 @@ export type ConnectStatus = {
   render: { connected: boolean };
   railway: { connected: boolean };
   alerts: { connected: boolean; kind: 'discord' | 'slack' | null };
+  revenuecat: { connected: boolean; project: string | null };
   google: { connected: boolean; account: string | null; available: boolean };
   gcpIdentity: string | null;
 };

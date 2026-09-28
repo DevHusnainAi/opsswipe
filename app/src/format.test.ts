@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatDuration, incidentReport, paramsOf, recoveryLine, timeAgo, weekStats } from './format.ts';
+import { atRisk, formatDuration, incidentReport, lostLine, paramsOf, recoveryLine, timeAgo, weekStats } from './format.ts';
 
 test('formatDuration', () => {
   assert.equal(formatDuration(0), '0s');
@@ -90,4 +90,17 @@ test('weekStats counts this week only, takes the median time back up, and counts
   );
   assert.deepEqual(s, { incidents: 2, median: 180_000, proven: 1 });
   assert.deepEqual(weekStats([], now), { incidents: 0, median: null, proven: 0 });
+});
+
+test('revenue at risk reads per hour on the card and as money lost once back up', () => {
+  const i = {
+    created_at: '2026-09-29T03:00:00Z',
+    resolved_at: '2026-09-29T03:00:40Z',
+    recovered_at: '2026-09-29T03:01:12Z',
+    context: { revenue: { perHour: 4.2, currency: 'USD' } },
+  };
+  assert.equal(atRisk(i), '~$4.20/h at risk');
+  assert.equal(lostLine(i), 'about $0.08 lost (estimate)');
+  assert.equal(atRisk({ ...i, context: null }), null, 'no RevenueCat connected: nothing shown');
+  assert.equal(lostLine({ ...i, recovered_at: null }), null);
 });

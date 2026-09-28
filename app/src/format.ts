@@ -74,3 +74,20 @@ export function weekStats(fixed: Recovered[], now = Date.now()) {
     : null;
   return { incidents: week.length, median, proven: week.filter((i) => i.context?.proof?.ok).length };
 }
+
+// Revenue at risk, as the server estimates it (the owner's RevenueCat revenue, last 28 days, per hour).
+export const money = (v: number, currency = 'USD') =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: v < 10 ? 2 : 0 }).format(v);
+
+type WithRevenue = Timeline & { context?: { revenue?: { perHour: number; currency: string } } | null };
+
+export const atRisk = (i: WithRevenue) =>
+  i.context?.revenue?.perHour ? `~${money(i.context.revenue.perHour, i.context.revenue.currency)}/h at risk` : null;
+
+// "about $0.08 lost" once it's back: the hourly estimate times how long it was down.
+export function lostLine(i: WithRevenue) {
+  const r = i.context?.revenue;
+  if (!r?.perHour || !i.recovered_at) return null;
+  const lost = (r.perHour * (Date.parse(i.recovered_at) - Date.parse(i.created_at))) / 3_600_000;
+  return `about ${money(lost, r.currency)} lost (estimate)`;
+}

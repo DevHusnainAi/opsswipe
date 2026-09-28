@@ -11,6 +11,7 @@ import { openFilesPr } from '../_shared/github.ts';
 import { installUrl, listRepos, verifyInstallation } from '../_shared/githubApp.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
 import { idsFromLink, listDeployments } from '../_shared/railway.ts';
+import { RevenueError, revenuePerHour } from '../_shared/revenue.ts';
 import { getRenderService, listServices } from '../_shared/render.ts';
 import {
   connection,
@@ -87,12 +88,13 @@ async function chosenRepo(
 async function handle(owner: string, action: string, p: Record<string, unknown>) {
   switch (action) {
     case 'status': {
-      const [gh, rd, gc, rw, al] = await Promise.all([
+      const [gh, rd, gc, rw, al, rc] = await Promise.all([
         connection(owner, 'github'),
         connection(owner, 'render'),
         connection(owner, 'google'),
         connection(owner, 'railway'),
         connection(owner, 'alerts'),
+        connection(owner, 'revenuecat'),
       ]);
       // GitHub hands `state` back to oauth-callback, which uses it to return to Expo Go if needed.
       const state = withReturn('gh', p.returnTo);
@@ -105,6 +107,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         render: { connected: !!rd?.secret_id },
         railway: { connected: !!rw?.secret_id },
         alerts: { connected: !!al?.secret_id, kind: al?.account ?? null },
+        revenuecat: { connected: !!rc?.secret_id, project: rc?.account ?? null },
         google: { connected: !!gc?.secret_id, account: gc?.account ?? null, available: !!env('GOOGLE_CLIENT_ID') },
         gcpIdentity: env('GCP_SA_KEY') ? platformSa().client_email : null,
       };
@@ -162,6 +165,23 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       await db.from('connections').upsert({ owner, kind: 'alerts', secret_id: secretId, account: kind });
       await deleteSecret(old?.secret_id);
       return { alerts: { connected: true, kind } };
+    }
+
+    // Revenue at risk: the user's own RevenueCat v2 secret key (Charts & Metrics read) and project id.
+    // One test read proves both before anything is stored.
+    case 'set_revenuecat': {
+      const key = String(p.key ?? '').trim();
+      const projectId = String(p.projectId ?? '').trim();
+      need(/^sk_\w{10,}$/.test(key), "That doesn't look like a RevenueCat secret key (it starts with sk_).");
+      need(/^[\w-]{3,64}$/.test(projectId), 'Paste the project id from RevenueCat → Project settings.');
+      const r = await revenuePerHour(key, projectId).catch((e) => {
+        throw new UserError(e instanceof RevenueError ? e.message : 'RevenueCat did not answer. Try again.');
+      });
+      const old = await connection(owner, 'revenuecat');
+      const secretId = await storeSecret(key);
+      await db.from('connections').upsert({ owner, kind: 'revenuecat', secret_id: secretId, account: projectId });
+      await deleteSecret(old?.secret_id);
+      return { revenuecat: { connected: true, project: projectId }, perHour: r.perHour, currency: r.currency };
     }
 
     // Railway: a token (account or workspace) once, then services by their dashboard link.
@@ -407,7 +427,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     }
 
     case 'disconnect': {
-      const kind = ['github', 'render', 'google', 'railway', 'alerts'].includes(String(p.kind))
+      const kind = ['github', 'render', 'google', 'railway', 'alerts', 'revenuecat'].includes(String(p.kind))
         ? p.kind as ConnectionKind
         : null;
       need(kind, 'Unknown connection.');
@@ -418,7 +438,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     // Delete the account and everything it holds (Play policy: deletion inside the app). Google access
     // is revoked at Google; the GitHub App install is the user's to remove on GitHub.
     case 'delete_account': {
-      for (const kind of ['google', 'github', 'render', 'railway', 'alerts'] as const) {
+      for (const kind of ['google', 'github', 'render', 'railway', 'alerts', 'revenuecat'] as const) {
         await forgetConnection(owner, kind);
       }
       const { data: services } = await db.from('services').select('report_secret_id, sentry_secret_id')

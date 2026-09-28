@@ -15,7 +15,7 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import type { Incident } from './api';
 import { fixFor } from './fixes';
-import { timeAgo } from './format';
+import { atRisk, timeAgo } from './format';
 import { TARGET, c, radius, space, type } from './theme';
 import { Chip } from './ui';
 
@@ -135,6 +135,7 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline }:
         <View style={styles.meta}>
           <Chip label={incident.severity} color={critical ? c.red : c.amber} tint={critical ? c.redTint : c.amberTint} />
           {incident.provider && <Chip label={PROVIDER[incident.provider] ?? incident.provider} />}
+          {atRisk(incident) && <Chip label={atRisk(incident)!} color={c.amber} tint={c.amberTint} />}
           <Text style={[type.monoCaption, styles.time]}>{timeAgo(incident.created_at, now)}</Text>
         </View>
 
