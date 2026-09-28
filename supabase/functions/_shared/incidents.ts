@@ -25,7 +25,7 @@ export const aiEnabled = () =>
   (env('AI_SUGGESTIONS') === 'vertex' && !!env('GCP_SA_KEY')) ||
   (env('AI_SUGGESTIONS') === 'nvidia' && !!env('NVIDIA_API_KEY'));
 
-const NVIDIA_DEFAULT = 'nvidia/llama-3.3-nemotron-super-49b-v1.5';
+const NVIDIA_DEFAULT = 'nvidia/nemotron-3-super-120b-a12b';
 const nvidia = (maxTokens?: number) =>
   nvidiaLlm(env('NVIDIA_API_KEY'), env('NVIDIA_MODEL') || NVIDIA_DEFAULT, maxTokens);
 

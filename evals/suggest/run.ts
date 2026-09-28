@@ -30,7 +30,7 @@ if (mode === 'vertex') {
 if (mode === 'nvidia') {
   const key = Deno.env.get('NVIDIA_API_KEY');
   if (!key) throw new Error('set NVIDIA_API_KEY');
-  ai = llmSuggester(nvidiaLlm(key, Deno.env.get('NVIDIA_MODEL') || 'nvidia/llama-3.3-nemotron-super-49b-v1.5', 2048));
+  ai = llmSuggester(nvidiaLlm(key, Deno.env.get('NVIDIA_MODEL') || 'nvidia/nemotron-3-super-120b-a12b', 2048));
 }
 
 type Row = {

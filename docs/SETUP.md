@@ -172,7 +172,7 @@ Two providers, pick one:
 
 - **NVIDIA** (hosted Nemotron and others, key from build.nvidia.com):
   `npx supabase secrets set AI_SUGGESTIONS=nvidia NVIDIA_API_KEY=nvapi-... NVIDIA_MODEL=<model id>`
-  (default model `nvidia/llama-3.3-nemotron-super-49b-v1.5`). Score it first:
+  (default model `nvidia/nemotron-3-super-120b-a12b`). Score it first:
   `NVIDIA_API_KEY=nvapi-... deno task eval nvidia` (allowed must be 100%).
 - **Claude on Vertex AI**: in the platform GCP project, **Vertex AI → Model Garden → Claude Opus 5 → Enable**, then
   `npx supabase secrets set AI_SUGGESTIONS=vertex`.
