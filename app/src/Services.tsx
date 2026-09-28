@@ -60,14 +60,18 @@ export function Services({ active }: { active: boolean }) {
     fn();
   };
 
+  // The server finishes the install when GitHub calls back, so whatever the browser returns (even
+  // nothing, when the phone doesn't pass the link back), looking again shows the result.
   const connectGithub = () =>
     run('github', async () => {
-      const r = await WebBrowser.openAuthSessionAsync(status!.github.installUrl, appLink('connect'));
-      if (r.type !== 'success') return;
-      const q = paramsOf(r.url);
-      if (!q.code || !q.installation_id) throw new Error('GitHub did not finish the install. Try again.');
-      await connect('github_complete', { code: q.code, installationId: Number(q.installation_id) });
+      const { url } = await connect<{ url: string }>('github_start', { returnTo: appBase });
+      const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
+      const q = r.type === 'success' ? paramsOf(r.url) : {};
+      if (q.code && q.installation_id) {
+        await connect('github_complete', { code: q.code, installationId: Number(q.installation_id) });
+      }
       await load();
+      if (q.error === 'github_failed') throw new Error('GitHub did not finish the install. Try again.');
     });
 
   const disconnect = (kind: 'github' | 'render' | 'google' | 'railway' | 'revenuecat') =>

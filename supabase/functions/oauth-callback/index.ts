@@ -1,14 +1,16 @@
 // GitHub (after installing the OpsSwipe GitHub App) and Google (after "Connect Google Cloud")
-// redirect here. We only bounce the one-time code back to the app, which hands it to /connect,
-// where the server exchanges and verifies it for the signed-in user.
+// redirect here. When the state is one the server issued, the connection is finished right here, for
+// the user who started it; the app only needs to look again. Otherwise the one-time code is bounced
+// back to the app, which hands it to /connect.
 // Also Supabase sign-in from Expo Go (?to=auth): Supabase refuses redirects to raw IP hosts like
 // exp://192.168.x.x, so it lands here and we forward; the session travels in the URL fragment,
 // which the browser carries across this redirect untouched.
 import { returnBase } from '../_shared/appLink.ts';
+import { completeGithub, completeGoogle, takeState } from '../_shared/oauthState.ts';
 
 const ALLOWED = ['code', 'installation_id', 'setup_action', 'state', 'error', 'error_code'];
 
-Deno.serve((req) => {
+Deno.serve(async (req) => {
   const incoming = new URL(req.url).searchParams;
   const out = new URLSearchParams();
   for (const k of ALLOWED) {
@@ -17,7 +19,29 @@ Deno.serve((req) => {
   }
   const desc = incoming.get('error_description');
   if (desc && /^[\w .,'()-]{1,300}$/.test(desc)) out.set('error_description', desc);
-  const base = returnBase(incoming.get('state'));
+  const state = incoming.get('state');
+  const base = returnBase(state);
   const path = incoming.get('to') === 'auth' ? 'auth' : 'connect';
+
+  // Finish on the server: codes are single-use, so once used here they aren't forwarded.
+  const code = out.get('code');
+  const pending = code && path === 'connect' ? await takeState(state?.split('~')[0] ?? '') : null;
+  if (pending) {
+    try {
+      const installationId = Number(out.get('installation_id'));
+      if (pending.kind === 'github' && Number.isInteger(installationId)) {
+        await completeGithub(pending.owner, code!, installationId);
+      } else if (pending.kind === 'google') await completeGoogle(pending.owner, code!);
+      else throw new Error(`nothing to finish for ${pending.kind}`);
+      out.delete('code');
+      out.set('done', pending.kind);
+    } catch (e) {
+      console.error('oauth completion failed:', String(e));
+      out.delete('code');
+      out.set('error', `${pending.kind}_failed`);
+    }
+  }
+  // A plain 302 keeps the user's tap, which Chrome requires before it opens an app link. If the phone
+  // doesn't pass the link to the app, nothing is lost: switching back shows the connection.
   return new Response(null, { status: 302, headers: { Location: `${base}${path}?${out}` } });
 });

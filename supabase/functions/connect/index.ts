@@ -6,9 +6,10 @@ import { alertKind, postAlert } from '../_shared/alerts.ts';
 import { withReturn } from '../_shared/appLink.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
-import { consentUrl, exchangeCode, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
+import { consentUrl, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
 import { openFilesPr } from '../_shared/github.ts';
-import { installUrl, listRepos, verifyInstallation } from '../_shared/githubApp.ts';
+import { installUrl, listRepos } from '../_shared/githubApp.ts';
+import { completeGithub, completeGoogle, newState } from '../_shared/oauthState.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
 import { idsFromLink, listDeployments } from '../_shared/railway.ts';
 import { RevenueError, revenuePerHour } from '../_shared/revenue.ts';
@@ -96,13 +97,12 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         connection(owner, 'alerts'),
         connection(owner, 'revenuecat'),
       ]);
-      // GitHub hands `state` back to oauth-callback, which uses it to return to Expo Go if needed.
-      const state = withReturn('gh', p.returnTo);
+      // The install link with a one-time state comes from github_start; this is the plain one.
       return {
         github: {
           connected: !!gh?.installation_id,
           account: gh?.account ?? null,
-          installUrl: state === 'gh' ? installUrl() : `${installUrl()}?state=${state}`,
+          installUrl: installUrl(),
         },
         render: { connected: !!rd?.secret_id },
         railway: { connected: !!rw?.secret_id },
@@ -113,13 +113,18 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       };
     }
 
+    // GitHub App install with a one-time state: oauth-callback finishes it on the server, and also
+    // hands the app back to Expo Go if that's where it started.
+    case 'github_start': {
+      const state = withReturn(await newState(owner, 'github'), p.returnTo);
+      return { url: `${installUrl()}?state=${state}` };
+    }
+
     case 'github_complete': {
       const code = String(p.code ?? '');
       const installationId = Number(p.installationId);
       need(code && Number.isInteger(installationId), 'GitHub did not send an installation.');
-      const account = await verifyInstallation(code, installationId);
-      await db.from('connections').upsert({ owner, kind: 'github', installation_id: installationId, account });
-      return { github: { connected: true, account } };
+      return { github: { connected: true, account: await completeGithub(owner, code, installationId) } };
     }
 
     case 'github_repos': {
@@ -240,23 +245,15 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     case 'gcp_start': {
       need(env('GOOGLE_CLIENT_ID') && env('GCP_SA_KEY'), 'Google Cloud sign-in is not set up on this OpsSwipe server.');
       // The app checks it comes back unchanged; it also carries the Expo Go return address, if any.
-      const state = withReturn(randomSecret().slice(0, 32), p.returnTo);
+      const state = withReturn(await newState(owner, 'google'), p.returnTo);
       return { url: consentUrl(state), state };
     }
 
     case 'gcp_complete': {
       const code = String(p.code ?? '');
       need(code, 'Google did not finish the sign-in.');
-      const { access, refresh, email } = await exchangeCode(code);
-      const old = await connection(owner, 'google');
-      await db.from('connections').upsert({
-        owner,
-        kind: 'google',
-        secret_id: await storeSecret(refresh),
-        account: email,
-      });
-      await deleteSecret(old?.secret_id);
-      return { google: { connected: true, account: email }, projects: await listProjects(access) };
+      const g = await completeGoogle(owner, code);
+      return { google: { connected: true, account: g.email }, projects: await g.projects() };
     }
 
     case 'gcp_projects':

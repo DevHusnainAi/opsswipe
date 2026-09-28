@@ -143,12 +143,23 @@ export function AddService({ start, status, existing, onClose }: Props) {
     run('google', async () => {
       const { url, state } = await connect<{ url: string; state: string }>('gcp_start', { returnTo: appBase });
       const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
-      if (r.type !== 'success') return;
-      const q = paramsOf(r.url);
-      if (q.state !== state) throw new Error('That Google sign-in did not match this request. Try again.');
-      if (!q.code) throw new Error(q.error === 'access_denied' ? 'Google access was not allowed.' : 'Google did not finish the sign-in.');
-      const res = await connect<{ projects: GcpProject[] }>('gcp_complete', { code: q.code });
-      setProjects([...res.projects].sort((a, b) => a.name.localeCompare(b.name)));
+      const q = r.type === 'success' ? paramsOf(r.url) : {};
+      if (q.state && q.state !== state) throw new Error('That Google sign-in did not match this request. Try again.');
+      if (q.error === 'access_denied') throw new Error('Google access was not allowed.');
+      if (q.error) throw new Error('Google did not finish the sign-in. Try again.');
+      let list: GcpProject[];
+      if (q.code) {
+        list = (await connect<{ projects: GcpProject[] }>('gcp_complete', { code: q.code })).projects;
+      } else {
+        // The server usually finished the sign-in itself (done=google, or the link back got lost): look.
+        try {
+          list = (await connect<{ projects: GcpProject[] }>('gcp_projects')).projects;
+        } catch {
+          if (r.type !== 'success') return; // closed before finishing: nothing to do
+          throw new Error('Google did not finish the sign-in. Try again.');
+        }
+      }
+      setProjects([...list].sort((a, b) => a.name.localeCompare(b.name)));
       setChanged(true);
       go('project');
     });
