@@ -1,5 +1,5 @@
 // A CI proof only counts for the exact commit OpsSwipe opened, and only if everything passed.
-export type PrRef = { repo: string; number: number; headSha: string; url: string; branch: string };
+export type PrRef = { repo: string; number: number; headSha: string; url: string; branch: string; kind?: string };
 export type ProofPayload = {
   repo: string;
   pr: number;

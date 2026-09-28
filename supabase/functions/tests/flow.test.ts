@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { afterFix } from '../_shared/flow.ts';
+import { afterFix, afterProof, selfHealed } from '../_shared/flow.ts';
 import type { PrRef } from '../_shared/proof.ts';
 
 const now = new Date('2026-09-28T10:00:00Z');
@@ -18,7 +18,7 @@ Deno.test('revert PR keeps the incident open, drops itself, and points the card 
   assertEquals(r.keepOpen, true);
   assertEquals(r.update.actions, ['restart', 'rollback']);
   assertEquals(r.update.action, 'rollback', 'the suggested fix must still be offered');
-  assertEquals((r.update.context as { pr: PrRef }).pr, pr);
+  assertEquals((r.update.context as { pr: PrRef }).pr, { ...pr, kind: 'revert_pr' });
 });
 
 Deno.test('an AI fix PR is also one-PR-per-incident: both code fixes drop, rollback stays suggested', () => {
@@ -29,12 +29,11 @@ Deno.test('an AI fix PR is also one-PR-per-incident: both code fixes drop, rollb
   assertEquals(String(r.update.reason).startsWith('AI fix PR opened'), true);
 });
 
-Deno.test('on a VM, the code fix is proven while a reset restores service', () => {
+Deno.test('on a VM, no reboot is offered while the PR proves: it would boot the same bad code', () => {
   const r = afterFix('revert_pr', { actions: ['reset', 'revert_pr', 'fix_pr'], context: {} }, { pr }, now);
-  assertEquals(r.update.actions, ['reset']);
-  assertEquals(r.update.action, 'reset');
-  const after = afterFix('reset', { actions: ['reset'], context: { pr } }, {}, now);
-  assertEquals(after.keepOpen, true, 'the proof and merge still need the incident');
+  assertEquals(r.update.actions, []);
+  assertEquals(r.update.action, 'merge_pr', 'the card waits for the proof');
+  assertEquals((r.update.context as { pr: PrRef }).pr.kind, 'revert_pr', 'the PR remembers what it was');
 });
 
 Deno.test('rolling back while a revert PR is open restores service but waits for the proven merge', () => {
@@ -53,4 +52,39 @@ Deno.test('merging the proven PR resolves the incident', () => {
   const r = afterFix('merge_pr', { actions: ['merge_pr'], context: { pr } }, {}, now);
   assertEquals(r.keepOpen, false);
   assertEquals(r.update.status, 'resolved');
+});
+
+const failed = { ok: false, passed: 2, total: 3 };
+
+Deno.test('a proven PR unlocks the merge and becomes the suggestion', () => {
+  const r = afterProof({ actions: ['rollback'], context: { pr } }, { ok: true, passed: 3, total: 3 }, true, {
+    ai: true,
+    repo: true,
+  });
+  assertEquals(r.actions, ['rollback', 'merge_pr']);
+  assertEquals(r.action, 'merge_pr');
+});
+
+Deno.test('a failed proof is not a dead end: the AI fix is offered again with the failures', () => {
+  const r = afterProof({ actions: [], context: { pr: { ...pr, kind: 'fix_pr' } } }, failed, false, {
+    ai: true,
+    repo: true,
+  });
+  assertEquals(r.actions, ['fix_pr', 'revert_pr'], 'after an AI fix fails, a revert is still worth trying');
+  assertEquals(r.action, 'fix_pr');
+  assertEquals(r.reason, 'Proof failed: 2/3 pass. Try an AI fix with these failures.');
+});
+
+Deno.test('a failed revert is not offered again; without AI the card says what to do', () => {
+  const revert = { actions: [], context: { pr: { ...pr, kind: 'revert_pr' } } };
+  assertEquals(afterProof(revert, failed, false, { ai: true, repo: true }).actions, ['fix_pr']);
+  const none = afterProof(revert, failed, false, { ai: false, repo: true });
+  assertEquals(none.actions, []);
+  assertEquals(none.reason, 'Proof failed: 2/3 pass. Push a fix to the PR; CI runs the proof again.');
+});
+
+Deno.test('a self-healed incident closes only when nothing ran and no PR waits', () => {
+  assertEquals(selfHealed({}, 0), true);
+  assertEquals(selfHealed({}, 1), false, 'a fix ran: that is a recovery, not a self-heal');
+  assertEquals(selfHealed({ pr }, 0), false, 'the PR still needs its proof and merge');
 });

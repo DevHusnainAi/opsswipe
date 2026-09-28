@@ -2,6 +2,8 @@
 // carries a GitHub Actions OIDC token, which proves which repo and which PR the run was for.
 // Accepted only for the exact head commit OpsSwipe opened; merge_pr unlocks only on a full pass.
 import { db, json } from '../_shared/db.ts';
+import { afterProof } from '../_shared/flow.ts';
+import { aiEnabled } from '../_shared/incidents.ts';
 import { prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
 import { notify } from '../_shared/services.ts';
 import { canMerge, evaluateProof, parseProof, type Proof, type PrRef } from '../_shared/proof.ts';
@@ -43,23 +45,26 @@ Deno.serve(async (req) => {
       : json(404, { error: 'PR does not match' });
   }
 
-  const actions = inc.actions.filter((a) => a !== 'merge_pr');
-  if (canMerge(inc.context.pr, result.proof)) actions.push('merge_pr');
+  const next = afterProof(inc, result.proof, canMerge(inc.context.pr, result.proof), { ai: aiEnabled(), repo: true });
   await db.from('incidents').update({
-    actions,
-    // a proven PR becomes the suggested fix
-    ...(result.proof.ok
-      ? { action: 'merge_pr', reason: 'CI proved the fix against the failing production requests.' }
-      : {}),
+    ...next,
+    ...(next.action ? { suggested_by: 'rules' } : {}),
     context: { ...inc.context, proof: result.proof },
   }).eq('id', inc.id);
-  if (result.proof.ok) {
-    const { passed, total } = result.proof;
-    await notify(inc.owner, {
-      title: `Fix proven for ${inc.target_server}`,
-      body: `${passed}/${total} failing production requests now pass. Ready to merge.`,
-      data: { incidentId: inc.id },
-    });
-  }
+  const { passed, total } = result.proof;
+  await notify(
+    inc.owner,
+    result.proof.ok
+      ? {
+        title: `Fix proven for ${inc.target_server}`,
+        body: `${passed}/${total} failing production requests now pass. Ready to merge.`,
+        data: { incidentId: inc.id },
+      }
+      : {
+        title: `Fix not proven for ${inc.target_server}`,
+        body: `${next.reason ?? `Only ${passed}/${total} failing requests pass.`}`,
+        data: { incidentId: inc.id },
+      },
+  );
   return json(200, { accepted: true, ok: result.proof.ok });
 });

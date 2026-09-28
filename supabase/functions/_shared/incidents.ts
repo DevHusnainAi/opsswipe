@@ -6,6 +6,7 @@ import { accessToken } from './gcp.ts';
 import { type Deploy, listDeploys, pickRollback } from './render.ts';
 import { mergeSamples, type ReplaySample } from './replay.ts';
 import { notify, platformSa, renderKey, type Service, toTarget } from './services.ts';
+import { selfHealed } from './flow.ts';
 import { suggest, toSuggestInput, vertexSuggester } from './suggest.ts';
 import { actionsFor } from './targets.ts';
 
@@ -107,6 +108,34 @@ export async function openIncident(
 }
 
 // Recovery proof: the first healthy check after a fix stamps recovered_at.
+export const HEALTH_TITLE = 'HTTP health check failing';
+
+// A health-check incident whose service came back with no fix run (a blip, a deploy that settled):
+// close the card instead of leaving a fix on offer for a healthy service. Incidents the app reported
+// stay open: its health URL can be fine while /checkout still fails.
+export async function closeSelfHealed(serviceId: string) {
+  const { data } = await db.from('incidents').select('id, owner, target_server, created_at, context')
+    .eq('service_id', serviceId).eq('status', 'active').eq('title', HEALTH_TITLE);
+  for (const i of data ?? []) {
+    const { count } = await db.from('audit_log').select('id', { count: 'exact', head: true })
+      .eq('incident_id', i.id).eq('outcome', 'executed');
+    if (!selfHealed(i.context ?? {}, count ?? 0)) continue;
+    const now = new Date().toISOString();
+    const { data: closed } = await db.from('incidents').update({
+      status: 'resolved',
+      resolved_at: now,
+      recovered_at: now,
+      context: { ...i.context, self_healed: true },
+    }).eq('id', i.id).eq('status', 'active').select('id').maybeSingle();
+    if (!closed) continue; // a fix was claimed meanwhile
+    await notify(i.owner, {
+      title: `${i.target_server} recovered on its own`,
+      body: `Down ${formatDuration(Date.parse(now) - Date.parse(i.created_at))}. No fix needed; the card is closed.`,
+      data: { incidentId: i.id },
+    });
+  }
+}
+
 // The owner hears about it even with the app closed: the payoff of the swipe.
 export async function markRecovered(serviceId: string) {
   const now = new Date().toISOString();

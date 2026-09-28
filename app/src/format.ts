@@ -4,11 +4,19 @@ export function formatDuration(ms: number) {
   return m ? `${m}m ${s % 60}s` : `${s}s`;
 }
 
-type Timeline = { created_at: string; resolved_at: string | null; recovered_at: string | null };
+type Timeline = {
+  created_at: string;
+  resolved_at: string | null;
+  recovered_at: string | null;
+  context?: { self_healed?: boolean } | null;
+};
 
 // Recovery proof shown under a fixed incident, e.g. "down 3m 12s · back 41s after fix".
 export function recoveryLine(i: Timeline) {
   if (!i.resolved_at) return '';
+  if (i.context?.self_healed && i.recovered_at) {
+    return `down ${formatDuration(Date.parse(i.recovered_at) - Date.parse(i.created_at))} · recovered on its own`;
+  }
   if (!i.recovered_at) return 'fix sent · waiting for health check';
   const back = Date.parse(i.recovered_at);
   return `down ${formatDuration(back - Date.parse(i.created_at))} · back ${formatDuration(back - Date.parse(i.resolved_at))} after fix`;

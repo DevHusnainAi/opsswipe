@@ -11,6 +11,7 @@ const OUTCOME = {
   executed: { label: 'Executed', color: c.green, tint: c.greenTint },
   paywalled: { label: 'Paywalled', color: c.amber, tint: c.amberTint },
   failed: { label: 'Failed', color: c.red, tint: c.redTint },
+  dismissed: { label: 'Dismissed', color: c.muted, tint: c.surface2 },
 } as const;
 
 const dayLabel = (iso: string, now: number) => {
@@ -32,9 +33,10 @@ export function Activity({ audit, fixed, now }: { audit: AuditEntry[]; fixed: In
 
   // Which approved fix brought it back, so each recovery reads as one story.
   const fixUsed = (id: string) => {
-    const a = audit.find((x) => x.incident_id === id && x.outcome === 'executed');
+    const a = audit.find((x) => x.incident_id === id && (x.outcome === 'executed' || x.outcome === 'dismissed'));
     return a ? fixFor(a.action).label : null;
   };
+  const dismissed = (id: string) => audit.some((x) => x.incident_id === id && x.outcome === 'dismissed');
 
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -48,7 +50,9 @@ export function Activity({ audit, fixed, now }: { audit: AuditEntry[]; fixed: In
                 <View style={[styles.dot, { backgroundColor: f.recovered_at ? c.green : c.amber }]} />
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={type.mono}>{f.target_server}</Text>
-                  <Text style={type.caption}>{[fixUsed(f.id), recoveryLine(f)].filter(Boolean).join(' · ')}</Text>
+                  <Text style={type.caption}>
+                    {dismissed(f.id) ? 'Dismissed as a false alarm' : [fixUsed(f.id), recoveryLine(f)].filter(Boolean).join(' · ')}
+                  </Text>
                 </View>
               </View>
             ))}

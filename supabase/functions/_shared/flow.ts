@@ -3,8 +3,10 @@
 // Two kinds of fix:
 //   - production fixes (restart, reset, rollback, merge_pr) restore service
 //   - code fixes (revert_pr, fix_pr) change the code and need CI proof + merge before they count
-// While a PR is open, the incident stays open even if production is mitigated by a rollback or
-// reset, so the proof can still land and the merge can still be approved. One PR per incident.
+// While a PR is open, the incident stays open even if production is mitigated by a rollback, so the
+// proof can still land and the merge can still be approved. One PR at a time per incident; a failed
+// proof re-offers a code fix (afterProof). A VM reboot is not offered meanwhile: it boots the same bad
+// code, so on a VM the card just waits for the proof.
 import type { PrRef } from './proof.ts';
 import { CODE_FIXES } from './targets.ts';
 
@@ -13,19 +15,17 @@ export type AfterFix = { keepOpen: boolean; update: Record<string, unknown> };
 
 export function afterFix(action: string, inc: Inc, extra: { pr?: PrRef } = {}, now = new Date()): AfterFix {
   if ((CODE_FIXES as string[]).includes(action)) {
-    const actions = inc.actions.filter((a) => !(CODE_FIXES as string[]).includes(a));
-    const mitigate = actions.includes('rollback') ? 'rollback' : actions.includes('reset') ? 'reset' : null;
+    const actions = inc.actions.filter((a) => !(CODE_FIXES as string[]).includes(a) && a !== 'reset');
+    const mitigate = actions.includes('rollback') ? 'rollback' : null;
     const what = action === 'fix_pr' ? 'AI fix PR' : 'Revert PR';
     return {
       keepOpen: true,
       update: {
         actions,
         action: mitigate ?? actions[0] ?? 'merge_pr',
-        reason: `${what} opened; CI is proving it.${
-          mitigate ? ` ${mitigate === 'rollback' ? 'Roll back' : 'Reset'} to restore service meanwhile.` : ''
-        }`,
+        reason: `${what} opened; CI is proving it.${mitigate ? ' Roll back to restore service meanwhile.' : ''}`,
         suggested_by: 'rules',
-        context: { ...inc.context, pr: extra.pr },
+        context: { ...inc.context, pr: extra.pr && { ...extra.pr, kind: action } },
       },
     };
   }
@@ -39,7 +39,7 @@ export function afterFix(action: string, inc: Inc, extra: { pr?: PrRef } = {}, n
       update: {
         actions,
         action: 'merge_pr',
-        reason: 'Service restored. Merge the revert PR once CI proves it.',
+        reason: 'Service restored. Merge the PR once CI proves it.',
         suggested_by: 'rules',
         context: { ...inc.context, mitigated_at: now.toISOString(), mitigated_by: action },
       },
@@ -47,4 +47,40 @@ export function afterFix(action: string, inc: Inc, extra: { pr?: PrRef } = {}, n
   }
 
   return { keepOpen: false, update: { status: 'resolved', resolved_at: now.toISOString() } };
+}
+
+// A health-check incident closes on its own when nothing was run and no PR waits for its proof.
+export const selfHealed = (context: { pr?: unknown }, executed: number) => !context.pr && executed === 0;
+
+type ProofResult = { ok: boolean; passed: number; total: number };
+
+// What the card offers once CI reports. A pass unlocks the merge. A failure is not a dead end: the
+// AI fix is offered again (Claude sees the same failing requests), and so is a revert unless the
+// revert itself just failed (reverting the same commit again proves nothing new).
+export function afterProof(
+  inc: { actions: string[]; context: { pr?: PrRef } },
+  proof: ProofResult,
+  mergeable: boolean,
+  opts: { ai: boolean; repo: boolean },
+): { actions: string[]; action?: string; reason?: string } {
+  const actions = inc.actions.filter((a) => a !== 'merge_pr');
+  if (mergeable) {
+    return {
+      actions: [...actions, 'merge_pr'],
+      action: 'merge_pr',
+      reason: 'CI proved the fix against the failing production requests.',
+    };
+  }
+  if (proof.ok || !opts.repo) return { actions };
+  const retry = [
+    ...(opts.ai ? ['fix_pr'] : []),
+    ...(inc.context.pr?.kind === 'revert_pr' ? [] : ['revert_pr']),
+  ].filter((a) => !actions.includes(a));
+  const next = [...actions, ...retry];
+  const failed = `Proof failed: ${proof.passed}/${proof.total} pass.`;
+  if (next.includes('fix_pr')) {
+    return { actions: next, action: 'fix_pr', reason: `${failed} Try an AI fix with these failures.` };
+  }
+  if (next.includes('revert_pr')) return { actions: next, action: 'revert_pr', reason: `${failed} Try a revert.` };
+  return { actions: next, reason: `${failed} Push a fix to the PR; CI runs the proof again.` };
 }

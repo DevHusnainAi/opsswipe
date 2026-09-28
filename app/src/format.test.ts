@@ -22,6 +22,8 @@ test('recoveryLine walks the incident timeline', () => {
     recoveryLine({ created_at, resolved_at: '2026-09-27T10:02:31Z', recovered_at: '2026-09-27T10:03:12Z' }),
     'down 3m 12s · back 41s after fix',
   );
+  const healed = { created_at, resolved_at: '2026-09-27T10:01:30Z', recovered_at: '2026-09-27T10:01:30Z' };
+  assert.equal(recoveryLine({ ...healed, context: { self_healed: true } }), 'down 1m 30s · recovered on its own');
 });
 
 test('timeAgo', () => {

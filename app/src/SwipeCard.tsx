@@ -35,7 +35,7 @@ type Props = {
   // done: card leaves · stay: fix ran but the incident stays open (revert PR) · failed: snap back + error haptic
   onFix: (incident: Incident, action: string) => Promise<'done' | 'stay' | 'failed'>;
   onMeasure?: (height: number) => void; // top card reports its height so the stack fits it
-  onDecline?: (incident: Incident) => void; // an AI agent's proposal can be turned down
+  onDecline?: (incident: Incident) => void; // close without a fix: decline an agent's proposal, dismiss a false alarm
 };
 
 export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline }: Props) {
@@ -212,14 +212,18 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline }:
             <Fingerprint size={24} color={live ? c.onGreen : c.muted} weight="bold" />
           </Pressable>
         </View>
-        {live && incident.suggested_by === 'agent' && onDecline && (
+        {top && incident.status === 'active' && onDecline && (
           <Pressable
             onPress={() => onDecline(incident)}
             accessibilityRole="button"
-            accessibilityLabel={`Decline ${incident.context?.agent?.name ?? 'the agent'}'s proposal`}
+            accessibilityLabel={incident.suggested_by === 'agent'
+              ? `Decline ${incident.context?.agent?.name ?? 'the agent'}'s proposal`
+              : `Dismiss ${incident.target_server} as a false alarm`}
             style={styles.decline}
           >
-            <Text style={[type.label, { color: c.muted }]}>Decline this proposal</Text>
+            <Text style={[type.label, { color: c.muted }]}>
+              {incident.suggested_by === 'agent' ? 'Decline this proposal' : 'Dismiss, it’s a false alarm'}
+            </Text>
           </Pressable>
         )}
       </Animated.View>

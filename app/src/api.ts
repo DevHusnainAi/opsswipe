@@ -23,6 +23,7 @@ export type Incident = {
   suggested_by: 'rules' | 'ai' | 'agent' | null;
   context: {
     agent?: { name: string };
+    self_healed?: boolean;
     replay?: { method: string; path: string; status: number }[];
     pr?: { number: number; url: string; headSha: string };
     proof?: { ok: boolean; passed: number; total: number; tests: boolean; runUrl?: string; headSha: string };

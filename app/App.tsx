@@ -337,11 +337,19 @@ export default function App() {
     return action === 'revert_pr' || action === 'fix_pr' ? ('stay' as const) : ('done' as const);
   };
 
-  // Turning down an AI agent's proposal: the card goes away and the agent sees "declined".
+  // Closing a card without a fix: an agent's proposal is declined (the agent sees "declined"); anything
+  // else is dismissed as a false alarm, logged in Activity. The practice card just goes away.
   const decline = async (inc: Incident) => {
+    if (inc.id === SAMPLE_ID) return setSample(null);
+    const agent = inc.suggested_by === 'agent';
     try {
-      await connect('decline', { incidentId: inc.id });
-      setBanner({ kind: 'ok', text: `Declined. ${inc.context?.agent?.name ?? 'The agent'} will be told.` });
+      await connect(agent ? 'decline' : 'dismiss', { incidentId: inc.id });
+      setBanner({
+        kind: 'ok',
+        text: agent
+          ? `Declined. ${inc.context?.agent?.name ?? 'The agent'} will be told.`
+          : `Dismissed. ${inc.target_server} stays watched; it's logged in Activity.`,
+      });
       await refresh();
     } catch (e) {
       setBanner({ kind: 'error', text: e instanceof Error ? e.message : String(e) });

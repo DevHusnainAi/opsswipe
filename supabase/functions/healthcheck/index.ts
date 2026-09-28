@@ -2,19 +2,17 @@
 // to report their own failures), plus recovery proof: a healthy service stamps recovered_at on
 // its last fix. App-level failures arrive event-driven through /report instead.
 import { env, json } from '../_shared/db.ts';
-import { markRecovered, openIncident } from '../_shared/incidents.ts';
+import { closeSelfHealed, HEALTH_TITLE, markRecovered, openIncident } from '../_shared/incidents.ts';
+import { confirmedProbe, isUp } from '../_shared/probe.ts';
 import { scrubSample } from '../_shared/replay.ts';
 import { allServices, type Service } from '../_shared/services.ts';
 
 async function check(s: Service) {
-  const t0 = Date.now();
-  const status = await fetch(s.config.url, { signal: AbortSignal.timeout(4000) }).then(
-    async (r) => (await r.body?.cancel(), String(r.status)),
-    (e) => e.name,
-  );
-  const ms = Date.now() - t0;
-  if (status.startsWith('2')) {
+  const p = await confirmedProbe(s.config.url);
+  const { status, ms } = p;
+  if (isUp(p)) {
     await markRecovered(s.id);
+    await closeSelfHealed(s.id);
     return { service: s.id, up: true, ms };
   }
   const url = new URL(s.config.url);
@@ -24,7 +22,7 @@ async function check(s: Service) {
   const code = Number(status);
   const sample = scrubSample({ method: 'GET', path: url.pathname + url.search, status: code >= 500 ? code : 599 });
   const samples = !code || code >= 500 ? [sample!] : [];
-  const { opened } = await openIncident(s, 'HTTP health check failing', metric, samples);
+  const { opened } = await openIncident(s, HEALTH_TITLE, metric, samples);
   return { service: s.id, up: false, opened };
 }
 

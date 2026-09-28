@@ -235,6 +235,24 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       return { declined: true };
     }
 
+    // A false alarm: close the card without running anything. Logged, so Activity shows who closed it.
+    case 'dismiss': {
+      const now = new Date().toISOString(); // recovered_at too: no "back up" push for a false alarm
+      const { data } = await db.from('incidents').update({ status: 'resolved', resolved_at: now, recovered_at: now })
+        .eq('id', String(p.incidentId ?? '')).eq('owner', owner).eq('status', 'active')
+        .select('id, target_server').maybeSingle();
+      need(data, 'That incident is no longer open.');
+      await db.from('audit_log').insert({
+        incident_id: data!.id,
+        actor: owner,
+        action: 'dismiss',
+        target: data!.target_server,
+        outcome: 'dismissed',
+        detail: 'dismissed as a false alarm',
+      });
+      return { dismissed: true };
+    }
+
     // Sign-out: this phone stops receiving this account's alerts.
     case 'unregister_push': {
       await db.from('push_tokens').delete().eq('token', String(p.token ?? '')).eq('owner', owner);
