@@ -106,3 +106,32 @@ Deno.test('only the OpsSwipe proof workflow of that same repo can prove a fix', 
   );
   assertEquals(fromWorkflow(base, path), false, 'no claim, no proof');
 });
+
+Deno.test("GitHub connect finds the user's own installation, none yet, or refuses someone else's", async () => {
+  Deno.env.set('SUPABASE_URL', Deno.env.get('SUPABASE_URL') ?? 'http://localhost:54321'); // db.ts connects on import
+  Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? 'test');
+  const { findInstallation } = await import('../_shared/githubApp.ts');
+  const real = globalThis.fetch;
+  const reply = (installations: unknown[]) => (globalThis.fetch = ((u: string) =>
+    Promise.resolve(Response.json(
+      u.includes('access_token')
+        ? { access_token: 'user-token' }
+        : u.endsWith('/user')
+        ? { login: 'me' }
+        : { installations },
+    ))) as typeof fetch);
+  try {
+    reply([{ id: 11, account: { login: 'some-org' } }, { id: 22, account: { login: 'me' } }]);
+    assertEquals(
+      await findInstallation('code'),
+      { login: 'me', installationId: 22 },
+      'prefers the one on their account',
+    );
+    reply([]);
+    assertEquals(await findInstallation('code'), { login: 'me', installationId: null }, 'not installed yet');
+    reply([{ id: 22, account: { login: 'me' } }]);
+    await assertRejects(() => findInstallation('code', 99), Error, 'does not belong to you');
+  } finally {
+    globalThis.fetch = real;
+  }
+});

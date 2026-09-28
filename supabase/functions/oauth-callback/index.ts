@@ -6,7 +6,8 @@
 // exp://192.168.x.x, so it lands here and we forward; the session travels in the URL fragment,
 // which the browser carries across this redirect untouched.
 import { returnBase } from '../_shared/appLink.ts';
-import { completeGithub, completeGoogle, takeState } from '../_shared/oauthState.ts';
+import { installUrl } from '../_shared/githubApp.ts';
+import { completeGithub, completeGoogle, newState, takeState } from '../_shared/oauthState.ts';
 
 const ALLOWED = ['code', 'installation_id', 'setup_action', 'state', 'error', 'error_code'];
 
@@ -28,11 +29,15 @@ Deno.serve(async (req) => {
   const pending = code && path === 'connect' ? await takeState(state?.split('~')[0] ?? '') : null;
   if (pending) {
     try {
-      const installationId = Number(out.get('installation_id'));
-      if (pending.kind === 'github' && Number.isInteger(installationId)) {
-        await completeGithub(pending.owner, code!, installationId);
-      } else if (pending.kind === 'google') await completeGoogle(pending.owner, code!);
-      else throw new Error(`nothing to finish for ${pending.kind}`);
+      if (pending.kind === 'github') {
+        const r = await completeGithub(pending.owner, code!, Number(out.get('installation_id')) || undefined);
+        // Authorized but not installed yet: on to the install page, with a fresh one-time state
+        // (keeping the Expo Go return address, if any). Installing comes back here and finishes.
+        if (!r.installed) {
+          const next = [await newState(pending.owner, 'github'), ...(state?.split('~').slice(1) ?? [])].join('~');
+          return new Response(null, { status: 302, headers: { Location: `${installUrl()}?state=${next}` } });
+        }
+      } else await completeGoogle(pending.owner, code!);
       out.delete('code');
       out.set('done', pending.kind);
     } catch (e) {

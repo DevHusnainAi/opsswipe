@@ -8,7 +8,7 @@ import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
 import { consentUrl, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
 import { openFilesPr } from '../_shared/github.ts';
-import { installUrl, listRepos } from '../_shared/githubApp.ts';
+import { authorizeUrl, installUrl, listRepos } from '../_shared/githubApp.ts';
 import { completeGithub, completeGoogle, newState } from '../_shared/oauthState.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
 import { idsFromLink, listDeployments } from '../_shared/railway.ts';
@@ -113,18 +113,19 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       };
     }
 
-    // GitHub App install with a one-time state: oauth-callback finishes it on the server, and also
-    // hands the app back to Expo Go if that's where it started.
+    // Connect GitHub with a one-time state: authorize first (always returns a code, even when the app
+    // is already installed); oauth-callback finds the installation or sends the user on to install it,
+    // and hands the app back to Expo Go if that's where it started.
     case 'github_start': {
       const state = withReturn(await newState(owner, 'github'), p.returnTo);
-      return { url: `${installUrl()}?state=${state}` };
+      return { url: authorizeUrl(state) };
     }
 
     case 'github_complete': {
       const code = String(p.code ?? '');
       const installationId = Number(p.installationId);
       need(code && Number.isInteger(installationId), 'GitHub did not send an installation.');
-      return { github: { connected: true, account: await completeGithub(owner, code, installationId) } };
+      return { github: { connected: true, account: (await completeGithub(owner, code, installationId)).account } };
     }
 
     case 'github_repos': {

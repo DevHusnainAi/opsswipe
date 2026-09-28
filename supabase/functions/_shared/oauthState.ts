@@ -2,7 +2,7 @@
 // and expires in 15 minutes, so a code arriving at oauth-callback can only ever connect that user.
 import { db } from './db.ts';
 import { exchangeCode, listProjects } from './google.ts';
-import { verifyInstallation } from './githubApp.ts';
+import { findInstallation } from './githubApp.ts';
 import { connection, deleteSecret, storeSecret } from './services.ts';
 
 export type OAuthKind = 'github' | 'google';
@@ -26,11 +26,13 @@ export async function takeState(nonce: string): Promise<{ owner: string; kind: O
   return data as { owner: string; kind: OAuthKind } | null;
 }
 
-// The installing user's own OAuth code proves the installation is theirs before it's stored.
-export async function completeGithub(owner: string, code: string, installationId: number) {
-  const account = await verifyInstallation(code, installationId);
-  await db.from('connections').upsert({ owner, kind: 'github', installation_id: installationId, account });
-  return account;
+// The user's own OAuth code proves which installation is theirs before it's stored. No installation
+// yet (authorized, not installed): installed = false, and the caller sends them on to install.
+export async function completeGithub(owner: string, code: string, installationId?: number) {
+  const { login, installationId: id } = await findInstallation(code, installationId || undefined);
+  if (!id) return { account: login, installed: false };
+  await db.from('connections').upsert({ owner, kind: 'github', installation_id: id, account: login });
+  return { account: login, installed: true };
 }
 
 // The refresh token goes to Vault; the short-lived access token lists projects right away.
