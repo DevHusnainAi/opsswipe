@@ -6,13 +6,18 @@ OpsSwipe: a phone pager that turns production 5xx incidents into swipe-to-fix ca
 replays the exact production requests that failed. Rationale for most design choices lives in `docs/DECISIONS.md`; operator
 and user setup in `docs/SETUP.md`.
 
+**Start with `docs/HANDOFF.md`**: current state, what's untested, the remaining steps, every account ID, and where each
+secret lives (secrets are never in the repo).
+
 ## Layout
 
 - `supabase/functions/` — Deno Edge Functions (backend). One dir per endpoint, logic in `_shared/`, tests in `tests/`.
 - `supabase/migrations/` + `supabase/tests/*.sql` — Postgres schema (RLS, Vault, free-fix meter) and SQL tests.
 - `app/` — Expo SDK 57 / React Native client (npm, Node 24). Has its own `app/CLAUDE.md` with Expo rules — read it before
-  touching Expo APIs. Note: the app does **not** use Expo Router despite what that file says; it's a single `App.tsx` plus
-  screens/components in `app/src/`.
+  touching Expo APIs. Note: the app does **not** use Expo Router despite what that file says. `App.tsx` owns the phases
+  (welcome → auth → alerts primer → ready) and four state-based tabs (`src/TabBar.tsx`: Incidents, `Services.tsx`,
+  `Activity.tsx`, `Settings.tsx`); no navigation library, so it runs in Expo Go and the dev build without a rebuild.
+  `src/env.ts` detects Expo Go (no push, RevenueCat preview mode, `exp://` OAuth returns).
 - `evals/suggest/` — labeled incident cases scoring fix suggestions.
 - `infra/` — demo target (`demo-web`, Node, deployed on Render), GCP setup, cron SQL, `chaos.sh` to break the demo.
 
@@ -65,9 +70,18 @@ Incident lifecycle, spread across functions:
    to `proof/` with a GitHub Actions OIDC token (`_shared/oidc.ts`). Proof is bound to the head sha OpsSwipe opened
    (`_shared/proof.ts`), and `merge_pr` passes that sha so GitHub 409s if anything was pushed after.
 
-`connect/` + `oauth-callback/` link users' GitHub App installs, Render keys, and Google Cloud (a one-time Google token grants
-OpsSwipe's own service account a reset-only custom role on one VM, then is deleted). Secrets live in Supabase Vault and are only
-read in `_shared/services.ts`. `_shared/db.ts` holds the service-role client and `env()`.
+`connect/` + `oauth-callback/` link users' GitHub App installs, Render keys, and Google Cloud (the Google refresh token stays
+in Vault so VMs can be added later; each added VM gets a reset-only custom role for OpsSwipe's own service account;
+disconnect revokes at Google). `connect` is one action switch (status, add_render, gcp_*, link_repo, agent_token_*,
+decline, register/unregister_push…). `oauth-callback` bounces codes and Supabase sessions back to `opsswipe://` or a
+LAN-only `exp://` (`_shared/appLink.ts`). Secrets live in Supabase Vault and are only read in `_shared/services.ts`.
+`_shared/db.ts` holds the service-role client and `env()`.
+
+Code fixes work for any service with a linked repo (`targets.ts` `actionsFor`): `revert_pr`, `fix_pr` (Claude writes a patch
+limited to the bad commit's files, `_shared/patch.ts`, gated by `checkPatch`; needs `AI_SUGGESTIONS=vertex`) and `merge_pr`.
+The bad commit comes from Render deploys, else the app's reported `release`, else the branch head (`execute/badCommit`).
+`agent/` is the Approval API: agents with a hashed `ops_` token propose a fix, it becomes an incident card
+(`suggested_by='agent'`), the human approves or declines, the agent polls (`_shared/agents.ts`).
 
 ## Conventions
 
