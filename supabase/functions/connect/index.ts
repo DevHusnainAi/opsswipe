@@ -337,6 +337,21 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       return { disconnected: kind };
     }
 
+    // Delete the account and everything it holds (Play policy: deletion inside the app). Google access
+    // is revoked at Google; the GitHub App install is the user's to remove on GitHub.
+    case 'delete_account': {
+      for (const kind of ['google', 'github', 'render'] as const) await forgetConnection(owner, kind);
+      const { data: services } = await db.from('services').select('report_secret_id').eq('owner', owner);
+      for (const s of services ?? []) await deleteSecret(s.report_secret_id);
+      // audit_log and usage key on the user id without a foreign key; audit rows would also block the
+      // incidents' cascade. Everything else cascades from auth.users.
+      await db.from('audit_log').delete().eq('actor', owner);
+      await db.from('usage').delete().eq('actor', owner);
+      const { error } = await db.auth.admin.deleteUser(owner);
+      if (error) throw error;
+      return { deleted: true };
+    }
+
     default:
       throw new UserError('Unknown action.');
   }

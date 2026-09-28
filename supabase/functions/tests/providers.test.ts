@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects, assertThrows } from 'jsr:@std/assert@1';
-import { isActive } from '../_shared/entitlement.ts';
+import { isActive, planFromEvent, proFromRow } from '../_shared/entitlement.ts';
+import { timingSafeEqual } from '../_shared/hmac.ts';
 import { resetInstance, type ServiceAccount, signJwt } from '../_shared/gcp.ts';
 import { restartService } from '../_shared/render.ts';
 import { actionsFor, validateTarget } from '../_shared/targets.ts';
@@ -134,4 +135,34 @@ Deno.test('isActive: lifetime, future and expired entitlements', () => {
   assert(isActive({ expires_date: '2026-10-27T00:00:00Z' }, now));
   assert(!isActive({ expires_date: '2026-09-01T00:00:00Z' }, now));
   assert(!isActive(undefined, now));
+});
+
+Deno.test('RevenueCat webhook events become a plan row; anonymous ids and other entitlements are ignored', () => {
+  const uid = '11111111-2222-4333-8444-555555555555';
+  assertEquals(
+    planFromEvent({ type: 'RENEWAL', app_user_id: uid, entitlement_ids: ['pro'], expiration_at_ms: 1790000000000 }),
+    { owner: uid, pro_until: new Date(1790000000000).toISOString() },
+  );
+  assertEquals(
+    planFromEvent({ app_user_id: uid, entitlement_ids: ['pro'], expiration_at_ms: null })?.pro_until,
+    'infinity',
+  );
+  assertEquals(planFromEvent({ app_user_id: '$RCAnonymousID:abc', entitlement_ids: ['pro'] }), null);
+  assertEquals(planFromEvent({ app_user_id: uid, entitlement_ids: ['other'] }), null);
+  assertEquals(planFromEvent({ type: 'TEST' }), null);
+});
+
+Deno.test('the webhook copy decides Pro when RevenueCat is down: active, lifetime, expired, none', () => {
+  const now = new Date('2026-09-28T00:00:00Z');
+  assert(proFromRow({ pro_until: '2026-10-28T00:00:00Z' }, now));
+  assert(proFromRow({ pro_until: 'infinity' }, now));
+  assert(!proFromRow({ pro_until: '2026-09-01T00:00:00Z' }, now));
+  assert(!proFromRow(null, now));
+});
+
+Deno.test('shared secrets compare in constant time and only when equal', () => {
+  assert(timingSafeEqual('Bearer abc', 'Bearer abc'));
+  assert(!timingSafeEqual('Bearer abc', 'Bearer abd'));
+  assert(!timingSafeEqual('Bearer ab', 'Bearer abc'));
+  assert(!timingSafeEqual('', 'x'));
 });

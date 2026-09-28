@@ -2,7 +2,7 @@
 // Who is asking comes from the verified JWT and must own the incident; what can run comes from
 // the service's validated config AND the fixes stored on the incident. Nothing else is trusted.
 import { db, env, json } from '../_shared/db.ts';
-import { isActive } from '../_shared/entitlement.ts';
+import { isActive, proFromRow } from '../_shared/entitlement.ts';
 import { accessToken, resetInstance } from '../_shared/gcp.ts';
 import { branchHead, commitFiles, commitMessage, mergePr, openFilesPr, openRevertPr } from '../_shared/github.ts';
 import { afterFix } from '../_shared/flow.ts';
@@ -15,7 +15,7 @@ import { getService, githubToken, platformSa, renderKey, type Service, toTarget 
 import { type Action, actionsFor, type Target } from '../_shared/targets.ts';
 
 const ENTITLEMENT = 'pro';
-const FREE_RUNS = 1;
+const FREE_RUNS = 1; // free outages (every fix of that incident is included)
 
 type Incident = {
   id: string;
@@ -34,12 +34,21 @@ type Incident = {
 // What a fix did, and how the incident should change afterwards.
 type Outcome = { detail: string; pr?: PrRef };
 
+// RevenueCat is the source of truth. If its API is down, the copy its webhooks keep decides: a pager
+// that can't fix production because billing is unreachable would fail exactly when it's needed.
 async function isPro(uid: string) {
-  const res = await fetch(`https://api.revenuecat.com/v1/subscribers/${uid}`, {
-    headers: { Authorization: `Bearer ${env('REVENUECAT_SECRET_KEY')}` },
-  });
-  if (!res.ok) throw new Error(`revenuecat ${res.status}`);
-  return isActive((await res.json()).subscriber.entitlements[ENTITLEMENT]);
+  try {
+    const res = await fetch(`https://api.revenuecat.com/v1/subscribers/${uid}`, {
+      headers: { Authorization: `Bearer ${env('REVENUECAT_SECRET_KEY')}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error(`revenuecat ${res.status}`);
+    return isActive((await res.json()).subscriber.entitlements[ENTITLEMENT]);
+  } catch (e) {
+    console.warn('revenuecat unavailable, using the webhook copy:', String(e));
+    const { data } = await db.from('entitlements').select('pro_until').eq('owner', uid).maybeSingle();
+    return proFromRow(data);
+  }
 }
 
 // The commit that broke production: the release live when the incident opened (Render's deploy
@@ -183,7 +192,7 @@ Deno.serve(async (req) => {
   let outcome: Outcome;
   try {
     if (!(await isPro(user.id))) {
-      const { data: ok } = await db.rpc('consume_free_run', { uid: user.id, free_limit: FREE_RUNS });
+      const { data: ok } = await db.rpc('consume_free_run', { uid: user.id, free_limit: FREE_RUNS, incident: inc.id });
       if (!ok) {
         await release();
         await audit('paywalled');
@@ -194,7 +203,7 @@ Deno.serve(async (req) => {
     outcome = await runAction(service, action, inc);
   } catch (e) {
     await release();
-    if (usedFreeRun) await db.rpc('refund_free_run', { uid: user.id });
+    if (usedFreeRun) await db.rpc('refund_free_run', { uid: user.id, incident: inc.id });
     await audit('failed', String(e));
     return json(502, { error: 'remediation failed' });
   }

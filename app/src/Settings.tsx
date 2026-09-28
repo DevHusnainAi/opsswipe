@@ -10,7 +10,9 @@ import {
   Crown,
   GithubLogo,
   Info,
+  ShieldCheck,
   SignOut,
+  Trash,
   UserCircle,
 } from 'phosphor-react-native';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
@@ -26,7 +28,8 @@ const REPO = 'https://github.com/DevHusnainAi/opsswipe';
 type Props = {
   active: boolean;
   pro: boolean;
-  fixesLeft: number;
+  planBody: string;
+  onDeleteAccount: () => Promise<void>;
   onSignOut: () => Promise<void>;
   onUpgrade: () => Promise<void>;
   onManage: () => Promise<void>;
@@ -41,6 +44,7 @@ export function Settings(p: Props) {
   const [alerts, setAlerts] = useState<Alerts>('unavailable');
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = useCallback(async () => {
     const user = (await supabase.auth.getUser()).data.user;
@@ -101,6 +105,23 @@ export function Settings(p: Props) {
             danger
             onPress={() => run('signout', p.onSignOut)}
           />
+          <Action
+            icon={Trash}
+            label={busy === 'delete' ? 'Deleting…' : confirmDelete ? 'Tap again to delete everything' : 'Delete account'}
+            danger
+            onPress={() => {
+              // Two taps: nothing irreversible happens on one.
+              if (!confirmDelete) return setConfirmDelete(true);
+              setConfirmDelete(false);
+              run('delete', p.onDeleteAccount);
+            }}
+          />
+          {confirmDelete && (
+            <Text style={[type.caption, { paddingBottom: space.md }]}>
+              Deletes your services, connections, incidents and history, and revokes Google access. Your subscription
+              is managed by the store: cancel it there. Remove the GitHub App on GitHub.
+            </Text>
+          )}
         </View>
       </Section>
 
@@ -110,7 +131,7 @@ export function Settings(p: Props) {
             icon={Crown}
             tint={p.pro ? c.green : undefined}
             title={p.pro ? 'OpsSwipe Pro' : 'Free'}
-            body={p.pro ? 'Unlimited fixes.' : `${p.fixesLeft} free fix left. Pro unlocks unlimited fixes.`}
+            body={p.planBody}
           />
           {!p.pro && (
             <Action icon={Crown} label="Upgrade to Pro" primary onPress={() => run('upgrade', p.onUpgrade)} />
@@ -164,6 +185,7 @@ export function Settings(p: Props) {
           <Row icon={Info} title={`OpsSwipe ${version}`} body="Fix production from your phone, and prove it worked." />
           <Action icon={GithubLogo} label="Source code on GitHub" onPress={() => Linking.openURL(REPO)} />
           <Action icon={ArrowSquareOut} label="How OpsSwipe keeps your servers safe" onPress={() => Linking.openURL(`${REPO}#security-model`)} />
+          <Action icon={ShieldCheck} label="Privacy policy" onPress={() => Linking.openURL(`${REPO}/blob/main/PRIVACY.md`)} />
         </View>
       </Section>
     </ScrollView>

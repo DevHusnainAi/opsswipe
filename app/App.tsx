@@ -34,7 +34,6 @@ import { type Tab, TabBar } from './src/TabBar';
 import { c, radius, space, type } from './src/theme';
 import { Banner, type BannerState, Button, Skeleton, useNow } from './src/ui';
 
-const FREE_RUNS = 1; // mirrors the server; display only
 const WELCOMED = 'opsswipe.welcomed'; // the value tour is shown once per phone
 const ALERTS_ASKED = 'opsswipe.alerts-asked'; // so is the notification primer
 
@@ -85,7 +84,7 @@ export default function App() {
   const [fixed, setFixed] = useState<Incident[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [pro, setPro] = useState(false);
-  const [freeUsed, setFreeUsed] = useState(0);
+  const [free, setFree] = useState<{ used: number; incident: string | null }>({ used: 0, incident: null });
   const [banner, setBanner] = useState<BannerState>(null);
   const [cardHeight, setCardHeight] = useState(420);
   const [serviceCount, setServiceCount] = useState<number | null>(null);
@@ -102,7 +101,7 @@ export default function App() {
       supabase.from('incidents').select().in('status', ['active', 'resolving']).order('created_at'),
       supabase.from('incidents').select().eq('status', 'resolved').order('resolved_at', { ascending: false }).limit(10),
       supabase.from('audit_log').select().order('created_at', { ascending: false }).limit(50),
-      supabase.from('usage').select('free_used').maybeSingle(),
+      supabase.from('usage').select('free_used, free_incident').maybeSingle(),
       supabase.from('services').select('id', { count: 'exact', head: true }),
     ]);
     const failed = i.error ?? r.error ?? a.error ?? u.error;
@@ -118,7 +117,7 @@ export default function App() {
     }
     seenRecovered.current = new Set(back.map((x: Incident) => x.id));
     setAudit(a.data ?? []);
-    setFreeUsed(u.data?.free_used ?? 0);
+    setFree({ used: u.data?.free_used ?? 0, incident: u.data?.free_incident ?? null });
     setServiceCount(sv.count ?? 0);
   }, []);
 
@@ -292,9 +291,9 @@ export default function App() {
     return res.result;
   };
 
-  // FR-12 → FR-14: the card snaps back first, then the paywall slides up.
+  // FR-12 → FR-14: the card snaps back first, then the paywall slides up, saying what's at stake.
   const upsell = async (inc: Incident, action: string) => {
-    setBanner({ kind: 'warn', text: 'Your free fix is used. Upgrade to keep fixing.' });
+    setBanner({ kind: 'warn', text: `${inc.target_server} is down and your free outage is used. Pro fixes it now.` });
     try {
       if (await paywall()) await run(inc, action); // already authorized
     } catch (e) {
@@ -362,7 +361,22 @@ export default function App() {
     setRecovered(null);
     setSample(sampleIncident());
   };
-  const fixesLeft = Math.max(0, FREE_RUNS - freeUsed);
+  // The free tier is one whole outage: every fix of that incident is on us.
+  const freeNow = !!free.incident && incidents.some((i) => i.id === free.incident);
+  const planChip = pro ? 'Pro' : free.used === 0 ? 'Free · 1 outage' : freeNow ? 'Free · this outage' : 'Free';
+  const planBody = pro
+    ? 'Unlimited fixes on every outage.'
+    : free.used === 0
+    ? 'Your first outage is on us: every fix until it is over. Pro covers every outage after.'
+    : freeNow
+    ? 'This outage is on us, start to finish. Pro covers every outage after.'
+    : 'Your free outage is used. Pro fixes every outage after, for $4.99 a month.';
+
+  // Deletes the account on the server, then clears this phone the same way sign-out does.
+  const deleteAccount = async () => {
+    await connect('delete_account');
+    await signOut().catch(() => {});
+  };
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -403,12 +417,12 @@ export default function App() {
                   onPress={() => setTab('settings')}
                   hitSlop={8}
                   accessibilityRole="button"
-                  accessibilityLabel={pro ? 'Pro plan, unlimited fixes. Opens your plan.' : `Free plan, ${fixesLeft} fix left. Opens your plan.`}
+                  accessibilityLabel={`${planChip} plan. ${planBody} Opens your plan.`}
                   style={({ pressed }) => [styles.plan, pro && styles.planPro, pressed && { opacity: 0.8 }]}
                 >
                   {pro && <Crown size={14} color={c.green} weight="fill" />}
                   <Text style={[type.label, { color: pro ? c.green : c.text }]}>
-                    {pro ? 'Pro' : `Free · ${fixesLeft} fix left`}
+                    {planChip}
                   </Text>
                 </Pressable>
               </View>
@@ -524,7 +538,8 @@ export default function App() {
                   <Settings
                     active={tab === 'settings'}
                     pro={pro}
-                    fixesLeft={fixesLeft}
+                    planBody={planBody}
+                    onDeleteAccount={deleteAccount}
                     onSignOut={signOut}
                     onUpgrade={upgrade}
                     onManage={manage}

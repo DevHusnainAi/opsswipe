@@ -23,3 +23,7 @@ verify_jwt = false
 # Agents authenticate with their own ops_ token (hashed lookup), not a Supabase JWT.
 [functions.agent]
 verify_jwt = false
+
+# Authenticated by the Authorization value set in the RevenueCat dashboard, not a Supabase JWT.
+[functions.revenuecat-webhook]
+verify_jwt = false
