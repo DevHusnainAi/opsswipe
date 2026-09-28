@@ -110,6 +110,17 @@ export async function openIncident(
 // Recovery proof: the first healthy check after a fix stamps recovered_at.
 export const HEALTH_TITLE = 'HTTP health check failing';
 
+// A failure the service's own app (or its Sentry) reported: joins the open incident as one more
+// replay sample, or opens a new one.
+export async function reportFailure(s: Service, sample: ReplaySample | null, metric: string, release?: string) {
+  const open = await openIncidentFor(s.id);
+  if (open) {
+    if (sample) await addSamples(open.id, open.context ?? {}, [sample]);
+    return { added: true };
+  }
+  return await openIncident(s, 'Requests are failing', metric, sample ? [sample] : [], release);
+}
+
 // A health-check incident whose service came back with no fix run (a blip, a deploy that settled):
 // close the card instead of leaving a fix on offer for a healthy service. Incidents the app reported
 // stay open: its health URL can be fine while /checkout still fails.

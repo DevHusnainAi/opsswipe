@@ -8,7 +8,7 @@ import type { Action } from './targets.ts';
 
 export type SuggestInput = {
   target: string;
-  provider: 'gcp' | 'render';
+  provider: 'gcp' | 'render' | 'railway';
   actions: Action[];
   symptom: string; // e.g. "GET app.onrender.com -> 503 (212ms)"
   liveDeploy?: { commit?: string; message?: string; minutesBeforeFailure: number };
@@ -98,7 +98,7 @@ type DeployLike = { createdAt: string; finishedAt?: string; commit?: { id: strin
 // Build the triage input from what the health check saw plus Render's deploy history.
 export function toSuggestInput(
   target: string,
-  provider: 'gcp' | 'render',
+  provider: 'gcp' | 'render' | 'railway',
   actions: Action[],
   symptom: string,
   deploys: { live?: DeployLike; previous?: DeployLike },

@@ -2,10 +2,10 @@
 // accounts it's connected to. Adding a service happens in the AddService sheet.
 import * as WebBrowser from 'expo-web-browser';
 import type { Icon } from 'phosphor-react-native';
-import { CheckCircle, Cloud, GitBranch, GithubLogo, GoogleLogo, HardDrives, Key, Plus, ShieldCheck, Trash } from 'phosphor-react-native';
+import { Bug, CheckCircle, Cloud, GitBranch, GithubLogo, GoogleLogo, HardDrives, Key, Plus, ShieldCheck, Train, Trash } from 'phosphor-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AddService, type StartAt } from './AddService';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AddService, CopyRow, type StartAt } from './AddService';
 import { type ConnectStatus, type Service, connect, supabase } from './api';
 import { appBase, appLink } from './env';
 import { paramsOf } from './format';
@@ -27,7 +27,7 @@ export function Services({ active }: { active: boolean }) {
   const load = useCallback(async () => {
     const [st, sv] = await Promise.all([
       connect<ConnectStatus>('status', { returnTo: appBase }),
-      supabase.from('services').select('id, name, provider, config').order('created_at'),
+      supabase.from('services').select('id, name, provider, config, sentry_secret_id').order('created_at'),
     ]);
     setStatus(st);
     setServices(sv.data ?? []);
@@ -69,7 +69,7 @@ export function Services({ active }: { active: boolean }) {
       await load();
     });
 
-  const disconnect = (kind: 'github' | 'render' | 'google') =>
+  const disconnect = (kind: 'github' | 'render' | 'google' | 'railway') =>
     armed(`dc-${kind}`, () =>
       run(`dc-${kind}`, async () => {
         await connect('disconnect', { kind });
@@ -130,7 +130,7 @@ export function Services({ active }: { active: boolean }) {
   ];
   const doneCount = steps.filter((s) => s.done).length;
   const existing = new Set(
-    (services ?? []).map((s) => (s.provider === 'render' ? s.config.serviceId! : `${s.config.project}/${s.config.zone}/${s.config.instance}`)),
+    (services ?? []).map((s) => (s.provider === 'gcp' ? `${s.config.project}/${s.config.zone}/${s.config.instance}` : s.config.serviceId!)),
   );
 
   return (
@@ -209,7 +209,7 @@ export function Services({ active }: { active: boolean }) {
                         <Text style={type.monoStrong}>{s.name}</Text>
                         <Text style={type.caption} numberOfLines={1}>{s.config.url}</Text>
                       </View>
-                      <Chip label={s.provider === 'gcp' ? 'Google Cloud' : 'Render'} />
+                      <Chip label={s.provider === 'gcp' ? 'Google Cloud' : s.provider === 'railway' ? 'Railway' : 'Render'} />
                     </View>
                     <View style={styles.repoRow}>
                       <GitBranch size={16} color={s.config.repo ? c.text : c.muted} />
@@ -240,6 +240,7 @@ export function Services({ active }: { active: boolean }) {
                         )}
                       </View>
                     )}
+                    <SentryLink service={s} onSaved={load} />
                     <View style={styles.actions}>
                       {s.config.repo && status.github.connected && (
                         <Button
@@ -284,6 +285,16 @@ export function Services({ active }: { active: boolean }) {
                   onConnect={() => setSheet('renderKey')}
                   onDisconnect={() => disconnect('render')}
                 />
+                <Connection
+                  icon={Train}
+                  name="Railway"
+                  detail={status.railway.connected ? 'API token stored encrypted' : 'Restart and roll back services'}
+                  connected={status.railway.connected}
+                  busy={busy === 'dc-railway'}
+                  confirming={confirm === 'dc-railway'}
+                  onConnect={() => setSheet('railway')}
+                  onDisconnect={() => disconnect('railway')}
+                />
                 {status.google.available && (
                   <Connection
                     icon={GoogleLogo}
@@ -319,6 +330,64 @@ export function Services({ active }: { active: boolean }) {
             if (changed) load().catch((e) => setError(e.message));
           }}
         />
+      )}
+    </View>
+  );
+}
+
+// Sentry as an incident source for one service: the user creates an Internal Integration in Sentry
+// with this webhook URL and an issue-alert action, then pastes its Client Secret here once.
+function SentryLink({ service, onSaved }: { service: Service; onSaved: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [secret, setSecret] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hook = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/sentry?service=${service.id}`;
+  const connected = !!service.sentry_secret_id;
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await connect('set_sentry_secret', { serviceId: service.id, secret });
+      setSecret('');
+      setOpen(false);
+      await onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <View style={{ gap: space.sm }}>
+      <Pressable onPress={() => setOpen(!open)} hitSlop={8} accessibilityRole="button" style={styles.repoRow}>
+        <Bug size={16} color={connected ? c.text : c.muted} />
+        <Text style={[type.monoCaption, { flex: 1, color: connected ? c.text : c.muted }]}>
+          {connected ? 'Sentry alerts open incidents' : 'No Sentry'}
+        </Text>
+        <Text style={[type.label, { color: c.green }]}>{open ? 'Cancel' : connected ? 'Change' : 'Connect Sentry'}</Text>
+      </Pressable>
+      {open && (
+        <View style={{ gap: space.sm }}>
+          <Text style={type.caption}>
+            In Sentry: Settings → Developer Settings → New Internal Integration. Paste this webhook URL, turn on Alert
+            Rule Action, save, then add it as an action on an issue alert. Copy its Client Secret below.
+          </Text>
+          <CopyRow label="Webhook URL" value={hook} />
+          <TextInput
+            value={secret}
+            onChangeText={setSecret}
+            placeholder="Client Secret"
+            placeholderTextColor={c.muted}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+            accessibilityLabel="Sentry Client Secret"
+          />
+          {error && <Text style={[type.label, styles.error]}>{error}</Text>}
+          <Button label={busy ? 'Saving…' : 'Save'} onPress={save} />
+        </View>
       )}
     </View>
   );
@@ -424,4 +493,14 @@ const styles = StyleSheet.create({
   textButton: { minHeight: TARGET, justifyContent: 'center' },
   notice: { backgroundColor: c.greenTint, borderRadius: radius.control, padding: space.md, minHeight: TARGET, justifyContent: 'center' },
   error: { color: c.red, backgroundColor: c.redTint, borderRadius: radius.control, padding: space.md },
+  input: {
+    minHeight: TARGET,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: c.surface2,
+    color: c.text,
+    paddingHorizontal: space.md,
+    fontFamily: 'GeistMono',
+  },
 });

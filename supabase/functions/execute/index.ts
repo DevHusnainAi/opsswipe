@@ -11,7 +11,16 @@ import { checkPatch, vertexPatcher } from '../_shared/patch.ts';
 import { canMerge, type Proof, type PrRef } from '../_shared/proof.ts';
 import type { ReplaySample } from '../_shared/replay.ts';
 import { type Deploy, listDeploys, pickRollback, restartService, rollbackToPrevious } from '../_shared/render.ts';
-import { getService, githubToken, platformSa, renderKey, type Service, toTarget } from '../_shared/services.ts';
+import { restartRailway, rollbackRailway } from '../_shared/railway.ts';
+import {
+  getService,
+  githubToken,
+  platformSa,
+  railwayToken,
+  renderKey,
+  type Service,
+  toTarget,
+} from '../_shared/services.ts';
 import { type Action, actionsFor, type Target } from '../_shared/targets.ts';
 
 const ENTITLEMENT = 'pro';
@@ -114,6 +123,10 @@ async function runAction(s: Service, action: Action, inc: Incident): Promise<Out
     const token = await githubToken(s.owner);
     const sha = await badCommit(s, t, inc, token);
     return action === 'fix_pr' ? await aiFixPr(t, sha, inc, token) : await revertPr(t, sha, inc, token);
+  }
+  if (t.provider === 'railway') {
+    const token = await railwayToken(s.owner);
+    return { detail: action === 'rollback' ? await rollbackRailway(t, token) : await restartRailway(t, token) };
   }
   if (t.provider === 'gcp') {
     await resetInstance(t, platformSa());

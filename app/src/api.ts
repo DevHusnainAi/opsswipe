@@ -13,7 +13,7 @@ export type Incident = {
   severity: string;
   metric: string;
   action: string;
-  provider: 'gcp' | 'render' | null;
+  provider: 'gcp' | 'render' | 'railway' | null;
   status: 'active' | 'resolving' | 'resolved';
   created_at: string;
   resolved_at: string | null;
@@ -55,13 +55,26 @@ export async function execute(incidentId: string, action: string): Promise<Execu
 export type Service = {
   id: string;
   name: string;
-  provider: 'gcp' | 'render';
-  config: { url: string; repo?: string; branch?: string; proofPr?: string; serviceId?: string; project?: string; zone?: string; instance?: string };
+  provider: 'gcp' | 'render' | 'railway';
+  sentry_secret_id?: string | null;
+  config: {
+    url: string;
+    repo?: string;
+    branch?: string;
+    proofPr?: string;
+    serviceId?: string;
+    project?: string;
+    zone?: string;
+    instance?: string;
+    projectId?: string;
+  };
 };
 export type RenderOption = { id: string; name: string; url: string; repo?: string };
 export type ConnectStatus = {
   github: { connected: boolean; account: string | null; installUrl: string };
   render: { connected: boolean };
+  railway: { connected: boolean };
+  alerts: { connected: boolean; kind: 'discord' | 'slack' | null };
   google: { connected: boolean; account: string | null; available: boolean };
   gcpIdentity: string | null;
 };

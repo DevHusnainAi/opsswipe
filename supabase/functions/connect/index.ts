@@ -2,6 +2,7 @@
 // Every action runs for the caller only (verified JWT). Keys go straight into Vault; the app gets
 // back only non-secret info, plus each service's report secret exactly once, at creation.
 import { hashToken, newToken } from '../_shared/agents.ts';
+import { alertKind, postAlert } from '../_shared/alerts.ts';
 import { withReturn } from '../_shared/appLink.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
@@ -9,15 +10,18 @@ import { consentUrl, exchangeCode, GoogleError, grantReset, listProjects, listVm
 import { openFilesPr } from '../_shared/github.ts';
 import { installUrl, listRepos, verifyInstallation } from '../_shared/githubApp.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
+import { idsFromLink, listDeployments } from '../_shared/railway.ts';
 import { getRenderService, listServices } from '../_shared/render.ts';
 import {
   connection,
+  type ConnectionKind,
   deleteSecret,
   forgetConnection,
   getService,
   githubToken,
   googleToken,
   platformSa,
+  railwayToken,
   renderKey,
   storeSecret,
   toTarget,
@@ -35,7 +39,12 @@ const need = (ok: unknown, message: string) => {
   if (!ok) throw new UserError(message);
 };
 
-async function addService(owner: string, name: string, provider: 'gcp' | 'render', config: Record<string, string>) {
+async function addService(
+  owner: string,
+  name: string,
+  provider: 'gcp' | 'render' | 'railway',
+  config: Record<string, string>,
+) {
   need(NAME.test(name), 'Names use lowercase letters, numbers and dashes.');
   let target;
   try {
@@ -78,10 +87,12 @@ async function chosenRepo(
 async function handle(owner: string, action: string, p: Record<string, unknown>) {
   switch (action) {
     case 'status': {
-      const [gh, rd, gc] = await Promise.all([
+      const [gh, rd, gc, rw, al] = await Promise.all([
         connection(owner, 'github'),
         connection(owner, 'render'),
         connection(owner, 'google'),
+        connection(owner, 'railway'),
+        connection(owner, 'alerts'),
       ]);
       // GitHub hands `state` back to oauth-callback, which uses it to return to Expo Go if needed.
       const state = withReturn('gh', p.returnTo);
@@ -92,6 +103,8 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
           installUrl: state === 'gh' ? installUrl() : `${installUrl()}?state=${state}`,
         },
         render: { connected: !!rd?.secret_id },
+        railway: { connected: !!rw?.secret_id },
+        alerts: { connected: !!al?.secret_id, kind: al?.account ?? null },
         google: { connected: !!gc?.secret_id, account: gc?.account ?? null, available: !!env('GOOGLE_CLIENT_ID') },
         gcpIdentity: env('GCP_SA_KEY') ? platformSa().client_email : null,
       };
@@ -123,6 +136,68 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       await db.from('connections').upsert({ owner, kind: 'render', secret_id: secretId });
       await deleteSecret(old?.secret_id);
       return { render: { connected: true }, services };
+    }
+
+    // Discord or Slack as a second alert channel. A test message proves the URL works before it's kept.
+    case 'set_alerts': {
+      const url = String(p.url ?? '').trim();
+      const old = await connection(owner, 'alerts');
+      if (!url) {
+        await forgetConnection(owner, 'alerts');
+        return { alerts: { connected: false } };
+      }
+      const kind = alertKind(url);
+      need(
+        kind,
+        'Paste a Discord or Slack incoming webhook URL (https://discord.com/api/webhooks/… or https://hooks.slack.com/services/…).',
+      );
+      await postAlert(url, {
+        title: 'OpsSwipe alerts are on',
+        body: 'Incidents, recoveries and proven fixes will post here.',
+      })
+        .catch(() => {
+          throw new UserError(`${kind === 'discord' ? 'Discord' : 'Slack'} rejected that webhook URL.`);
+        });
+      const secretId = await storeSecret(url);
+      await db.from('connections').upsert({ owner, kind: 'alerts', secret_id: secretId, account: kind });
+      await deleteSecret(old?.secret_id);
+      return { alerts: { connected: true, kind } };
+    }
+
+    // Railway: a token (account or workspace) once, then services by their dashboard link.
+    case 'add_railway': {
+      const token = String(p.token ?? '').trim();
+      const ids = idsFromLink(String(p.link ?? ''));
+      need(ids, 'Paste the service link from the Railway dashboard (railway.com/project/…/service/…?environmentId=…).');
+      const url = String(p.url ?? '').trim();
+      need(/^https?:\/\/[^\s]+$/.test(url), 'Enter the public URL OpsSwipe should check.');
+      const useToken = token || (await railwayToken(owner).catch(() => ''));
+      need(useToken, 'Paste a Railway API token (Account settings → Tokens).');
+      await listDeployments(useToken, ids!).catch(() => {
+        throw new UserError('Railway rejected that token or link. Check the token can see this project.');
+      });
+      if (token) {
+        const old = await connection(owner, 'railway');
+        const secretId = await storeSecret(token);
+        await db.from('connections').upsert({ owner, kind: 'railway', secret_id: secretId });
+        await deleteSecret(old?.secret_id);
+      }
+      const config: Record<string, string> = { ...ids!, url };
+      const picked = await chosenRepo(owner, p);
+      if (picked) Object.assign(config, picked);
+      return await addService(owner, String(p.name ?? '').toLowerCase(), 'railway', config);
+    }
+
+    // The Client Secret of the user's Sentry Internal Integration, which signs its alert webhooks.
+    case 'set_sentry_secret': {
+      const s = await getService(String(p.serviceId ?? ''));
+      need(s && s.owner === owner, 'Service not found.');
+      const secret = String(p.secret ?? '').trim();
+      need(/^[0-9a-f]{64}$/.test(secret), "That doesn't look like a Sentry Client Secret (64 hex characters).");
+      const secretId = await storeSecret(secret);
+      await db.from('services').update({ sentry_secret_id: secretId }).eq('id', s!.id);
+      await deleteSecret(s!.sentry_secret_id);
+      return { sentry: { webhookUrl: `${functionUrl('sentry')}?service=${s!.id}` } };
     }
 
     case 'render_services':
@@ -327,11 +402,14 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       need(s && s.owner === owner, 'Service not found.');
       await db.from('services').delete().eq('id', s!.id);
       await deleteSecret(s!.report_secret_id);
+      await deleteSecret(s!.sentry_secret_id);
       return { removed: true };
     }
 
     case 'disconnect': {
-      const kind = p.kind === 'github' || p.kind === 'render' || p.kind === 'google' ? p.kind : null;
+      const kind = ['github', 'render', 'google', 'railway', 'alerts'].includes(String(p.kind))
+        ? p.kind as ConnectionKind
+        : null;
       need(kind, 'Unknown connection.');
       await forgetConnection(owner, kind!);
       return { disconnected: kind };
@@ -340,9 +418,15 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     // Delete the account and everything it holds (Play policy: deletion inside the app). Google access
     // is revoked at Google; the GitHub App install is the user's to remove on GitHub.
     case 'delete_account': {
-      for (const kind of ['google', 'github', 'render'] as const) await forgetConnection(owner, kind);
-      const { data: services } = await db.from('services').select('report_secret_id').eq('owner', owner);
-      for (const s of services ?? []) await deleteSecret(s.report_secret_id);
+      for (const kind of ['google', 'github', 'render', 'railway', 'alerts'] as const) {
+        await forgetConnection(owner, kind);
+      }
+      const { data: services } = await db.from('services').select('report_secret_id, sentry_secret_id')
+        .eq('owner', owner);
+      for (const s of services ?? []) {
+        await deleteSecret(s.report_secret_id);
+        await deleteSecret(s.sentry_secret_id);
+      }
       // audit_log and usage key on the user id without a foreign key; audit rows would also block the
       // incidents' cascade. Everything else cascades from auth.users.
       await db.from('audit_log').delete().eq('actor', owner);

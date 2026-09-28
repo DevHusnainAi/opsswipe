@@ -14,6 +14,7 @@ import {
   GoogleLogo,
   HardDrives,
   Key,
+  Train,
   X,
 } from 'phosphor-react-native';
 import { useEffect, useState } from 'react';
@@ -26,8 +27,8 @@ import { TARGET, c, radius, space, type } from './theme';
 import { RepoPicker } from './RepoPicker';
 import { Button, Chip } from './ui';
 
-export type StartAt = 'provider' | 'renderKey' | 'google';
-type Step = 'provider' | 'renderKey' | 'renderPick' | 'renderConfirm' | 'google' | 'project' | 'vm' | 'done';
+export type StartAt = 'provider' | 'renderKey' | 'google' | 'railway';
+type Step = 'provider' | 'renderKey' | 'renderPick' | 'renderConfirm' | 'railway' | 'google' | 'project' | 'vm' | 'done';
 
 type Props = {
   start: StartAt;
@@ -53,6 +54,7 @@ export function AddService({ start, status, existing, onClose }: Props) {
   const [created, setCreated] = useState<(NewService & { vmStatus?: string }) | null>(null);
   const [picked, setPicked] = useState<RenderOption | null>(null);
   const [repo, setRepo] = useState<string | null>(null); // linked GitHub repo, or none
+  const [railway, setRailway] = useState({ token: '', link: '', url: '', name: '' });
   const github = !!status?.github.connected;
 
   const step = history[history.length - 1];
@@ -179,7 +181,25 @@ export function AddService({ start, status, existing, onClose }: Props) {
       go('done');
     });
 
+  // Railway: a token once, then the service's dashboard link (it carries the project, service and
+  // environment ids) and the public URL to check.
+  const addRailway = () =>
+    run('addrailway', async () => {
+      setCreated(
+        await connect<NewService>('add_railway', {
+          ...railway,
+          token: railway.token.trim(),
+          name: railway.name.trim(),
+          ...(repo ? { repo } : {}),
+        }),
+      );
+      setRailway({ token: '', link: '', url: '', name: '' });
+      setChanged(true);
+      go('done');
+    });
+
   const titles: Record<Step, string> = {
+    railway: 'Add a Railway service',
     provider: 'Add a service',
     renderKey: 'Connect Render',
     renderPick: 'Choose a Render service',
@@ -221,6 +241,13 @@ export function AddService({ start, status, existing, onClose }: Props) {
                 body="Restart it, or roll back to the last good deploy."
                 tag={status?.render.connected ? 'Connected' : undefined}
                 onPress={chooseRender}
+              />
+              <Choice
+                icon={Train}
+                title="Railway service"
+                body="Restart it, or roll back to the previous deployment."
+                tag={status?.railway.connected ? 'Connected' : undefined}
+                onPress={() => go('railway')}
               />
               <Choice
                 icon={HardDrives}
@@ -280,6 +307,40 @@ export function AddService({ start, status, existing, onClose }: Props) {
                 {repo ? `, and open revert or AI fix PRs on ${repo}` : ''}.
               </Text>
               <Button label={busy === 'addrender' ? 'Adding…' : `Add ${picked.name}`} onPress={addRender} />
+            </View>
+          )}
+
+          {step === 'railway' && (
+            <View style={styles.confirm}>
+              {!status?.railway.connected && (
+                <Field
+                  label="Railway API token"
+                  value={railway.token}
+                  onChange={(v) => setRailway((r) => ({ ...r, token: v }))}
+                  placeholder="Account settings → Tokens"
+                  secure
+                />
+              )}
+              <Field
+                label="Service link"
+                value={railway.link}
+                onChange={(v) => setRailway((r) => ({ ...r, link: v }))}
+                placeholder="railway.com/project/…/service/…?environmentId=…"
+              />
+              <Text style={type.caption}>Open the service in the Railway dashboard and copy the address bar.</Text>
+              <Field
+                label="Public URL to check"
+                value={railway.url}
+                onChange={(v) => setRailway((r) => ({ ...r, url: v }))}
+                placeholder="https://api.up.railway.app/health"
+              />
+              <Field label="Name" value={railway.name} onChange={(v) => setRailway((r) => ({ ...r, name: v }))} placeholder="api" />
+              <RepoPicker value={repo} onChange={setRepo} githubConnected={github} />
+              <Text style={type.caption}>
+                OpsSwipe checks it every minute and can restart it or roll it back
+                {repo ? `, and open revert or AI fix PRs on ${repo}` : ''}. The token is encrypted on the server.
+              </Text>
+              <Button label={busy === 'addrailway' ? 'Checking with Railway…' : 'Add service'} icon={Train} onPress={addRailway} />
             </View>
           )}
 

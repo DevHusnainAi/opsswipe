@@ -5,7 +5,7 @@
 // deploy history of their own (a VM), it tells a revert or AI fix which commit broke things.
 import { json } from '../_shared/db.ts';
 import { verify } from '../_shared/hmac.ts';
-import { addSamples, openIncident, openIncidentFor } from '../_shared/incidents.ts';
+import { reportFailure } from '../_shared/incidents.ts';
 import { scrubSample } from '../_shared/replay.ts';
 import { getService, readSecret } from '../_shared/services.ts';
 
@@ -34,13 +34,7 @@ Deno.serve(async (req) => {
   const sample = scrubSample(body);
   if (!sample) return json(202, { ignored: true }); // not a 5xx, or not replayable
 
-  const open = await openIncidentFor(service.id);
-  if (open) {
-    await addSamples(open.id, open.context ?? {}, [sample]);
-    return json(200, { added: true });
-  }
   const metric = `${sample.method} ${sample.path} → ${sample.status} (reported by the app)`;
   const release = typeof body.release === 'string' && /^[0-9a-f]{40}$/.test(body.release) ? body.release : undefined;
-  const { opened } = await openIncident(service, 'Requests are failing', metric, [sample], release);
-  return json(200, { opened });
+  return json(200, await reportFailure(service, sample, metric, release));
 });

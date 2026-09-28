@@ -5,6 +5,7 @@ import {
   ArrowCounterClockwise,
   ArrowSquareOut,
   Bell,
+  ChatCircleText,
   BellSlash,
   CreditCard,
   Crown,
@@ -16,9 +17,9 @@ import {
   UserCircle,
 } from 'phosphor-react-native';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AgentAccess } from './AgentAccess';
-import { supabase } from './api';
+import { type ConnectStatus, connect, supabase } from './api';
 import { inExpoGo, Notifications } from './env';
 import { c, radius, space, TARGET, type } from './theme';
 import { Section } from './ui';
@@ -45,12 +46,15 @@ export function Settings(p: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [channel, setChannel] = useState<ConnectStatus['alerts'] | null>(null);
+  const [hookUrl, setHookUrl] = useState('');
 
   const load = useCallback(async () => {
     const user = (await supabase.auth.getUser()).data.user;
     // GitHub accounts show @username; email accounts show the address.
     setLogin(user?.user_metadata?.user_name ? `@${user.user_metadata.user_name}` : (user?.email ?? null));
     setAlerts(Notifications ? ((await Notifications.getPermissionsAsync()).granted ? 'on' : 'off') : 'unavailable');
+    setChannel((await connect<ConnectStatus>('status')).alerts);
   }, []);
 
   useEffect(() => {
@@ -176,6 +180,50 @@ export function Settings(p: Props) {
             <Action icon={ArrowSquareOut} label="Open system notification settings" onPress={() => Linking.openSettings()} />
           )}
         </View>
+        {/* A second channel: when the phone is on silent, the team channel still sees it. */}
+        <View style={styles.group}>
+          <Row
+            icon={ChatCircleText}
+            tint={channel?.connected ? c.green : undefined}
+            title={channel?.connected ? `Also posting to ${channel.kind === 'slack' ? 'Slack' : 'Discord'}` : 'Discord or Slack'}
+            body={channel?.connected
+              ? 'Incidents, recoveries and proven fixes post there too.'
+              : 'Paste an incoming webhook URL to post every alert to a channel as well.'}
+          />
+          {channel?.connected ? (
+            <Action
+              icon={Trash}
+              label={busy === 'hook' ? 'Removing…' : 'Stop posting there'}
+              danger
+              onPress={() => run('hook', async () => void (await connect('set_alerts', { url: '' })))}
+            />
+          ) : (
+            <View style={{ gap: space.sm, paddingBottom: space.md }}>
+              <TextInput
+                value={hookUrl}
+                onChangeText={setHookUrl}
+                placeholder="https://discord.com/api/webhooks/…"
+                placeholderTextColor={c.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+                style={styles.input}
+                accessibilityLabel="Discord or Slack webhook URL"
+              />
+              <Action
+                icon={ChatCircleText}
+                label={busy === 'hook' ? 'Sending a test message…' : 'Connect channel'}
+                primary
+                onPress={() =>
+                  run('hook', async () => {
+                    await connect('set_alerts', { url: hookUrl.trim() });
+                    setHookUrl('');
+                    return 'Connected. A test message was posted.';
+                  })}
+              />
+            </View>
+          )}
+        </View>
       </Section>
 
       <AgentAccess active={p.active} />
@@ -232,4 +280,14 @@ const styles = StyleSheet.create({
   },
   note: { color: c.green, backgroundColor: c.greenTint, padding: space.md, borderRadius: radius.control },
   noteError: { color: c.red, backgroundColor: c.redTint },
+  input: {
+    minHeight: TARGET,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: c.surface2,
+    color: c.text,
+    paddingHorizontal: space.md,
+    fontFamily: 'GeistMono',
+  },
 });

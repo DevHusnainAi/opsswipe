@@ -22,7 +22,7 @@ import { Chip } from './ui';
 const THRESHOLD = 0.75; // FR-07: fraction of screen width that authorizes the action
 // Springs jump straight to the end when the system "reduce motion" setting is on.
 const SPRING = { damping: 15, stiffness: 120, reduceMotion: ReduceMotion.System };
-export const PROVIDER: Record<string, string> = { gcp: 'GCP Compute', render: 'Render' };
+export const PROVIDER: Record<string, string> = { gcp: 'GCP Compute', render: 'Render', railway: 'Railway' };
 
 // Progressive haptics (Android haptics principles): subtle ticks at 1/3 and 2/3, a distinct one at the threshold.
 const tick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

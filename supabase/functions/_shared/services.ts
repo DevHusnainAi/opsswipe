@@ -1,5 +1,6 @@
 // Connected services, per-user connections, and credentials. Keys are only ever read here,
 // on the server, from Supabase Vault; the app never sees them after they're entered.
+import { postAlert } from './alerts.ts';
 import { db, env } from './db.ts';
 import type { ServiceAccount } from './gcp.ts';
 import { accessFromRefresh, GoogleError, revoke } from './google.ts';
@@ -11,9 +12,10 @@ export type Service = {
   id: string;
   owner: string;
   name: string;
-  provider: 'gcp' | 'render';
+  provider: 'gcp' | 'render' | 'railway';
   config: Record<string, string>;
   report_secret_id: string | null;
+  sentry_secret_id?: string | null;
 };
 
 export const toTarget = (s: Service): Target => validateTarget(s.provider, s.config);
@@ -46,7 +48,7 @@ export async function deleteSecret(id: string | null | undefined) {
 
 type Connection = { secret_id: string | null; installation_id: number | null; account: string | null };
 
-export type ConnectionKind = 'github' | 'render' | 'google';
+export type ConnectionKind = 'github' | 'render' | 'google' | 'railway' | 'alerts';
 
 export async function connection(owner: string, kind: ConnectionKind) {
   const { data } = await db.from('connections').select('secret_id, installation_id, account')
@@ -59,6 +61,13 @@ export async function renderKey(owner: string) {
   const key = c?.secret_id ? await readSecret(c.secret_id) : null;
   if (!key) throw new Error('Render is not connected');
   return key;
+}
+
+export async function railwayToken(owner: string) {
+  const c = await connection(owner, 'railway');
+  const token = c?.secret_id ? await readSecret(c.secret_id) : null;
+  if (!token) throw new Error('Railway is not connected');
+  return token;
 }
 
 export async function githubToken(owner: string) {
@@ -85,7 +94,8 @@ export async function forgetConnection(owner: string, kind: ConnectionKind) {
   await deleteSecret(c?.secret_id);
 }
 
-// Pages every phone the owner registered. Never throws: a failed push must not block an incident.
+// Pages every phone the owner registered, and their Discord or Slack channel if they added one.
+// Never throws: a failed alert must not block an incident.
 export async function notify(owner: string, push: Push) {
   try {
     const { data } = await db.from('push_tokens').select('token').eq('owner', owner);
@@ -93,5 +103,12 @@ export async function notify(owner: string, push: Push) {
     if (dead.length) await db.from('push_tokens').delete().in('token', dead);
   } catch (e) {
     console.warn('push failed:', String(e));
+  }
+  try {
+    const c = await connection(owner, 'alerts');
+    const url = c?.secret_id ? await readSecret(c.secret_id) : null;
+    if (url) await postAlert(url, push);
+  } catch (e) {
+    console.warn('alert webhook failed:', String(e));
   }
 }
