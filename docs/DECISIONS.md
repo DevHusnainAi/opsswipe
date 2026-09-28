@@ -105,3 +105,27 @@ authenticate with a token stored only as a SHA-256 hash. A proposal becomes a no
 agent's name and reason, gated by the same swipe, biometrics, entitlement and audit log as every other fix, and the
 agent polls for approved, declined or failed. This is where AI SRE tools stop short today: they escalate to a human,
 and OpsSwipe is that human's fastest safe yes or no.
+
+## 18. Page only for confirmed outages
+False alarms are the top complaint about monitors ("70 false positives a day") and the reason people mute pagers. A
+failed health check is retried after 10 s before an incident opens; a health-check incident whose service recovers with
+no fix run closes itself and says so; and any card can be dismissed as a false alarm, logged like a fix. Incidents the app
+reported stay open on a healthy health check, since `/` can be fine while `/checkout` fails. A failed CI proof re-offers
+Fix with AI (and a revert, unless the revert is what failed), and a VM is never offered a reboot while its PR proves: a
+reboot boots the same bad code. Sources: [false alerts](https://dev.to/pingvera/70-false-alerts-a-day-why-uptime-monitors-cry-wolf-and-what-the-fix-costs-nnl).
+
+## 19. Free per outage, and billing can't block a fix
+Metering each action put a paywall between a revert PR and its proven merge in the middle of the free outage. The free
+tier is now one whole incident (an atomic Postgres meter keyed by incident, refunded if its first fix fails). Pro is
+checked with RevenueCat's REST API on every fix; RevenueCat webhooks keep a copy of each plan's expiry, used when the
+API is unreachable, so a pager never fails because billing did. Sources:
+[RevenueCat webhooks](https://www.revenuecat.com/docs/integrations/webhooks),
+[Shipaton rules](https://revenuecat-shipaton-2026.devpost.com/rules).
+
+## 20. Meet people where their alerts already are
+Solo developers already run Sentry and route alerts to Discord or Slack. Sentry issue alerts open incidents through an
+Internal Integration (verified with its Client Secret, request line only, no headers), so no code change is needed in
+the app. Alerts also post to one Discord or Slack incoming webhook, allowlisted by host so the field can't reach anything
+else. Railway joins Render as a host with restart and rollback over its GraphQL API. Sources:
+[Sentry webhooks](https://docs.sentry.io/organization/integrations/integration-platform/webhooks/),
+[Railway API](https://docs.railway.com/integrations/api/manage-deployments).

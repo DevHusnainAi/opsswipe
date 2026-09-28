@@ -84,9 +84,15 @@ npx supabase secrets set \
   GITHUB_APP_SLUG=opsswipe-you GITHUB_APP_PRIVATE_KEY="$(cat opsswipe.private-key.pem)" \
   GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com GOOGLE_CLIENT_SECRET=xxx \
   REVENUECAT_SECRET_KEY=sk_... CRON_SECRET=<same as cron.sql> \
+  RC_WEBHOOK_AUTH="Bearer $(openssl rand -hex 24)" \
   AI_SUGGESTIONS=vertex   # optional; omit for rules only
-npx supabase functions deploy execute connect healthcheck report proof oauth-callback
+npx supabase functions deploy execute connect healthcheck report proof oauth-callback agent sentry revenuecat-webhook
 ```
+
+RevenueCat → Project → Integrations → Webhooks: URL `https://<ref>.supabase.co/functions/v1/revenuecat-webhook`,
+Authorization header = the exact `RC_WEBHOOK_AUTH` value. It keeps a copy of each plan so a RevenueCat API outage never
+blocks a paying user's fix. Optional, for the Monetization story: a 7-day trial on the annual product, a second offering
+whose paywall copy talks about outages, and an Experiment between the two.
 
 No per-service keys here: users' Render keys and report secrets live encrypted in Supabase Vault, and GitHub access
 comes from 1-hour installation tokens.
@@ -202,6 +208,15 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh heal     # between rehearsals
 - [ ] The proof workflow runs; the card shows "N/N failing production requests now pass" and offers **Merge PR**
 - [ ] **Merge PR** merges; the VM deploys `main` within ~30s; "back up" arrives. Pushing to the PR after the proof
       makes merge refuse
-- [ ] Second fix on the free plan: card snaps back, paywall, Test Store purchase, fix runs
-- [ ] Activity shows Executed / Paywalled / Failed; the PR row opens the PR
+- [ ] The whole first outage is free (revert and merge both run); a fix on a second outage: card snaps back, paywall
+      names the service, Test Store purchase, fix runs
+- [ ] A one-off blip (stop and start the demo app within 10 s) pages nobody; a stop that lasts pages once
+- [ ] Start the app again yourself: the card closes and "recovered on its own" arrives
+- [ ] **Dismiss, it's a false alarm** closes a card; Activity shows Dismissed and no "back up" push follows
+- [ ] A PR whose proof fails (push a broken commit to it): the card offers Fix with AI again
+- [ ] Settings → Discord or Slack: the test message arrives; the next incident posts there too
+- [ ] Sentry (optional): an issue alert on the linked project opens a card with the failing request
+- [ ] Activity: week stats show; Share on a recovery opens the share sheet with the report
+- [ ] Activity shows Executed / Paywalled / Failed / Dismissed; the PR row opens the PR
+- [ ] Settings → Delete account (a throwaway account): signed out, services gone, Google access revoked
 - [ ] A second test user (another phone, or reinstall) sees none of your services or incidents

@@ -6,7 +6,7 @@ OpsSwipe: a phone pager that turns production 5xx incidents into swipe-to-fix ca
 replays the exact production requests that failed. Rationale for most design choices lives in `docs/DECISIONS.md`; operator
 and user setup in `docs/SETUP.md`.
 
-**Start with `docs/HANDOFF.md`**: current state, what's untested, the remaining steps, every account ID, and where each
+**Start with the private handoff** (`../opsswipe-private/HANDOFF.md`, kept outside this public repo): current state, what's untested, the remaining steps, every account ID, and where each
 secret lives (secrets are never in the repo).
 
 ## Layout
@@ -19,7 +19,8 @@ secret lives (secrets are never in the repo).
   `Activity.tsx`, `Settings.tsx`); no navigation library, so it runs in Expo Go and the dev build without a rebuild.
   `src/env.ts` detects Expo Go (no push, RevenueCat preview mode, `exp://` OAuth returns).
 - `evals/suggest/` — labeled incident cases scoring fix suggestions.
-- `infra/` — demo target (`demo-web`, Node, deployed on Render), GCP setup, cron SQL, `chaos.sh` to break the demo.
+- `infra/` — demo target (`demo-web`, Node; runs on the GCP demo VM via `demo-box.sh`, which redeploys `main`), GCP setup,
+  cron SQL, `chaos.sh` to break the demo.
 
 ## Commands
 

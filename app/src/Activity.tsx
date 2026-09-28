@@ -1,9 +1,9 @@
 // The Activity tab: every fix attempt (the audit log), grouped by day, and how fast services came back.
-import { ArrowSquareOut, ClockCounterClockwise } from 'phosphor-react-native';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ArrowSquareOut, ClockCounterClockwise, ShareNetwork } from 'phosphor-react-native';
+import { Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import type { AuditEntry, Incident } from './api';
 import { fixFor } from './fixes';
-import { recoveryLine, timeAgo } from './format';
+import { formatDuration, incidentReport, recoveryLine, timeAgo, weekStats } from './format';
 import { c, radius, space, type } from './theme';
 import { Chip, Section } from './ui';
 
@@ -42,6 +42,8 @@ export function Activity({ audit, fixed, now }: { audit: AuditEntry[]; fixed: In
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <Text style={[type.display, { marginTop: space.md }]} accessibilityRole="header">Activity</Text>
 
+      {fixed.length > 0 && <Stats {...weekStats(fixed, now)} />}
+
       {fixed.length > 0 && (
         <Section title="Recoveries">
           <View style={styles.group}>
@@ -54,6 +56,17 @@ export function Activity({ audit, fixed, now }: { audit: AuditEntry[]; fixed: In
                     {dismissed(f.id) ? 'Dismissed as a false alarm' : [fixUsed(f.id), recoveryLine(f)].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
+                {/* Telling users what happened, in one tap: post it to a status page, X or Discord. */}
+                {f.recovered_at && !dismissed(f.id) && (
+                  <Pressable
+                    onPress={() => Share.share({ message: incidentReport(f, fixUsed(f.id)) })}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Share what happened to ${f.target_server}`}
+                  >
+                    <ShareNetwork size={20} color={c.muted} weight="bold" />
+                  </Pressable>
+                )}
               </View>
             ))}
           </View>
@@ -104,11 +117,31 @@ export function Activity({ audit, fixed, now }: { audit: AuditEntry[]; fixed: In
   );
 }
 
+function Stats({ incidents, median, proven }: { incidents: number; median: number | null; proven: number }) {
+  const tiles = [
+    ['Incidents this week', String(incidents)],
+    ['Median time to recover', median === null ? '–' : formatDuration(median)],
+    ['Fixes proven in CI', String(proven)],
+  ];
+  return (
+    <View style={styles.stats} accessibilityLabel={tiles.map(([k, v]) => `${k}: ${v}`).join('. ')}>
+      {tiles.map(([label, value]) => (
+        <View key={label} style={styles.tile}>
+          <Text style={[type.title, { fontVariant: ['tabular-nums'] }]}>{value}</Text>
+          <Text style={type.caption}>{label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   scroll: { paddingBottom: space.xxl, gap: space.sm },
   group: { backgroundColor: c.surface, borderRadius: radius.card, padding: space.lg, gap: space.lg },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 24 },
   dot: { width: 8, height: 8, borderRadius: 4 },
+  stats: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+  tile: { flex: 1, backgroundColor: c.surface, borderRadius: radius.card, padding: space.md, gap: 2 },
   empty: {
     marginTop: space.xl,
     borderWidth: 1,

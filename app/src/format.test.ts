@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatDuration, paramsOf, recoveryLine, timeAgo } from './format.ts';
+import { formatDuration, incidentReport, paramsOf, recoveryLine, timeAgo, weekStats } from './format.ts';
 
 test('formatDuration', () => {
   assert.equal(formatDuration(0), '0s');
@@ -47,4 +47,47 @@ test('paramsOf reads OAuth redirects: query, fragment, and values with =', () =>
     error_description: 'Identity is already linked',
   });
   assert.deepEqual(paramsOf('opsswipe://connect'), {});
+});
+
+const outage = {
+  id: 'i1',
+  target_server: 'api',
+  metric: 'POST /checkout → 500 (reported by the app)',
+  created_at: '2026-09-28T10:00:00Z',
+  resolved_at: '2026-09-28T10:01:10Z',
+  recovered_at: '2026-09-28T10:02:00Z',
+  context: { proof: { ok: true, passed: 3, total: 3 }, pr: { url: 'https://github.com/me/app/pull/7' } },
+};
+
+test('incidentReport tells what broke, what ran, how long, and the proof', () => {
+  assert.equal(
+    incidentReport(outage, 'Revert PR'),
+    [
+      'api: incident report',
+      '',
+      'Detected 2026-09-28 10:00 UTC: POST /checkout → 500 (reported by the app)',
+      'Revert PR, approved with biometrics, at 2026-09-28 10:01 UTC',
+      'Back up at 2026-09-28 10:02 UTC (down 2m 0s)',
+      'Code fix proven in CI: 3/3 failing production requests now pass (https://github.com/me/app/pull/7)',
+      '',
+      'Sent from OpsSwipe',
+    ].join('\n'),
+  );
+  const healed = incidentReport({ ...outage, context: { self_healed: true } }, null);
+  assert.match(healed, /Recovered on its own/);
+  assert.doesNotMatch(healed, /approved/);
+});
+
+test('weekStats counts this week only, takes the median time back up, and counts proven fixes', () => {
+  const now = Date.parse('2026-09-28T12:00:00Z');
+  const s = weekStats(
+    [
+      outage, // down 2m, proven
+      { ...outage, id: 'i2', recovered_at: '2026-09-28T10:04:00Z', context: null }, // down 4m
+      { ...outage, id: 'i3', created_at: '2026-09-01T10:00:00Z', recovered_at: '2026-09-01T11:00:00Z' }, // last month
+    ],
+    now,
+  );
+  assert.deepEqual(s, { incidents: 2, median: 180_000, proven: 1 });
+  assert.deepEqual(weekStats([], now), { incidents: 0, median: null, proven: 0 });
 });

@@ -182,6 +182,19 @@ export default function App() {
     };
   }, [boot]);
 
+  // Tapping an alert opens the incident cards, whether the app was running or cold-started by the tap.
+  useEffect(() => {
+    if (!Notifications) return;
+    // A cold start from a tap: one synchronous read, known only once mounted.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (Notifications.getLastNotificationResponse()) setTab('incidents');
+    const sub = Notifications.addNotificationResponseReceivedListener(() => {
+      setTab('incidents');
+      refresh().catch(() => {});
+    });
+    return () => sub.remove();
+  }, [refresh]);
+
   // Email links (confirm the account, reset the password) open the app signed in. OAuth redirects
   // are handled by the sign-in call itself; they carry no `type`, so they are skipped here.
   useEffect(() => {

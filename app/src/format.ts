@@ -43,3 +43,34 @@ export function paramsOf(url: string): Record<string, string> {
     }),
   );
 }
+
+type Recovered = Timeline & {
+  id: string;
+  target_server: string;
+  metric: string;
+  context?: { self_healed?: boolean; proof?: { ok: boolean; passed: number; total: number }; pr?: { url: string } } | null;
+};
+
+// A plain-text incident report to paste to customers, a status page or a team chat: what broke, what
+// ran, how long it took, and whether the code fix was proven. Only facts OpsSwipe recorded.
+export function incidentReport(i: Recovered, fix: string | null) {
+  const at = (iso: string) => `${iso.slice(0, 16).replace('T', ' ')} UTC`;
+  const lines = [`${i.target_server}: incident report`, '', `Detected ${at(i.created_at)}: ${i.metric}`];
+  if (i.context?.self_healed) lines.push('Recovered on its own; no fix was needed.');
+  else if (fix && i.resolved_at) lines.push(`${fix}, approved with biometrics, at ${at(i.resolved_at)}`);
+  if (i.recovered_at) lines.push(`Back up at ${at(i.recovered_at)} (down ${formatDuration(Date.parse(i.recovered_at) - Date.parse(i.created_at))})`);
+  const p = i.context?.proof;
+  if (p?.ok) lines.push(`Code fix proven in CI: ${p.passed}/${p.total} failing production requests now pass${i.context?.pr ? ` (${i.context.pr.url})` : ''}`);
+  return [...lines, '', 'Sent from OpsSwipe'].join('\n');
+}
+
+// The week at a glance: incidents, median time back up, and code fixes proven in CI.
+export function weekStats(fixed: Recovered[], now = Date.now()) {
+  const week = fixed.filter((i) => now - Date.parse(i.created_at) < 7 * 86_400_000);
+  const downs = week.filter((i) => i.recovered_at).map((i) => Date.parse(i.recovered_at!) - Date.parse(i.created_at))
+    .sort((a, b) => a - b);
+  const median = downs.length
+    ? (downs.length % 2 ? downs[(downs.length - 1) / 2] : (downs[downs.length / 2 - 1] + downs[downs.length / 2]) / 2)
+    : null;
+  return { incidents: week.length, median, proven: week.filter((i) => i.context?.proof?.ok).length };
+}
