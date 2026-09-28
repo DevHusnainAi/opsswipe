@@ -159,3 +159,38 @@ Deno.test('revenue at risk: 28 days of revenue spread per hour, lost money by do
     globalThis.fetch = real;
   }
 });
+
+Deno.test('NVIDIA replies: thinking and code fences are stripped; anything but a JSON object is no answer', async () => {
+  const { parseJsonReply } = await import('../_shared/llm.ts');
+  assertEquals(parseJsonReply('<think>the deploy was 3m ago</think>```json\n{"action":"rollback","reason":"r"}\n```'), {
+    action: 'rollback',
+    reason: 'r',
+  });
+  assertEquals(parseJsonReply('I cannot help with that.'), null);
+  assertEquals(parseJsonReply('{"action": "rollback",'), null);
+});
+
+Deno.test('any model: suggestions stay inside the allowlist, patches still go through checkPatch', async () => {
+  const { llmSuggester, suggest } = await import('../_shared/suggest.ts');
+  const { checkPatch, llmPatcher } = await import('../_shared/patch.ts');
+  const input = { target: 'web', provider: 'render' as const, actions: ['restart' as const], symptom: 'GET / -> 503' };
+  const rogue = llmSuggester(() => Promise.resolve({ action: 'drop_database', reason: 'why not' }));
+  assertEquals((await suggest(input, rogue)).source, 'rules', 'an action outside the allowlist falls back to rules');
+  const ok = llmSuggester(() =>
+    Promise.resolve({ action: 'restart', reason: 'Nothing deployed; restart the hung process.' })
+  );
+  assertEquals((await suggest(input, ok)).source, 'ai');
+
+  const files = [{ path: 'server.js', patch: '', content: 'const ok = false;\n' }];
+  const pin = { repo: 'me/app', commit: { sha: 'a'.repeat(40), message: 'm' }, symptom: 's', failing: [], files };
+  const patcher = llmPatcher(() =>
+    Promise.resolve({
+      summary: 'Restore the flag.',
+      files: [{ path: 'server.js', content: 'const ok = true;\n' }, {
+        path: '.github/workflows/x.yml',
+        content: 'evil',
+      }],
+    })
+  );
+  assertEquals(checkPatch(await patcher(pin), pin).files.map((f) => f.path), ['server.js']);
+});

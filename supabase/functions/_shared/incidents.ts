@@ -8,7 +8,9 @@ import { mergeSamples, type ReplaySample } from './replay.ts';
 import { connection, notify, platformSa, readSecret, renderKey, type Service, toTarget } from './services.ts';
 import { confirmsReport, selfHealed } from './flow.ts';
 import { money, type Revenue, revenuePerHour } from './revenue.ts';
-import { suggest, toSuggestInput, vertexSuggester } from './suggest.ts';
+import { nvidiaLlm } from './llm.ts';
+import { llmPatcher, type Patcher, vertexPatcher } from './patch.ts';
+import { llmSuggester, suggest, toSuggestInput, vertexSuggester } from './suggest.ts';
 import { actionsFor, CODE_FIXES } from './targets.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
@@ -17,12 +19,28 @@ const COOLDOWN_MS = 3 * 60_000; // a restart takes ~1 min; don't re-page while i
 
 // Opt-in: Claude on Vertex (billed to the platform's GCP project) refines the rule-based suggestion
 // and writes AI fix PRs.
-export const aiEnabled = () => env('AI_SUGGESTIONS') === 'vertex' && !!env('GCP_SA_KEY');
+// AI_SUGGESTIONS=vertex: Claude on Vertex (GCP_SA_KEY). AI_SUGGESTIONS=nvidia: NVIDIA's hosted models
+// (NVIDIA_API_KEY, NVIDIA_MODEL). Anything else: rules only, and no AI fix PRs.
+export const aiEnabled = () =>
+  (env('AI_SUGGESTIONS') === 'vertex' && !!env('GCP_SA_KEY')) ||
+  (env('AI_SUGGESTIONS') === 'nvidia' && !!env('NVIDIA_API_KEY'));
+
+const NVIDIA_DEFAULT = 'nvidia/llama-3.3-nemotron-super-49b-v1.5';
+const nvidia = (maxTokens?: number) =>
+  nvidiaLlm(env('NVIDIA_API_KEY'), env('NVIDIA_MODEL') || NVIDIA_DEFAULT, maxTokens);
 
 function aiSuggester() {
   if (!aiEnabled()) return undefined;
+  if (env('AI_SUGGESTIONS') === 'nvidia') return llmSuggester(nvidia(2048));
   const sa = platformSa();
   return sa.project_id ? vertexSuggester(sa.project_id, () => accessToken(sa)) : undefined;
+}
+
+export function aiPatcher(): Patcher | undefined {
+  if (!aiEnabled()) return undefined;
+  if (env('AI_SUGGESTIONS') === 'nvidia') return llmPatcher(nvidia(16_384));
+  const sa = platformSa();
+  return sa.project_id ? vertexPatcher(sa.project_id, () => accessToken(sa)) : undefined;
 }
 
 async function deployHistory(s: Service): Promise<{ live?: Deploy; previous?: Deploy }> {

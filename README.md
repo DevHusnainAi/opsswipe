@@ -64,11 +64,11 @@ sequenceDiagram
 | **No false alarms** | A failed check is retried after 10 s before anyone is paged; a service that recovers on its own closes its card; a false alarm is dismissed in one tap and logged |
 | **Paged on your lock screen** | A high-priority push when something breaks, when CI proves the fix and when it's back up, even with the app closed; optionally mirrored to Discord or Slack |
 | **Fixes across clouds** | Restart or roll back a Render or Railway service; reboot a Google Cloud VM; open a revert PR; merge a proven PR |
-| **Fix with AI** | Claude writes the smallest code fix, touching only the files the bad commit changed; it ships as a PR that must pass the same replay proof before Merge unlocks |
+| **Fix with AI** | The AI model writes the smallest code fix, touching only the files the bad commit changed; it ships as a PR that must pass the same replay proof before Merge unlocks |
 | **Repo linking** | Any service (Render or a GCP VM) can be linked to the repo it deploys from; the app can report its running commit (`release`) so OpsSwipe knows exactly what broke |
 | **Revenue at risk** | Connect your RevenueCat (a read-only v2 key): incidents show *~$X/h at risk* and recoveries *about $Y lost*, estimated from your last 28 days of revenue |
 | **Approval layer for AI agents** | An AI SRE or script proposes a fix with a token from Settings; it appears as a card with the agent's name, runs only after your swipe and fingerprint, and the agent can poll the result |
-| **Suggested fix with a reason** | Rules answer instantly (recent deploy: roll back); Claude Opus 5 on Vertex AI refines it, and can only pick allowed fixes |
+| **Suggested fix with a reason** | Rules answer instantly (recent deploy: roll back); an AI model (NVIDIA Nemotron, or Claude on Vertex AI) refines it, and can only pick allowed fixes |
 | **Proof before merge** | Failing requests ride into the PR as `.opsswipe/replays/*.json`; CI replays them and runs your tests; merge unlocks only on a full pass, pinned to that commit |
 | **Proof after deploy** | The first healthy check after a fix records it: "down 3m 12s, back 41s after fix" |
 | **A failed proof isn't a dead end** | If CI says 2/3, the card offers Fix with AI again with those failures (and a revert, unless the revert is what failed) |
@@ -171,7 +171,7 @@ More in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 Expo SDK 57, React Native, Reanimated 4, Gesture Handler, expo-haptics, expo-local-authentication, expo-notifications, Geist
 fonts, Phosphor icons · RevenueCat (`react-native-purchases`, `react-native-purchases-ui`) · Supabase (Postgres, Realtime, Edge
-Functions, Cron, Vault) · Claude Opus 5 on Vertex AI · GitHub Git Data API and Actions · Render · Railway · GCP Compute
+Functions, Cron, Vault) · NVIDIA Nemotron (or Claude on Vertex AI) · GitHub Git Data API and Actions · Render · Railway · GCP Compute
 Engine · Sentry, Discord and Slack webhooks
 
 ## Run it

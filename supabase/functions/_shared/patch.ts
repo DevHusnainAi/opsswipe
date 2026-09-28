@@ -6,6 +6,7 @@ import { AnthropicVertex } from 'npm:@anthropic-ai/vertex-sdk@0.19.11';
 import { zodOutputFormat } from 'npm:@anthropic-ai/sdk@0.128/helpers/zod';
 import { z } from 'npm:zod@4';
 import type { ChangedFile } from './github.ts';
+import type { Llm } from './llm.ts';
 import type { ReplaySample } from './replay.ts';
 
 export type PatchInput = {
@@ -64,5 +65,22 @@ export function vertexPatcher(projectId: string, accessToken: () => Promise<stri
     });
     if (res.stop_reason === 'refusal' || !res.parsed_output) throw new Error(`AI returned no fix (${res.stop_reason})`);
     return res.parsed_output;
+  };
+}
+
+// Same job on any JSON-returning model (NVIDIA Nemotron). checkPatch() still decides what may ship.
+export function llmPatcher(llm: Llm): Patcher {
+  return async (i) => {
+    const paths = i.files.filter((f) => f.content !== null).map((f) => f.path);
+    if (!paths.length) throw new Error('the commit changed no files the AI can read');
+    const r = await llm(SYSTEM, JSON.stringify(i), {
+      summary: 'string',
+      files: [{ path: `one of ${paths.join(', ')}`, content: 'the complete new file content' }],
+    }) as { summary?: unknown; files?: unknown } | null;
+    if (!r || typeof r.summary !== 'string' || !Array.isArray(r.files)) throw new Error('AI returned no fix');
+    const files = r.files.filter((f): f is { path: string; content: string } =>
+      typeof f?.path === 'string' && typeof f?.content === 'string'
+    );
+    return { summary: r.summary, files };
   };
 }

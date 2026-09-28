@@ -4,6 +4,7 @@
 import { AnthropicVertex } from 'npm:@anthropic-ai/vertex-sdk@0.19.11';
 import { zodOutputFormat } from 'npm:@anthropic-ai/sdk@0.128/helpers/zod';
 import { z } from 'npm:zod@4';
+import type { Llm } from './llm.ts';
 import type { Action } from './targets.ts';
 
 export type SuggestInput = {
@@ -90,6 +91,19 @@ export function vertexSuggester(projectId: string, accessToken: () => Promise<st
     });
     if (res.stop_reason === 'refusal' || !res.parsed_output) throw new Error(`no suggestion (${res.stop_reason})`);
     return res.parsed_output;
+  };
+}
+
+// Same job on any JSON-returning model (NVIDIA Nemotron). suggest() still rejects any action that isn't
+// allowed, and any error falls back to the rules.
+export function llmSuggester(llm: Llm): Suggester {
+  return async (i) => {
+    const r = await llm(SYSTEM, JSON.stringify(i), { action: `one of ${i.actions.join(', ')}`, reason: 'string' }) as {
+      action?: unknown;
+      reason?: unknown;
+    } | null;
+    if (!r || typeof r.action !== 'string' || typeof r.reason !== 'string') throw new Error('no JSON suggestion');
+    return { action: r.action as Action, reason: r.reason.trim().slice(0, 200) };
   };
 }
 

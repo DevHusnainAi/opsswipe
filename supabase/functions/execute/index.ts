@@ -3,11 +3,11 @@
 // the service's validated config AND the fixes stored on the incident. Nothing else is trusted.
 import { db, env, json } from '../_shared/db.ts';
 import { isActive, proFromRow } from '../_shared/entitlement.ts';
-import { accessToken, resetInstance } from '../_shared/gcp.ts';
+import { resetInstance } from '../_shared/gcp.ts';
 import { branchHead, commitFiles, commitMessage, mergePr, openFilesPr, openRevertPr } from '../_shared/github.ts';
 import { afterFix } from '../_shared/flow.ts';
-import { aiEnabled } from '../_shared/incidents.ts';
-import { checkPatch, vertexPatcher } from '../_shared/patch.ts';
+import { aiPatcher } from '../_shared/incidents.ts';
+import { checkPatch } from '../_shared/patch.ts';
 import { canMerge, type Proof, type PrRef } from '../_shared/proof.ts';
 import type { ReplaySample } from '../_shared/replay.ts';
 import { type Deploy, listDeploys, pickRollback, restartService, rollbackToPrevious } from '../_shared/render.ts';
@@ -75,8 +75,8 @@ async function badCommit(s: Service, t: Target, inc: Incident, token: string) {
 // Claude writes the smallest fix to the files the bad commit touched; it ships as a PR with the
 // failing requests, so the merge still waits for CI to prove it.
 async function aiFixPr(t: Target, sha: string, inc: Incident, token: string): Promise<Outcome> {
-  const sa = platformSa();
-  if (!aiEnabled() || !sa.project_id) throw new Error('AI fixes are not switched on for this server');
+  const patcher = aiPatcher();
+  if (!patcher) throw new Error('AI fixes are not switched on for this server');
   const branch = t.branch ?? 'main';
   const commit = await commitMessage(t.repo!, sha, token);
   const input = {
@@ -86,7 +86,7 @@ async function aiFixPr(t: Target, sha: string, inc: Incident, token: string): Pr
     failing: inc.context.replay ?? [],
     files: await commitFiles(t.repo!, sha, branch, token),
   };
-  const patch = checkPatch(await vertexPatcher(sa.project_id, () => accessToken(sa))(input), input);
+  const patch = checkPatch(await patcher(input), input);
   const short = sha.slice(0, 7);
   const pr = await openFilesPr({
     repo: t.repo!,

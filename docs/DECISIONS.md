@@ -145,3 +145,10 @@ A single reported 500 no longer pages: it's held, and a second within a minute o
 healthy service. Code fixes are offered only when there's a request to replay. Proofs are accepted only from the
 `opsswipe-proof.yml` workflow of the same repo (the OIDC `job_workflow_ref` claim), and RevenueCat webhooks only when
 newer than the stored plan. Source: [GitHub OIDC claims](https://docs.github.com/en/actions/reference/security/oidc).
+
+## 23. The AI provider is swappable
+Claude on Vertex needs Model Garden access that isn't available on every account, so the model is a setting:
+`AI_SUGGESTIONS=vertex` (Claude) or `nvidia` (NVIDIA's hosted models such as Nemotron, OpenAI-compatible, plain fetch).
+The safety doesn't depend on the model: suggestions are checked against the allowlist, patches go through `checkPatch`,
+and nothing merges without the CI proof. `deno task eval nvidia` scores a model on the same labeled cases before it's
+switched on. Source: [NVIDIA API reference](https://docs.api.nvidia.com/nim/reference/llm-apis).
