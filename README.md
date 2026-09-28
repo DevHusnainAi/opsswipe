@@ -93,7 +93,7 @@ From the app's **Services** screen:
 | **Proof in CI** | Setup checklist → Turn on proof, and merge the PR | A workflow that replays saved production failures on every PR, authenticated by GitHub OIDC |
 
 Merging a proven PR fixes production when your host deploys `main` automatically (Render, Railway, most platforms; the demo
-VM pulls `main` every 30 s). On a plain VM without deploys, merge, then deploy as you usually do.
+VM deploys `main` from GitHub Actions after the tests pass). On a plain VM without deploys, merge, then deploy as you usually do.
 
 ### Failure reports
 

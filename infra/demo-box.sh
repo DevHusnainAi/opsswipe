@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # GCP startup script for the demo VM (runs as root on every boot, so a reset redeploys).
-# The VM behaves like a small PaaS: it runs infra/demo-web from the repo in the `demo-repo` metadata
-# and redeploys within ~30s whenever `main` moves (a merged revert or fix PR goes live on its own).
+# The VM runs infra/demo-web from the repo in the `demo-repo` metadata. Deploys come from the repo's
+# GitHub Actions (.github/workflows/deploy.yml): tests pass on main, then CI connects over SSH as `deploy`,
+# whose key can only run /usr/local/bin/opsswipe-deploy (a forced command: no shell, no forwarding).
 # Instance metadata (all optional except demo-repo):
 #   demo-repo            https URL of the public demo repo (e.g. https://github.com/you/opsswipe-demo-target)
+#   deploy-key           the public half of the CI deploy key (its private half is a GitHub secret)
 #   opsswipe-report-url  OPSSWIPE_REPORT_URL shown by the app when you add this VM
 #   report-secret        REPORT_SECRET shown with it
 set -euo pipefail
@@ -36,27 +38,30 @@ Restart=on-failure
 WantedBy=multi-user.target
 UNIT
 
-# Auto-deploy: only when main moved. A service stopped on purpose (chaos) stays stopped until a reset.
+# Deploy: only when main moved. A service stopped on purpose (chaos) stays stopped until a reset.
 cat > /usr/local/bin/opsswipe-deploy <<'SH'
 #!/bin/sh
-cd /opt/demo && git fetch -q origin main || exit 0
-[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] && exit 0
-git reset -q --hard origin/main && systemctl restart opsswipe-demo
+cd /opt/demo && git fetch -q origin main || exit 1
+if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then echo "already at $(git rev-parse --short HEAD)"; exit 0; fi
+git reset -q --hard origin/main && systemctl restart opsswipe-demo && echo "deployed $(git rev-parse --short HEAD)"
 SH
-chmod +x /usr/local/bin/opsswipe-deploy
-cat > /etc/systemd/system/opsswipe-deploy.service <<'UNIT'
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/opsswipe-deploy
-UNIT
-cat > /etc/systemd/system/opsswipe-deploy.timer <<'UNIT'
-[Timer]
-OnBootSec=30
-OnUnitActiveSec=30
-[Install]
-WantedBy=timers.target
-UNIT
+chmod 755 /usr/local/bin/opsswipe-deploy
+systemctl disable --now opsswipe-deploy.timer 2>/dev/null || true # the first version pulled every 30 s
+rm -f /etc/systemd/system/opsswipe-deploy.timer /etc/systemd/system/opsswipe-deploy.service
+
+# CI's way in: a user with no shell rights beyond running the deploy script as root.
+KEY=$(meta deploy-key)
+id deploy >/dev/null 2>&1 || useradd --create-home --shell /bin/bash deploy
+echo 'deploy ALL=(root) NOPASSWD: /usr/local/bin/opsswipe-deploy' > /etc/sudoers.d/opsswipe-deploy
+chmod 440 /etc/sudoers.d/opsswipe-deploy
+install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
+if [ -n "$KEY" ]; then
+  echo "command=\"sudo /usr/local/bin/opsswipe-deploy\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty $KEY" \
+    > /home/deploy/.ssh/authorized_keys
+fi
+chown deploy:deploy /home/deploy/.ssh/authorized_keys 2>/dev/null || true
+chmod 600 /home/deploy/.ssh/authorized_keys 2>/dev/null || true
 
 systemctl daemon-reload
-systemctl enable --now opsswipe-demo opsswipe-deploy.timer
+systemctl enable --now opsswipe-demo
 systemctl restart opsswipe-demo

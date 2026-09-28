@@ -130,8 +130,9 @@ does not see `.env` (it's gitignored), so first add the three `EXPO_PUBLIC_` val
 
 ### 8. Demo service on the GCP VM
 
-The demo VM runs the demo app from its own public repo and redeploys within ~30s whenever `main` moves, like a PaaS
-(`infra/demo-box.sh`). Create the repo:
+The demo VM runs the demo app from its own public repo (`infra/demo-box.sh`). The repo's GitHub Actions
+(`infra/demo-web/.github/workflows/deploy.yml`) are its CI/CD: every push to `main` runs the tests, and only a green
+build deploys, over SSH as a `deploy` user whose key can run nothing but the deploy script. Create the repo:
 
 ```bash
 cp -r infra/demo-web ../opsswipe-demo-target && cd ../opsswipe-demo-target
@@ -147,6 +148,20 @@ gcloud compute instances add-metadata opsswipe-demo --zone us-central1-a \
   --metadata-from-file startup-script=infra/demo-box.sh \
   --metadata demo-repo=https://github.com/<you>/opsswipe-demo-target
 gcloud compute instances reset opsswipe-demo --zone us-central1-a   # the startup script deploys on boot
+```
+
+CI/CD: a deploy key whose public half goes on the VM and private half into the repo's secrets (keep it outside the repo):
+
+```bash
+ssh-keygen -q -t ed25519 -N '' -f ../opsswipe-private/demo-deploy-key
+gcloud compute instances add-metadata opsswipe-demo --zone us-central1-a \
+  --metadata-from-file deploy-key=../opsswipe-private/demo-deploy-key.pub
+gcloud compute ssh opsswipe-demo --zone us-central1-a --command 'sudo google_metadata_script_runner startup'
+ssh-keyscan -t ed25519 <VM IP> > ../opsswipe-private/demo-known-hosts
+R=<you>/opsswipe-demo-target
+gh secret set DEPLOY_KEY --repo $R < ../opsswipe-private/demo-deploy-key
+gh secret set DEPLOY_KNOWN_HOSTS --repo $R < ../opsswipe-private/demo-known-hosts
+gh secret set DEPLOY_HOST --repo $R --body <VM IP>
 ```
 
 Render works too (New → Web Service from the same repo, env `CHAOS_KEY`, health check `/livez`); the demo uses the VM.
@@ -216,7 +231,7 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh heal     # between rehearsals
       **Revert PR** and **Fix with AI**
 - [ ] **Revert PR** opens a real PR containing `.opsswipe/replays/<sha>.json`; the card shows "CI is replaying..."
 - [ ] The proof workflow runs; the card shows "N/N failing production requests now pass" and offers **Merge PR**
-- [ ] **Merge PR** merges; the VM deploys `main` within ~30s; "back up" arrives. Pushing to the PR after the proof
+- [ ] **Merge PR** merges; CI tests and deploys `main` in about a minute; "back up" arrives. Pushing to the PR after the proof
       makes merge refuse
 - [ ] The whole first outage is free (revert and merge both run); a fix on a second outage: card snaps back, paywall
       names the service, Test Store purchase, fix runs

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Break a demo target on purpose so OpsSwipe opens an incident. gcloud must be on your personal account.
 #   ./infra/chaos.sh gcp       stops the demo app on the GCP VM (a reset brings it back on boot)
-#   ./infra/chaos.sh release   pushes a bad release of the demo repo; the VM deploys it within ~30s
+#   ./infra/chaos.sh release   pushes a bad release of the demo repo; CI tests and deploys it in ~1 min
 #                              and reports its 500s (revert or AI fix PR, proven in CI, then merge)
 #   ./infra/chaos.sh heal      pushes a good release again, to reset between rehearsals
 #   ./infra/chaos.sh render    wedges a Render deploy of the demo (a restart brings it back)
@@ -19,7 +19,7 @@ case "${1:-}" in
       --command 'sudo systemctl stop opsswipe-demo && echo "demo app stopped on $(hostname)"' ;;
   release)
     release true false "Ship new homepage"
-    echo "bad release pushed; the VM deploys it within ~30s" ;;
+    echo "bad release pushed; CI deploys it in ~1 min" ;;
   heal)
     release false true "Restore homepage"
     echo "good release pushed" ;;
