@@ -19,8 +19,8 @@ secret lives (secrets are never in the repo).
   `Activity.tsx`, `Settings.tsx`); no navigation library, so it runs in Expo Go and the dev build without a rebuild.
   `src/env.ts` detects Expo Go (no push, RevenueCat preview mode, `exp://` OAuth returns).
 - `evals/suggest/` — labeled incident cases scoring fix suggestions.
-- `infra/` — demo target (`demo-web`, Node; runs on the GCP demo VM via `demo-box.sh`, which redeploys `main`), GCP setup,
-  cron SQL, `chaos.sh` to break the demo.
+- `infra/` — demo target (`demo-web`, Node; runs on the GCP demo VM via `demo-box.sh`; its repo `opsswipe-demo-target` deploys
+  with GitHub Actions: tests, then SSH as a deploy-only user), GCP setup, cron SQL, `chaos.sh` to break the demo.
 
 ## Commands
 
@@ -33,7 +33,7 @@ deno test --allow-env --filter "revert PR" supabase/functions/tests/   # one tes
 deno task check                # typecheck all function entrypoints + eval
 deno task lint
 deno fmt                       # CI runs `deno fmt --check` (single quotes, width 120)
-deno task eval                 # rule suggestions must score 100% or CI fails; `deno task eval vertex` scores Claude
+deno task eval                 # rules must score 100% or CI fails; `deno task eval nvidia` / `openai` / `vertex` score a model
 ```
 
 App (`cd app`): `npm run typecheck`, `npm run lint`, `npm test` (Node's built-in runner on `src/**/*.test.ts`),
@@ -57,8 +57,10 @@ Incident lifecycle, spread across functions:
    `healthcheck/` runs every minute via pg_cron for liveness and stamps recovery. Both open incidents through
    `_shared/incidents.ts` (one open incident per service), which scrubs and stores failing requests as replay samples
    (`_shared/replay.ts`) and attaches a suggestion.
-2. **Suggest** — `_shared/suggest.ts`: deterministic rules always answer; Claude on Vertex AI may refine in the background but
-   is schema-constrained to the incident's allowed actions and falls back to rules on any error.
+2. **Suggest** — `_shared/suggest.ts`: deterministic rules decide the suggested fix. An AI model (`AI_SUGGESTIONS=nvidia`:
+   NVIDIA Nemotron via `_shared/llm.ts`, retrying and falling back to an OpenAI-compatible backup such as Groq; or `vertex`:
+   Claude) runs in the background; its reason is used only when it picks the same fix, and its opinion is stored in
+   `context.ai` either way (shown in the app's incident detail). Measured on the eval, models picked worse fixes, hence the rule.
 3. **Execute** — `execute/`: the phone sends only an incident id + action name. Owner comes from the verified JWT; allowed
    actions come from the service's validated config (`_shared/targets.ts`) AND the actions stored on the incident. Checks the
    RevenueCat `pro` entitlement server-side (`_shared/entitlement.ts`); the free fix is an atomic Postgres meter refunded on
@@ -71,15 +73,17 @@ Incident lifecycle, spread across functions:
    to `proof/` with a GitHub Actions OIDC token (`_shared/oidc.ts`). Proof is bound to the head sha OpsSwipe opened
    (`_shared/proof.ts`), and `merge_pr` passes that sha so GitHub 409s if anything was pushed after.
 
-`connect/` + `oauth-callback/` link users' GitHub App installs, Render keys, and Google Cloud (the Google refresh token stays
+`connect/` + `oauth-callback/` link users' GitHub App installs (Connect starts at GitHub's authorize page), Render and Railway
+keys, Discord/Slack alerts, RevenueCat (revenue at risk), and Google Cloud. `connect` issues a one-time `oauth_states` row;
+`oauth-callback` finishes GitHub/Google on the server (`_shared/oauthState.ts`), so a lost deep link loses nothing (the Google refresh token stays
 in Vault so VMs can be added later; each added VM gets a reset-only custom role for OpsSwipe's own service account;
 disconnect revokes at Google). `connect` is one action switch (status, add_render, gcp_*, link_repo, agent_token_*,
 decline, register/unregister_push…). `oauth-callback` bounces codes and Supabase sessions back to `opsswipe://` or a
 LAN-only `exp://` (`_shared/appLink.ts`). Secrets live in Supabase Vault and are only read in `_shared/services.ts`.
 `_shared/db.ts` holds the service-role client and `env()`.
 
-Code fixes work for any service with a linked repo (`targets.ts` `actionsFor`): `revert_pr`, `fix_pr` (Claude writes a patch
-limited to the bad commit's files, `_shared/patch.ts`, gated by `checkPatch`; needs `AI_SUGGESTIONS=vertex`) and `merge_pr`.
+Code fixes work for any service with a linked repo (`targets.ts` `actionsFor`): `revert_pr`, `fix_pr` (the AI model writes a patch
+limited to the bad commit's files, `_shared/patch.ts`, gated by `checkPatch`; needs `AI_SUGGESTIONS` set) and `merge_pr`.
 The bad commit comes from Render deploys, else the app's reported `release`, else the branch head (`execute/badCommit`).
 `agent/` is the Approval API: agents with a hashed `ops_` token propose a fix, it becomes an incident card
 (`suggested_by='agent'`), the human approves or declines, the agent polls (`_shared/agents.ts`).
