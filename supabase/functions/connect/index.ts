@@ -12,7 +12,7 @@ import { authorizeUrl, installUrl, listRepos } from '../_shared/githubApp.ts';
 import { completeGithub, completeGoogle, newState } from '../_shared/oauthState.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
 import { idsFromLink, listDeployments } from '../_shared/railway.ts';
-import { RevenueError, revenuePerHour } from '../_shared/revenue.ts';
+import { keyProject, RevenueError, revenuePerHour } from '../_shared/revenue.ts';
 import { getRenderService, listServices } from '../_shared/render.ts';
 import {
   connection,
@@ -177,9 +177,13 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     // One test read proves both before anything is stored.
     case 'set_revenuecat': {
       const key = String(p.key ?? '').trim();
-      const projectId = String(p.projectId ?? '').trim();
       need(/^sk_\w{10,}$/.test(key), "That doesn't look like a RevenueCat secret key (it starts with sk_).");
-      need(/^[\w-]{3,64}$/.test(projectId), 'Paste the project id from RevenueCat → Project settings.');
+      // The id is optional: a key that can read its project says which one it is.
+      const projectId = String(p.projectId ?? '').trim() || (await keyProject(key)) || '';
+      need(
+        /^[\w-]{3,64}$/.test(projectId),
+        'Give the key "Project configuration: Read" too, or paste the project id (Project settings).',
+      );
       const r = await revenuePerHour(key, projectId).catch((e) => {
         throw new UserError(e instanceof RevenueError ? e.message : 'RevenueCat did not answer. Try again.');
       });

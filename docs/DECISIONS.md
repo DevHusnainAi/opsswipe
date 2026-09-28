@@ -160,3 +160,12 @@ wrong one at 3am is worse than no AI. So the suggested fix is always the rules';
 independently picks the same fix. The model's real job is Fix with AI, where every patch is limited by `checkPatch` and
 merges only after CI replays the failing requests. NVIDIA calls retry on 429/5xx and can fall back to a second
 OpenAI-compatible provider (e.g. Groq) via `AI_FALLBACK_BASE_URL`, `AI_FALLBACK_API_KEY`, `AI_FALLBACK_MODEL`.
+
+## 25. Revenue at risk: an API key today, OAuth next
+Two RevenueCat accounts are involved and easy to confuse. OpsSwipe's own RevenueCat sells OpsSwipe Pro: users subscribe with
+one tap and never see a key. Revenue at risk reads *the user's* app revenue, in *their* RevenueCat account, which OpsSwipe
+can only read with their permission. RevenueCat's OAuth (a consent screen where the developer picks projects and
+permissions, no keys) is the right way and needs OpsSwipe registered as an OAuth client through RevenueCat support, so
+this entry uses a read-only v2 key, detects the project from it when the key may read project configuration, and keeps
+the whole feature optional: nothing in setup depends on it. Source:
+[RevenueCat OAuth](https://www.revenuecat.com/docs/projects/oauth-overview).

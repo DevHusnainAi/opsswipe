@@ -91,7 +91,9 @@ npx supabase functions deploy execute connect healthcheck report proof oauth-cal
 
 RevenueCat → Project → Integrations → Webhooks: URL `https://<ref>.supabase.co/functions/v1/revenuecat-webhook`,
 Authorization header = the exact `RC_WEBHOOK_AUTH` value. For **Revenue at risk** (in the app, Services → Revenue at risk), create a v2 secret
-key with **Charts & Metrics** read access (Project settings → API keys) and note the project id. It keeps a copy of each plan so a RevenueCat API outage never
+key with read access to **Charts & Metrics** and **Project configuration** (Project settings → API keys). With both, the
+project is detected from the key; with Charts & Metrics only, also paste the project id. This connects *your own app's*
+revenue; it's unrelated to OpsSwipe Pro, which needs no setup. It keeps a copy of each plan so a RevenueCat API outage never
 blocks a paying user's fix. Optional, for the Monetization story: a 7-day trial on the annual product, a second offering
 whose paywall copy talks about outages, and an Experiment between the two.
 

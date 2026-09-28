@@ -249,3 +249,17 @@ Deno.test("the model may explain the rules' fix, never overrule it", async () =>
   const down = await suggest(vm500, () => Promise.reject(new Error('api.groq.com 429: rate limit')));
   assertEquals(down.second, { error: 'Error: api.groq.com 429: rate limit' }, 'so is a failed call');
 });
+
+Deno.test("a RevenueCat key names its own project when it can, so users needn't paste the id", async () => {
+  const { keyProject } = await import('../_shared/revenue.ts');
+  const real = globalThis.fetch;
+  try {
+    globalThis.fetch = (() => Promise.resolve(Response.json({ items: [{ id: 'proj109a2407' }] }))) as typeof fetch;
+    assertEquals(await keyProject('sk_x'), 'proj109a2407');
+    globalThis.fetch = (() =>
+      Promise.resolve(Response.json({ type: 'authorization_error' }, { status: 403 }))) as typeof fetch;
+    assertEquals(await keyProject('sk_x'), null, 'no project permission: the user pastes the id');
+  } finally {
+    globalThis.fetch = real;
+  }
+});

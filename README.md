@@ -66,7 +66,7 @@ sequenceDiagram
 | **Fixes across clouds** | Restart or roll back a Render or Railway service; reboot a Google Cloud VM; open a revert PR; merge a proven PR |
 | **Fix with AI** | The AI model writes the smallest code fix, touching only the files the bad commit changed; it ships as a PR that must pass the same replay proof before Merge unlocks |
 | **Repo linking** | Any service (Render or a GCP VM) can be linked to the repo it deploys from; the app can report its running commit (`release`) so OpsSwipe knows exactly what broke |
-| **Revenue at risk** | Connect your RevenueCat (a read-only v2 key): incidents show *~$X/h at risk* and recoveries *about $Y lost*, estimated from your last 28 days of revenue |
+| **Revenue at risk** | Connect your own app's RevenueCat (a read-only v2 key; the project is detected from the key): incidents show *~$X/h at risk* and recoveries *about $Y lost*, estimated from your last 28 days of revenue. Optional, never a setup step; one-tap connect through RevenueCat OAuth is next |
 | **Approval layer for AI agents** | An AI SRE or script proposes a fix with a token from Settings; it appears as a card with the agent's name, runs only after your swipe and fingerprint, and the agent can poll the result |
 | **Suggested fix with a reason** | Deterministic rules pick the fix instantly (recent deploy: roll back; a VM answering 500: revert). An AI model (NVIDIA Nemotron, or Claude on Vertex AI) may rephrase the reason only when it independently agrees: measured on our eval, it picked a worse fix 7–27% of the time, so it explains and never overrules |
 | **Proof before merge** | Failing requests ride into the PR as `.opsswipe/replays/*.json`; CI replays them and runs your tests; merge unlocks only on a full pass, pinned to that commit |
@@ -189,6 +189,7 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh release   # a bad release: re
 - More fixes: scale up, restart a Kubernetes deployment, roll back on Fly, Vercel and Coolify
 - Escalation: call or SMS when a push goes unanswered; a hosted status page
 - iOS build (the app is cross-platform; this entry ships Android)
+- One-tap "Connect RevenueCat" through RevenueCat OAuth (a consent screen, no keys) once OpsSwipe is registered as an OAuth client
 - Team plan, two-person approval for risky fixes
 - Google OAuth verification, so Connect Google Cloud has no warning screen or 100-user cap
 

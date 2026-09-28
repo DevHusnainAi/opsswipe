@@ -28,3 +28,16 @@ export async function revenuePerHour(key: string, projectId: string, now = new D
   const r = await res.json();
   return { perHour: perHour(Number(r.value) || 0), currency: typeof r.currency === 'string' ? r.currency : 'USD' };
 }
+
+// The key's own project, so users don't have to find and paste its id. Needs the key to also have
+// "Project configuration: Read"; null when it can't tell (the user then pastes the id).
+// ponytail: RevenueCat OAuth (a consent screen, no key at all) needs OpsSwipe registered as a client first.
+export async function keyProject(key: string): Promise<string | null> {
+  const res = await fetch(`${API}/projects`, {
+    headers: { Authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(3000),
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  const items = ((await res.json()).items ?? []) as { id: string }[];
+  return items.length === 1 ? items[0].id : null;
+}

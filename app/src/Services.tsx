@@ -323,8 +323,8 @@ export function Services({ active }: { active: boolean }) {
                 {rc && (
                   <View style={{ gap: space.sm, paddingVertical: space.md }}>
                     <Text style={type.caption}>
-                      In RevenueCat: Project settings → API keys → New secret key (v2) with Charts &amp; Metrics read
-                      access, and the project id from Project settings. OpsSwipe only reads your revenue total.
+                      In RevenueCat: Project settings → API keys → New secret key (v2) with read access to Charts &amp;
+                      Metrics and Project configuration. OpsSwipe only reads your revenue total.
                     </Text>
                     <TextInput
                       value={rc.key}
@@ -340,7 +340,7 @@ export function Services({ active }: { active: boolean }) {
                     <TextInput
                       value={rc.projectId}
                       onChangeText={(projectId) => setRc({ ...rc, projectId })}
-                      placeholder="Project id"
+                      placeholder="Project id (optional)"
                       placeholderTextColor={c.muted}
                       autoCapitalize="none"
                       autoCorrect={false}
