@@ -225,7 +225,7 @@ export function AddService({ start, status, existing, onClose }: Props) {
               <Choice
                 icon={HardDrives}
                 title="Google Cloud VM"
-                body="Reset a Compute Engine VM. OpsSwipe can reset only the VMs you add."
+                body="Reboot a Compute Engine VM. OpsSwipe can reboot only the VMs you add."
                 tag={status?.google.connected ? 'Connected' : undefined}
                 onPress={chooseGoogle}
               />
@@ -339,7 +339,7 @@ export function AddService({ start, status, existing, onClose }: Props) {
                   <Field label="URL to health-check" value={vmUrl} onChange={setVmUrl} placeholder="http://34.1.2.3/" />
                   <RepoPicker value={repo} onChange={setRepo} githubConnected={github} />
                   <Text style={type.caption}>
-                    OpsSwipe gets one custom role on {vm.name}: see its status and reset it. Nothing else in the project.
+                    OpsSwipe gets one custom role on {vm.name}: see its status and reboot it. Nothing else in the project.
                     {repo ? ` With ${repo} linked, it can also open revert and AI fix PRs.` : ''}
                   </Text>
                   <Button label={busy === 'addvm' ? 'Granting access…' : `Add ${vm.name}`} onPress={addVm} />
@@ -366,7 +366,7 @@ export function AddService({ start, status, existing, onClose }: Props) {
                 stacks: sign the JSON body with HMAC-SHA256 the same way (see Failure reports in the README).
               </Text>
               {created.vmStatus === 'pending' && (
-                <Text style={type.caption}>Google is still applying access; resets work within a minute.</Text>
+                <Text style={type.caption}>Google is still applying access; reboots work within a minute.</Text>
               )}
               <Button label="Done" onPress={() => onClose(true)} />
             </>
@@ -383,7 +383,7 @@ function GoogleConnect({ busy, onConnect, identity }: { busy: boolean; onConnect
     <>
       <Text style={[type.body, { color: c.muted }]}>
         Sign in with Google once. You can then add VMs from any of your projects. For each VM you add, OpsSwipe gives its
-        own identity one custom role on that VM (see its status, reset it), nothing else. Disconnect anytime in Services.
+        own identity one custom role on that VM (see its status, reboot it), nothing else. Disconnect anytime in Services.
       </Text>
       <Button label={busy ? 'Opening Google…' : 'Continue with Google'} icon={GoogleLogo} onPress={onConnect} />
       <Pressable

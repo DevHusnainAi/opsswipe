@@ -55,7 +55,7 @@ export function RepoPicker(
                         <Text style={type.caption}>{r.branch}</Text>
                       </View>
                     )
-                    : <Text style={type.caption}>Only restarts, rollbacks and resets</Text>}
+                    : <Text style={type.caption}>Only restarts, rollbacks and reboots</Text>}
                 </View>
               </Pressable>
             );

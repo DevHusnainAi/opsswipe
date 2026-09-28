@@ -288,7 +288,7 @@ export function Services({ active }: { active: boolean }) {
                   <Connection
                     icon={GoogleLogo}
                     name="Google Cloud"
-                    detail={status.google.connected ? (status.google.account ?? 'Connected') : 'Reset Compute Engine VMs'}
+                    detail={status.google.connected ? (status.google.account ?? 'Connected') : 'Reboot Compute Engine VMs'}
                     connected={status.google.connected}
                     busy={busy === 'dc-google'}
                     confirming={confirm === 'dc-google'}

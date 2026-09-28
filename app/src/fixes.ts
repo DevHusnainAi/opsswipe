@@ -13,11 +13,12 @@ export type Fix = {
 
 export const FIXES: Record<string, Fix> = {
   reset: {
-    label: 'Reset VM',
-    rail: 'Swipe to reset',
-    verb: 'Reset',
-    doing: 'Resetting',
-    confirm: 'Hard-reboots the VM. It can\'t be undone.',
+    // Google calls it "reset": a power-cycle, not a wipe. Users read "reset" as factory reset, so say reboot.
+    label: 'Reboot VM',
+    rail: 'Swipe to reboot',
+    verb: 'Reboot',
+    doing: 'Rebooting',
+    confirm: 'Power-cycles the VM. Files and disk data stay; work in memory is lost.',
     icon: Power,
   },
   restart: {

@@ -108,7 +108,7 @@ async function runAction(s: Service, action: Action, inc: Incident): Promise<Out
   }
   if (t.provider === 'gcp') {
     await resetInstance(t, platformSa());
-    return { detail: 'vm reset issued' };
+    return { detail: 'vm reboot issued' };
   }
   const key = await renderKey(s.owner);
   if (action === 'restart') {

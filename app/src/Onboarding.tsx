@@ -16,7 +16,7 @@ const SLIDES = [
   {
     art: Fingerprint,
     title: 'Swipe. Fingerprint.\nFixed.',
-    body: 'Restart, roll back or reset from anywhere. Nothing runs until you approve it, and every attempt is logged.',
+    body: 'Restart, roll back or reboot from anywhere. Nothing runs until you approve it, and every attempt is logged.',
   },
   {
     art: ShieldCheck,
