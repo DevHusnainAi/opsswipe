@@ -6,8 +6,9 @@
 //   deno run --allow-read --allow-env --allow-net evals/suggest/run.ts            # rules (free, runs in CI)
 //   GCP_SA_KEY="$(cat gcp-sa-key.json)" deno run -A evals/suggest/run.ts vertex  # Claude on Vertex
 //   NVIDIA_API_KEY=nvapi-... [NVIDIA_MODEL=...] deno run -A evals/suggest/run.ts nvidia   # NVIDIA-hosted model
+//   AI_FALLBACK_BASE_URL=... AI_FALLBACK_API_KEY=... AI_FALLBACK_MODEL=... deno run -A evals/suggest/run.ts openai  # e.g. Groq
 import { accessToken, type ServiceAccount } from '../../supabase/functions/_shared/gcp.ts';
-import { nvidiaLlm } from '../../supabase/functions/_shared/llm.ts';
+import { nvidiaLlm, openaiLlm } from '../../supabase/functions/_shared/llm.ts';
 import {
   llmSuggester,
   suggest,
@@ -26,6 +27,13 @@ if (mode === 'vertex') {
   const sa: ServiceAccount = JSON.parse(Deno.env.get('GCP_SA_KEY') ?? '{}');
   if (!sa.project_id) throw new Error('set GCP_SA_KEY to the service account JSON');
   ai = vertexSuggester(sa.project_id, () => accessToken(sa));
+}
+if (mode === 'openai') {
+  const [url, key, model] = ['AI_FALLBACK_BASE_URL', 'AI_FALLBACK_API_KEY', 'AI_FALLBACK_MODEL'].map((k) =>
+    Deno.env.get(k)
+  );
+  if (!url || !key || !model) throw new Error('set AI_FALLBACK_BASE_URL, AI_FALLBACK_API_KEY and AI_FALLBACK_MODEL');
+  ai = llmSuggester(openaiLlm(url, key, model, 2048));
 }
 if (mode === 'nvidia') {
   const key = Deno.env.get('NVIDIA_API_KEY');
