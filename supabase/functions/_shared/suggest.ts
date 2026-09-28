@@ -15,7 +15,13 @@ export type SuggestInput = {
   liveDeploy?: { commit?: string; message?: string; minutesBeforeFailure: number };
   previousDeploy?: { commit?: string };
 };
-export type Suggestion = { action: Action; reason: string; source: 'rules' | 'ai' };
+// `second`: what the model said, kept for the record even when the rules' fix stands.
+export type Suggestion = {
+  action: Action;
+  reason: string;
+  source: 'rules' | 'ai';
+  second?: { action: string; agreed: boolean } | { error: string };
+};
 export type Suggester = (i: SuggestInput) => Promise<{ action: Action; reason: string }>;
 
 const RECENT_DEPLOY_MIN = 30;
@@ -65,10 +71,12 @@ export async function suggest(i: SuggestInput, ai?: Suggester): Promise<Suggesti
   if (!ai) return base;
   try {
     const r = await ai(i);
-    return r.action === base.action && r.reason.trim() ? { ...r, source: 'ai' } : base;
+    const agreed = r.action === base.action && !!r.reason.trim();
+    const second = { action: String(r.action), agreed };
+    return agreed ? { ...r, source: 'ai', second } : { ...base, second };
   } catch (e) {
     console.warn('ai suggestion failed, using rules:', String(e));
-    return base;
+    return { ...base, second: { error: String(e).slice(0, 200) } };
   }
 }
 

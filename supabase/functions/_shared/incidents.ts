@@ -132,12 +132,14 @@ export async function openIncident(
   const ai = aiSuggester();
   if (inc && ai) {
     EdgeRuntime.waitUntil(
-      suggest(input, ai).then((r) =>
-        r.source === 'ai'
-          ? db.from('incidents').update({ action: r.action, reason: r.reason, suggested_by: 'ai' })
-            .eq('id', inc.id).eq('status', 'active')
-          : null
-      ),
+      // The model's second opinion is recorded either way; its words replace the rules' only if it agreed.
+      suggest(input, ai).then(async (r) => {
+        const { data } = await db.from('incidents').select('context').eq('id', inc.id).maybeSingle();
+        await db.from('incidents').update({
+          ...(r.source === 'ai' ? { action: r.action, reason: r.reason, suggested_by: 'ai' } : {}),
+          context: { ...(data?.context ?? {}), ai: { ...r.second, at: new Date().toISOString() } },
+        }).eq('id', inc.id).eq('status', 'active');
+      }),
     );
   }
   return { opened: !!inc };
