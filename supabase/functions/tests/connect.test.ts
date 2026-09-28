@@ -135,3 +135,14 @@ Deno.test("GitHub connect finds the user's own installation, none yet, or refuse
     globalThis.fetch = real;
   }
 });
+
+Deno.test('a PR with nothing to replay passes the proof check instead of failing every ordinary PR', async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.mkdir(`${dir}/.opsswipe`);
+  await Deno.writeTextFile(`${dir}/.opsswipe/proof.mjs`, PROOF_SCRIPT);
+  const out = await new Deno.Command('node', { args: ['.opsswipe/proof.mjs', 'http://127.0.0.1:9'], cwd: dir })
+    .output();
+  assertEquals(out.code, 0);
+  assert(new TextDecoder().decode(out.stdout).includes('nothing for OpsSwipe to prove'));
+  await Deno.remove(dir, { recursive: true });
+});

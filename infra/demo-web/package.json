@@ -2,6 +2,11 @@
   "name": "opsswipe-demo-web",
   "private": true,
   "license": "MIT",
-  "engines": { "node": ">=18" },
-  "scripts": { "start": "node server.js" }
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
 }

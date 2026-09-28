@@ -39,6 +39,11 @@ async function oidcToken() {
 
 async function main() {
   const r = await replayAll(process.argv[2] || 'http://127.0.0.1:3000', '.opsswipe/replays');
+  // Most PRs aren't OpsSwipe fixes: nothing to replay is not a failure, and nothing to report.
+  if (r.total === 0) {
+    console.log('No production failures to replay in this PR: nothing for OpsSwipe to prove.');
+    process.exit(0);
+  }
   for (const x of r.results) console.log((x.passed ? 'PASS ' : 'FAIL ') + x.method + ' ' + x.path + ' was ' + x.was + ', now ' + x.now);
   console.log(r.passed + '/' + r.total + ' failing production requests now pass');
   const testsPassed = process.env.TESTS_PASSED === 'true';
