@@ -21,6 +21,22 @@ Deno.test('revert PR keeps the incident open, drops itself, and points the card 
   assertEquals((r.update.context as { pr: PrRef }).pr, pr);
 });
 
+Deno.test('an AI fix PR is also one-PR-per-incident: both code fixes drop, rollback stays suggested', () => {
+  const r = afterFix('fix_pr', { actions: ['restart', 'rollback', 'revert_pr', 'fix_pr'], context: {} }, { pr }, now);
+  assertEquals(r.keepOpen, true);
+  assertEquals(r.update.actions, ['restart', 'rollback']);
+  assertEquals(r.update.action, 'rollback');
+  assertEquals(String(r.update.reason).startsWith('AI fix PR opened'), true);
+});
+
+Deno.test('on a VM, the code fix is proven while a reset restores service', () => {
+  const r = afterFix('revert_pr', { actions: ['reset', 'revert_pr', 'fix_pr'], context: {} }, { pr }, now);
+  assertEquals(r.update.actions, ['reset']);
+  assertEquals(r.update.action, 'reset');
+  const after = afterFix('reset', { actions: ['reset'], context: { pr } }, {}, now);
+  assertEquals(after.keepOpen, true, 'the proof and merge still need the incident');
+});
+
 Deno.test('rolling back while a revert PR is open restores service but waits for the proven merge', () => {
   const withPr = { actions: ['restart', 'rollback'], context: { pr } };
   const r = afterFix('rollback', withPr, {}, now);

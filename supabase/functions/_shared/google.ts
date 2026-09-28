@@ -1,6 +1,7 @@
-// "Connect Google Cloud": the user signs in with Google once, picks a VM, and OpsSwipe uses that
-// short-lived token to grant its OWN service account a reset-only role on that one VM. The user's
-// token is then deleted; from then on OpsSwipe acts only as itself (see gcp.ts).
+// "Connect Google Cloud": the user signs in with Google once. OpsSwipe keeps the refresh token
+// (encrypted in Vault) so the user can browse projects and add VMs later without signing in again,
+// and uses it only to grant its OWN service account a reset-only role on each chosen VM. Resets
+// always run as OpsSwipe's identity (see gcp.ts). Disconnect revokes the token at Google.
 // https://developers.google.com/identity/protocols/oauth2/web-server
 // https://docs.cloud.google.com/compute/docs/reference/rest/v1/instances/setIamPolicy
 import { type GcpVm, vmUrl } from './gcp.ts';
@@ -17,35 +18,51 @@ export class GoogleError extends Error {}
 
 const redirectUri = () => `${env('SUPABASE_URL')}/functions/v1/oauth-callback`;
 
-// access_type=online: no refresh token is ever issued, so nothing long-lived exists to leak.
+// access_type=offline + prompt=consent: Google always returns a refresh token, so the connection lasts.
 export const consentUrl = (state: string) =>
   `${AUTH_URL}?${new URLSearchParams({
     client_id: env('GOOGLE_CLIENT_ID'),
     redirect_uri: redirectUri(),
     response_type: 'code',
     scope: SCOPES,
-    access_type: 'online',
+    access_type: 'offline',
     prompt: 'select_account consent',
     state,
   })}`;
 
-export async function exchangeCode(code: string) {
-  const res = await fetch(TOKEN_URL, {
+async function tokenRequest(params: Record<string, string>) {
+  return await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      code,
       client_id: env('GOOGLE_CLIENT_ID'),
       client_secret: env('GOOGLE_CLIENT_SECRET'),
-      redirect_uri: redirectUri(),
-      grant_type: 'authorization_code',
+      ...params,
     }),
   });
+}
+
+export async function exchangeCode(code: string) {
+  const res = await tokenRequest({ code, redirect_uri: redirectUri(), grant_type: 'authorization_code' });
   if (!res.ok) throw new GoogleError('Google sign-in expired or was cancelled. Try again.');
-  const { access_token, id_token } = await res.json();
+  const { access_token, refresh_token, id_token } = await res.json();
+  if (!refresh_token) throw new GoogleError('Google did not grant lasting access. Connect Google Cloud again.');
   // The id_token came straight from Google over TLS, so its claims can be read without re-verifying.
   const claims = id_token ? JSON.parse(new TextDecoder().decode(b64urlDecode(id_token.split('.')[1]))) : {};
-  return { token: access_token as string, email: (claims.email as string) ?? null };
+  return { access: access_token as string, refresh: refresh_token as string, email: (claims.email as string) ?? null };
+}
+
+// A fresh 1-hour access token from the stored refresh token.
+export async function accessFromRefresh(refresh: string) {
+  const res = await tokenRequest({ refresh_token: refresh, grant_type: 'refresh_token' });
+  if (!res.ok) throw new GoogleError('Google access was removed. Connect Google Cloud again.');
+  return (await res.json()).access_token as string;
+}
+
+// Best effort: Disconnect should also end the access at Google, not just forget our copy.
+export async function revoke(token: string) {
+  await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' })
+    .catch(() => {});
 }
 
 async function call(token: string, url: string, init: RequestInit = {}) {
@@ -55,7 +72,7 @@ async function call(token: string, url: string, init: RequestInit = {}) {
   });
   if (res.ok) return res.json();
   const text = await res.text();
-  if (res.status === 401) throw new GoogleError('Your Google sign-in expired. Connect Google Cloud again.');
+  if (res.status === 401) throw new GoogleError('Google access was removed. Connect Google Cloud again.');
   if (text.includes('SERVICE_DISABLED') || text.includes('has not been used')) {
     const api = url.includes('iam.googleapis')
       ? 'IAM'

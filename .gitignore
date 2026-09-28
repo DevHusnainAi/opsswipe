@@ -4,3 +4,6 @@ node_modules/
 gcp-sa-key.json
 *.pem
 .upskill/
+google-oauth-client.json
+firebase-fcm-key.json
+supabase/.temp/

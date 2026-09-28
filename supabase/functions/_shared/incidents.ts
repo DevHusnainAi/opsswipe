@@ -13,9 +13,12 @@ declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 const COOLDOWN_MS = 3 * 60_000; // a restart takes ~1 min; don't re-page while it comes back
 
-// Opt-in: Claude on Vertex (billed to the platform's GCP project) refines the rule-based suggestion.
+// Opt-in: Claude on Vertex (billed to the platform's GCP project) refines the rule-based suggestion
+// and writes AI fix PRs.
+export const aiEnabled = () => env('AI_SUGGESTIONS') === 'vertex' && !!env('GCP_SA_KEY');
+
 function aiSuggester() {
-  if (env('AI_SUGGESTIONS') !== 'vertex' || !env('GCP_SA_KEY')) return undefined;
+  if (!aiEnabled()) return undefined;
   const sa = platformSa();
   return sa.project_id ? vertexSuggester(sa.project_id, () => accessToken(sa)) : undefined;
 }
@@ -43,7 +46,13 @@ export async function addSamples(id: string, context: { replay?: ReplaySample[] 
     .eq('id', id);
 }
 
-export async function openIncident(s: Service, title: string, metric: string, samples: ReplaySample[] = []) {
+export async function openIncident(
+  s: Service,
+  title: string,
+  metric: string,
+  samples: ReplaySample[] = [],
+  release?: string, // the commit the app says it's running; used when the host has no deploy history
+) {
   const since = new Date(Date.now() - COOLDOWN_MS).toISOString();
   const { count } = await db.from('incidents').select('id', { count: 'exact', head: true })
     .eq('service_id', s.id).or(`status.in.(active,resolving),resolved_at.gt.${since}`);
@@ -51,8 +60,12 @@ export async function openIncident(s: Service, title: string, metric: string, sa
 
   const t = toTarget(s);
   const deploys = await deployHistory(s);
-  // merge_pr is never offered up front: /proof adds it once CI has proven a PR.
-  const actions = actionsFor(t).filter((a) => a !== 'merge_pr');
+  if (!deploys.live && release) {
+    deploys.live = { id: 'reported', status: 'live', createdAt: new Date().toISOString(), commit: { id: release } };
+  }
+  // merge_pr is never offered up front: /proof adds it once CI has proven a PR. The AI fix needs
+  // Claude, so it's offered only when this server has it switched on.
+  const actions = actionsFor(t).filter((a) => a !== 'merge_pr' && (a !== 'fix_pr' || aiEnabled()));
   const input = toSuggestInput(s.name, t.provider, actions, metric, deploys);
   const rules = await suggest(input);
 

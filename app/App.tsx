@@ -1,38 +1,51 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import * as LocalAuthentication from 'expo-local-authentication';
-import * as Notifications from 'expo-notifications';
+import * as Font from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowClockwise, ArrowSquareOut, Crown, Plug, ShieldCheck, WarningCircle } from 'phosphor-react-native';
+import { ArrowClockwise, Crown, Plug, ShieldCheck, WarningCircle } from 'phosphor-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import Purchases from 'react-native-purchases';
 import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { AuditEntry, Incident, ensureUser, execute, registerPush, signInWithGithub, supabase } from './src/api';
+import {
+  AuditEntry,
+  connect,
+  currentUserId,
+  execute,
+  Incident,
+  registerPush,
+  sessionFromRedirect,
+  signOut as endSession,
+  supabase,
+} from './src/api';
+import { Activity } from './src/Activity';
+import { Auth, type AuthMode, NewPassword } from './src/Auth';
+import { inExpoGo, Notifications } from './src/env';
 import { fixFor } from './src/fixes';
-import { recoveryLine, timeAgo } from './src/format';
-import { Onboarding } from './src/Onboarding';
+import { AlertsPrimer, Logo, Welcome } from './src/Onboarding';
 import { Services } from './src/Services';
+import { Settings } from './src/Settings';
 import { PROVIDER, SwipeCard } from './src/SwipeCard';
+import { type Tab, TabBar } from './src/TabBar';
 import { c, radius, space, type } from './src/theme';
-import { Banner, type BannerState, Button, Chip, Section, Skeleton, useNow } from './src/ui';
+import { Banner, type BannerState, Button, Skeleton, useNow } from './src/ui';
 
 const FREE_RUNS = 1; // mirrors the server; display only
-const ONBOARDED = 'opsswipe.onboarded';
-const OUTCOME = {
-  executed: { label: 'Executed', color: c.green, tint: c.greenTint },
-  paywalled: { label: 'Paywalled', color: c.amber, tint: c.amberTint },
-  failed: { label: 'Failed', color: c.red, tint: c.redTint },
-} as const;
+const WELCOMED = 'opsswipe.welcomed'; // the value tour is shown once per phone
+const ALERTS_ASKED = 'opsswipe.alerts-asked'; // so is the notification primer
 
-Notifications.setNotificationHandler({
+type Phase = 'loading' | 'welcome' | 'auth' | 'recovery' | 'primer' | 'ready' | 'error';
+
+Notifications?.setNotificationHandler({
   handleNotification: async () => ({ shouldPlaySound: true, shouldSetBadge: false, shouldShowBanner: true, shouldShowList: true }),
 });
 
 export default function App() {
-  const [phase, setPhase] = useState<'loading' | 'onboarding' | 'ready' | 'error'>('loading');
+  const [phase, setPhase] = useState<Phase>('loading');
+  const [authMode, setAuthMode] = useState<AuthMode>('signup');
   const [error, setError] = useState('');
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [fixed, setFixed] = useState<Incident[]>([]);
@@ -42,7 +55,7 @@ export default function App() {
   const [banner, setBanner] = useState<BannerState>(null);
   const [cardHeight, setCardHeight] = useState(420);
   const [serviceCount, setServiceCount] = useState<number | null>(null);
-  const [servicesOpen, setServicesOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>('incidents');
   const channel = useRef<ReturnType<typeof supabase.channel>>(undefined);
   const purchasesReady = useRef(false);
   const now = useNow();
@@ -50,8 +63,8 @@ export default function App() {
   const refresh = useCallback(async () => {
     const [i, r, a, u, sv] = await Promise.all([
       supabase.from('incidents').select().in('status', ['active', 'resolving']).order('created_at'),
-      supabase.from('incidents').select().eq('status', 'resolved').order('resolved_at', { ascending: false }).limit(3),
-      supabase.from('audit_log').select().order('created_at', { ascending: false }).limit(5),
+      supabase.from('incidents').select().eq('status', 'resolved').order('resolved_at', { ascending: false }).limit(10),
+      supabase.from('audit_log').select().order('created_at', { ascending: false }).limit(50),
       supabase.from('usage').select('free_used').maybeSingle(),
       supabase.from('services').select('id', { count: 'exact', head: true }),
     ]);
@@ -64,39 +77,57 @@ export default function App() {
     setServiceCount(sv.count ?? 0);
   }, []);
 
+  // Signed in: the plan follows the account (RevenueCat appUserID = Supabase user id), data loads,
+  // and this phone starts receiving the account's alerts.
+  const enter = useCallback(async (uid: string) => {
+    if (!purchasesReady.current) {
+      Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_RC_KEY!, appUserID: uid });
+      Purchases.addCustomerInfoUpdateListener((info) => setPro(!!info.entitlements.active.pro));
+      purchasesReady.current = true;
+    } else {
+      await Purchases.logIn(uid).catch(() => {});
+    }
+    try {
+      setPro(!!(await Purchases.getCustomerInfo()).entitlements.active.pro);
+    } catch {
+      // offline: the server still enforces the plan on every fix
+    }
+    await refresh();
+    // Alerts come as server push (they reach a closed app); realtime only keeps the open app fresh.
+    registerPush().catch(() => {});
+    channel.current ??= supabase
+      .channel('ops')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => refresh().catch(() => {}))
+      .subscribe();
+    const asked = await AsyncStorage.getItem(ALERTS_ASKED);
+    setPhase(asked || !Notifications ? 'ready' : 'primer');
+  }, [refresh]);
+
   const boot = useCallback(async () => {
     try {
-      const uid = await ensureUser();
-      if (!purchasesReady.current) {
-        Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_RC_KEY!, appUserID: uid });
-        Purchases.addCustomerInfoUpdateListener((info) => setPro(!!info.entitlements.active.pro));
-        purchasesReady.current = true;
+      // Our builds embed Geist natively (app.json); Expo Go can only load fonts at runtime.
+      if (inExpoGo) {
+        await Font.loadAsync({
+          Geist: require('@expo-google-fonts/geist/400Regular/Geist_400Regular.ttf'),
+          GeistMono: require('@expo-google-fonts/geist-mono/400Regular/GeistMono_400Regular.ttf'),
+        }).catch(() => {});
       }
-      // The listener only fires on changes; read the current plan once at startup.
-      try {
-        setPro(!!(await Purchases.getCustomerInfo()).entitlements.active.pro);
-      } catch {
-        // offline or not configured: the server still enforces the plan on every fix
-      }
-      // Creating a channel doesn't prompt on Android 13+; the permission is asked in onboarding.
-      await Notifications.setNotificationChannelAsync('incidents', {
+      // Creating a channel doesn't prompt on Android 13+; the permission is asked in the primer.
+      await Notifications?.setNotificationChannelAsync('incidents', {
         name: 'Incidents',
         description: 'A health check failed and a fix is waiting for you.',
         importance: Notifications.AndroidImportance.MAX,
       });
-      await refresh();
-      // Alerts come as server push (they reach a closed app); realtime only keeps the open app fresh.
-      registerPush().catch(() => {});
-      channel.current ??= supabase
-        .channel('ops')
-        .on('postgres_changes', { event: '*', schema: 'public' }, () => refresh().catch(() => {}))
-        .subscribe();
-      setPhase((await AsyncStorage.getItem(ONBOARDED)) ? 'ready' : 'onboarding');
+      const uid = await currentUserId();
+      if (uid) return await enter(uid);
+      const welcomed = await AsyncStorage.getItem(WELCOMED);
+      setAuthMode(welcomed ? 'signin' : 'signup');
+      setPhase(welcomed ? 'auth' : 'welcome');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setPhase('error');
     }
-  }, [refresh]);
+  }, [enter]);
 
   useEffect(() => {
     // Fetch on mount: boot() only sets state after its awaits, which the rule can't see across the call.
@@ -107,26 +138,90 @@ export default function App() {
     };
   }, [boot]);
 
-  const enableAlerts = async (enable: boolean) => {
-    if (enable && (await Notifications.requestPermissionsAsync()).granted) await registerPush();
+  // Email links (confirm the account, reset the password) open the app signed in. OAuth redirects
+  // are handled by the sign-in call itself; they carry no `type`, so they are skipped here.
+  useEffect(() => {
+    const open = async (url: string | null) => {
+      if (!url || !/[#&?]type=/.test(url)) return;
+      try {
+        const s = await sessionFromRedirect(url);
+        if (s?.recovery) setPhase('recovery');
+        else if (s) await enter(s.uid);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setPhase('error');
+      }
+    };
+    Linking.getInitialURL().then(open);
+    const sub = Linking.addEventListener('url', (e) => open(e.url));
+    return () => sub.remove();
+  }, [enter]);
+
+  const startAuth = async (mode: AuthMode) => {
+    await AsyncStorage.setItem(WELCOMED, '1');
+    setAuthMode(mode);
+    setPhase('auth');
   };
 
-  const finishOnboarding = async (openServices: boolean) => {
-    await AsyncStorage.setItem(ONBOARDED, '1');
-    setPhase('ready');
-    if (openServices) setServicesOpen(true);
-  };
-
-  // Linking keeps the same id; signing in to an existing account switches to it (new phone).
-  const signIn = async () => {
-    const res = await signInWithGithub();
-    if (res?.switched) {
-      await Purchases.logIn(res.uid);
-      setPro(!!(await Purchases.getCustomerInfo()).entitlements.active.pro);
-      registerPush().catch(() => {});
+  const decideAlerts = async (enable: boolean) => {
+    await AsyncStorage.setItem(ALERTS_ASKED, '1');
+    if (enable && Notifications && (await Notifications.requestPermissionsAsync()).granted) {
+      await registerPush().catch(() => {});
     }
-    await refresh();
-    return res;
+    setPhase('ready');
+    if (serviceCount === 0) setTab('services'); // first run: straight to the setup checklist
+  };
+
+  // Android shows the permission dialog only while it's allowed to ask; after a "Don't allow" the
+  // only way back is the system settings page, so go there instead of silently doing nothing.
+  const enableAlerts = async () => {
+    if (!Notifications) return;
+    const now = await Notifications.getPermissionsAsync();
+    const res = now.granted || !now.canAskAgain ? now : await Notifications.requestPermissionsAsync();
+    if (res.granted) await registerPush();
+    else await Linking.openSettings();
+  };
+
+  const signOut = async () => {
+    await endSession();
+    await Purchases.logOut().catch(() => {});
+    if (channel.current) supabase.removeChannel(channel.current);
+    channel.current = undefined;
+    setIncidents([]);
+    setFixed([]);
+    setAudit([]);
+    setServiceCount(null);
+    setPro(false);
+    setBanner(null);
+    setTab('incidents');
+    setAuthMode('signin');
+    setPhase('auth');
+  };
+
+  // Expo Go runs RevenueCat in Preview API mode, which cannot draw the paywall or Customer Center.
+  const PREVIEW_ONLY = 'The paywall and purchases need the OpsSwipe app. Expo Go can only preview RevenueCat.';
+
+  const paywall = async () => {
+    if (inExpoGo) throw new Error(PREVIEW_ONLY);
+    const res = await RevenueCatUI.presentPaywall();
+    const bought = res === PAYWALL_RESULT.PURCHASED || res === PAYWALL_RESULT.RESTORED;
+    if (bought) setPro(true);
+    return bought;
+  };
+
+  const upgrade = async () => {
+    await paywall();
+  };
+
+  const manage = async () => {
+    if (inExpoGo) throw new Error(PREVIEW_ONLY);
+    await RevenueCatUI.presentCustomerCenter();
+  };
+
+  const restore = async () => {
+    const active = !!(await Purchases.restorePurchases()).entitlements.active.pro;
+    setPro(active);
+    return active;
   };
 
   const run = async (inc: Incident, action: string) => {
@@ -137,8 +232,12 @@ export default function App() {
     if (res.result === 'ok') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setBanner(
-        action === 'revert_pr' && res.detail?.startsWith('https://')
-          ? { kind: 'ok', text: 'Revert PR opened. Roll back to restore service now.', link: { label: 'Open PR', url: res.detail } }
+        (action === 'revert_pr' || action === 'fix_pr') && res.detail?.startsWith('https://')
+          ? {
+            kind: 'ok',
+            text: `${action === 'fix_pr' ? 'Claude opened a fix PR' : 'Revert PR opened'}. CI is proving it against the failing requests.`,
+            link: { label: 'Open PR', url: res.detail },
+          }
           : { kind: 'ok', text: `${fix.verb} sent. Waiting for ${inc.target_server} to come back.` },
       );
     }
@@ -148,8 +247,11 @@ export default function App() {
   // FR-12 → FR-14: the card snaps back first, then the paywall slides up.
   const upsell = async (inc: Incident, action: string) => {
     setBanner({ kind: 'warn', text: 'Your free fix is used. Upgrade to keep fixing.' });
-    const res = await RevenueCatUI.presentPaywall();
-    if (res === PAYWALL_RESULT.PURCHASED || res === PAYWALL_RESULT.RESTORED) await run(inc, action); // already authorized
+    try {
+      if (await paywall()) await run(inc, action); // already authorized
+    } catch (e) {
+      setBanner({ kind: 'warn', text: e instanceof Error ? e.message : String(e) });
+    }
   };
 
   const onFix = async (inc: Incident, action: string) => {
@@ -174,7 +276,18 @@ export default function App() {
     const result = await run(inc, action);
     if (result === 'paywall') setTimeout(() => upsell(inc, action), 350);
     if (result !== 'ok') return 'failed' as const;
-    return action === 'revert_pr' ? ('stay' as const) : ('done' as const);
+    return action === 'revert_pr' || action === 'fix_pr' ? ('stay' as const) : ('done' as const);
+  };
+
+  // Turning down an AI agent's proposal: the card goes away and the agent sees "declined".
+  const decline = async (inc: Incident) => {
+    try {
+      await connect('decline', { incidentId: inc.id });
+      setBanner({ kind: 'ok', text: `Declined. ${inc.context?.agent?.name ?? 'The agent'} will be told.` });
+      await refresh();
+    } catch (e) {
+      setBanner({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+    }
   };
 
   const down = incidents.length;
@@ -186,31 +299,40 @@ export default function App() {
         <SafeAreaView style={styles.root}>
           <StatusBar style="light" />
 
-          {phase === 'onboarding' && (
-            <Onboarding onAlerts={enableAlerts} onSignIn={signIn} onDone={finishOnboarding} />
+          {phase === 'welcome' && <Welcome onStart={() => startAuth('signup')} onSignIn={() => startAuth('signin')} />}
+          {phase === 'auth' && (
+            <Auth
+              key={authMode}
+              mode={authMode}
+              onBack={() => setPhase('welcome')}
+              onSignedIn={(uid) => {
+                setPhase('loading');
+                enter(uid).catch((e) => {
+                  setError(e instanceof Error ? e.message : String(e));
+                  setPhase('error');
+                });
+              }}
+            />
           )}
+          {phase === 'recovery' && (
+            <NewPassword
+              onDone={() => currentUserId().then((uid) => (uid ? enter(uid) : setPhase('auth')))}
+            />
+          )}
+          {phase === 'primer' && <AlertsPrimer onDecide={decideAlerts} />}
 
-          {phase !== 'onboarding' && (
+          {(phase === 'loading' || phase === 'ready' || phase === 'error') && (
             <>
               <View style={styles.header}>
                 <View style={styles.brand}>
-                  <View style={styles.mark} />
+                  <Logo size={22} />
                   <Text style={[type.monoStrong, { fontWeight: '600' }]}>opsswipe</Text>
                 </View>
-                <View style={styles.headerActions}>
                 <Pressable
-                  onPress={() => setServicesOpen(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Services and connections"
-                  style={styles.iconButton}
-                >
-                  <Plug size={20} color={c.text} weight="bold" />
-                </Pressable>
-                <Pressable
-                  onPress={() => !pro && RevenueCatUI.presentPaywall()}
+                  onPress={() => setTab('settings')}
                   hitSlop={8}
                   accessibilityRole="button"
-                  accessibilityLabel={pro ? 'Pro plan, unlimited fixes' : `Free plan, ${fixesLeft} fix left. Opens upgrade options.`}
+                  accessibilityLabel={pro ? 'Pro plan, unlimited fixes. Opens your plan.' : `Free plan, ${fixesLeft} fix left. Opens your plan.`}
                   style={({ pressed }) => [styles.plan, pro && styles.planPro, pressed && { opacity: 0.8 }]}
                 >
                   {pro && <Crown size={14} color={c.green} weight="fill" />}
@@ -218,7 +340,6 @@ export default function App() {
                     {pro ? 'Pro' : `Free · ${fixesLeft} fix left`}
                   </Text>
                 </Pressable>
-                </View>
               </View>
 
               {phase === 'loading' && (
@@ -247,6 +368,8 @@ export default function App() {
               )}
 
               {phase === 'ready' && (
+                <>
+                <View style={[styles.screen, tab !== 'incidents' && styles.hidden]}>
                 <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                   <View style={styles.hero}>
                     <View style={styles.statusRow}>
@@ -272,12 +395,12 @@ export default function App() {
                         <Text style={[type.caption, { textAlign: 'center' }]}>
                           Add a Render service or a GCP VM. OpsSwipe watches it and pages you when it breaks.
                         </Text>
-                        <Button label="Connect a service" icon={Plug} onPress={() => setServicesOpen(true)} />
+                        <Button label="Connect a service" icon={Plug} onPress={() => setTab('services')} />
                       </View>
                     ) : down === 0 ? (
                       <View style={styles.empty}>
                         <ShieldCheck size={32} color={c.green} weight="bold" />
-                        <Text style={type.body}>Your apps report failures the moment they happen.</Text>
+                        <Text style={[type.body, { textAlign: 'center' }]}>Your apps report failures the moment they happen.</Text>
                         <Text style={[type.caption, { textAlign: 'center' }]}>
                           A health check also runs every minute. You&apos;ll get an alert when something breaks.
                         </Text>
@@ -291,6 +414,7 @@ export default function App() {
                             depth={i}
                             now={now}
                             onFix={onFix}
+                            onDecline={decline}
                             onMeasure={setCardHeight}
                           />
                         ))
@@ -299,66 +423,42 @@ export default function App() {
                   </View>
 
                   <Banner state={banner} />
-
-                  {fixed.length > 0 && (
-                    <Section title="Recent fixes">
-                      <View style={styles.group}>
-                        {fixed.map((f) => (
-                          <View key={f.id} style={styles.row}>
-                            <View style={[styles.dot, { backgroundColor: f.recovered_at ? c.green : c.amber }]} />
-                            <View style={{ flex: 1, gap: 2 }}>
-                              <Text style={type.mono}>{f.target_server}</Text>
-                              <Text style={type.caption}>{recoveryLine(f)}</Text>
-                            </View>
-                          </View>
-                        ))}
-                      </View>
-                    </Section>
-                  )}
-
-                  <Section title="Activity">
-                    {audit.length === 0 ? (
-                      <Text style={type.caption}>Every fix you approve, block or retry shows up here.</Text>
-                    ) : (
-                      <View style={styles.group}>
-                        {audit.map((a) => {
-                          const o = OUTCOME[a.outcome as keyof typeof OUTCOME] ?? OUTCOME.failed;
-                          const link = a.detail?.match(/https:\/\/\S+/)?.[0];
-                          return (
-                            <Pressable
-                              key={a.id}
-                              disabled={!link}
-                              onPress={() => link && Linking.openURL(link)}
-                              accessibilityRole={link ? 'link' : undefined}
-                              style={styles.row}
-                            >
-                              <Chip label={o.label} color={o.color} tint={o.tint} />
-                              <Text style={[type.mono, { flex: 1 }]} numberOfLines={1}>
-                                {fixFor(a.action).label} {a.target}
-                              </Text>
-                              {link ? (
-                                <ArrowSquareOut size={16} color={c.muted} weight="bold" />
-                              ) : (
-                                <Text style={type.monoCaption}>{timeAgo(a.created_at, now)}</Text>
-                              )}
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </Section>
                 </ScrollView>
+                </View>
+
+                {/* Every tab stays mounted, so a half-finished Connect keeps its state while you look around. */}
+                <View style={[styles.screen, tab !== 'services' && styles.hidden]}>
+                  <Services active={tab === 'services'} />
+                </View>
+                <View style={[styles.screen, tab !== 'activity' && styles.hidden]}>
+                  <Activity audit={audit} fixed={fixed} now={now} />
+                </View>
+                <View style={[styles.screen, tab !== 'settings' && styles.hidden]}>
+                  <Settings
+                    active={tab === 'settings'}
+                    pro={pro}
+                    fixesLeft={fixesLeft}
+                    onSignOut={signOut}
+                    onUpgrade={upgrade}
+                    onManage={manage}
+                    onRestore={restore}
+                    onEnableAlerts={enableAlerts}
+                  />
+                </View>
+
+                <TabBar
+                  tab={tab}
+                  alerts={down}
+                  onChange={(t) => {
+                    Haptics.selectionAsync();
+                    setTab(t);
+                    refresh().catch(() => {});
+                  }}
+                />
+                </>
               )}
             </>
           )}
-          <Services
-            visible={servicesOpen}
-            onSignIn={signIn}
-            onClose={() => {
-              setServicesOpen(false);
-              refresh().catch(() => {});
-            }}
-          />
         </SafeAreaView>
       </SafeAreaProvider>
     </GestureHandlerRootView>
@@ -369,9 +469,8 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: c.bg, paddingHorizontal: space.lg },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 56 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-  iconButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
-  mark: { width: 12, height: 12, borderRadius: 3, backgroundColor: c.green },
+  screen: { flex: 1 },
+  hidden: { display: 'none' },
   plan: {
     minHeight: 32,
     paddingHorizontal: space.md,
@@ -400,8 +499,6 @@ const styles = StyleSheet.create({
     gap: space.sm,
     padding: space.xl,
   },
-  group: { backgroundColor: c.surface, borderRadius: radius.card, padding: space.lg, gap: space.lg },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 24 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md, paddingHorizontal: space.xl },
 });
 

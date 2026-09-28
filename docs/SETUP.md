@@ -137,18 +137,39 @@ env `CHAOS_KEY` (any long random string). Keep auto-deploy on. Create an API key
 
 ### 9. Connect everything from the app
 
-First launch: **Turn on alerts**, then **Sign in with GitHub** (it keeps your setup across phones), then **Connect a
-service**. Or open **Services** (plug icon) anytime.
+First launch: the welcome tour, **Create account** (Continue with GitHub, or email and password), **Turn on alerts**,
+then the **Services** tab's setup checklist.
 
-1. **Services → GitHub → Connect**: install the GitHub App on `opsswipe-demo-target`.
-2. **Render → paste the API key → Save key.**
-3. **Add a service → Render → `opsswipe-demo-target` → Add.** Copy the two values it shows once
-   (`OPSSWIPE_REPORT_URL`, `REPORT_SECRET`) into the Render service's environment. It redeploys.
-4. **Your services → `opsswipe-demo-target` → Add proof to repo.** Merge the PR it opens (check the install, test and
+1. **Connections → GitHub → Connect**: install the GitHub App on `opsswipe-demo-target`.
+2. **Add → Render web service**: paste the API key once, pick `opsswipe-demo-target`, confirm the **Linked repo**
+   (Render's repo is preselected) → **Add**. Copy the two values it shows once (`OPSSWIPE_REPORT_URL`,
+   `REPORT_SECRET`) into the Render service's environment. It redeploys.
+3. **Your services → `opsswipe-demo-target` → Add proof to repo.** Merge the PR it opens (check the install, test and
    start commands first). From now on every PR runs the proof, authenticated by GitHub OIDC with no secrets.
-5. **Google Cloud → Connect**: sign in with Google (accept the unverified-app screen), pick the project, pick
-   `opsswipe-demo`, check the URL, **Add**. OpsSwipe grants its identity reset on that VM and deletes your Google token.
-   (`gcp-setup.sh` already granted the demo VM; adding it again is harmless.)
+4. **Add → Google Cloud VM**: sign in with Google once (accept the unverified-app screen), pick the project, then
+   `opsswipe-demo`, check the URL, optionally link a repo, **Add**. Google stays connected, so the next VM is just
+   project → VM. (`gcp-setup.sh` already granted the demo VM; adding it again is harmless.)
+
+Optional: have the app send the running commit as `release` in each failure report (a `GIT_SHA` set at deploy), so a
+VM's revert or AI fix targets the exact commit instead of the branch head.
+
+### Fix with AI (optional)
+
+In the platform GCP project: **Vertex AI → Model Garden → Claude Opus 5 → Enable**, then
+`npx supabase secrets set AI_SUGGESTIONS=vertex`. Incidents on services with a linked repo then offer **Fix with AI**,
+and suggestions are refined by Claude. Without it, everything else works and revert PRs remain the code fix.
+
+### Approval API for AI agents
+
+**Settings → Agent access → New agent token**. Then, from any agent:
+
+```bash
+curl -X POST https://<ref>.supabase.co/functions/v1/agent -H "Authorization: Bearer ops_..." \
+  -d '{"service":"opsswipe-demo-target","action":"restart","reason":"Error rate spiked after the 10:02 deploy"}'
+# -> {"id":"<proposal>","status":"pending"}; the owner gets a card and a push
+curl -H "Authorization: Bearer ops_..." "https://<ref>.supabase.co/functions/v1/agent?id=<proposal>"
+# -> pending | running | approved (with detail / PR) | declined | failed
+```
 
 ## 10. Break things
 

@@ -1,103 +1,133 @@
-// First launch only. Step 1 explains the value and asks for notifications in context (Android guidance:
-// request POST_NOTIFICATIONS when the user understands why). Step 2 leads into connecting something.
-import type { Icon } from 'phosphor-react-native';
-import { Bell, Cloud, Fingerprint, GithubLogo, HandSwipeRight, HardDrives, Plug } from 'phosphor-react-native';
+// First-run screens, in the standard order: a short value tour (Welcome), then an account (Auth.tsx),
+// then the notification permission asked in context (AlertsPrimer), as Android recommends for
+// POST_NOTIFICATIONS: once the user knows why. Setup continues in the Services tab's checklist.
+import { Bell, Fingerprint, ShieldCheck } from 'phosphor-react-native';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { c, radius, space, type } from './theme';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { c, space, type } from './theme';
 import { Button } from './ui';
 
-const POINTS: { icon: Icon; title: string; body: string }[] = [
-  { icon: Bell, title: 'Paged when it breaks', body: 'Your app reports failures the moment they happen, and OpsSwipe alerts you.' },
-  { icon: HandSwipeRight, title: 'One swipe to fix', body: 'Each incident comes with one pre-approved fix, like restarting the service.' },
-  { icon: Fingerprint, title: 'Your fingerprint approves it', body: 'Nothing runs until you confirm. Every attempt lands in the audit log.' },
+const SLIDES = [
+  {
+    art: 'card' as const,
+    title: 'Production breaks.\nYour phone knows first.',
+    body: 'Your app reports failing requests the moment they happen. OpsSwipe turns them into one card with a suggested fix.',
+  },
+  {
+    art: Fingerprint,
+    title: 'Swipe. Fingerprint.\nFixed.',
+    body: 'Restart, roll back or reset from anywhere. Nothing runs until you approve it, and every attempt is logged.',
+  },
+  {
+    art: ShieldCheck,
+    title: 'Proven before\nit is merged.',
+    body: 'A code fix unlocks only after CI replays the exact requests that failed in production.',
+  },
 ];
 
-const CONNECT: { icon: Icon; title: string; body: string }[] = [
-  { icon: GithubLogo, title: 'GitHub', body: 'Revert a bad release and merge the fix once CI proves it.' },
-  { icon: Cloud, title: 'Render', body: 'Restart a service or roll back to the last good deploy.' },
-  { icon: HardDrives, title: 'Google Cloud', body: 'Reset one VM. OpsSwipe gets nothing else.' },
-];
+export function Logo({ size = 28 }: { size?: number }) {
+  return <Image source={require('../assets/logo-mark.png')} style={{ width: size, height: size }} accessibilityIgnoresInvertColors />;
+}
 
-type Props = {
-  onAlerts: (enable: boolean) => Promise<void>;
-  onSignIn: () => Promise<unknown>;
-  onDone: (openServices: boolean) => void;
-};
+export function Welcome({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void }) {
+  const [width, setWidth] = useState(0);
+  const [page, setPage] = useState(0);
+  const last = page === SLIDES.length - 1;
 
-export function Onboarding({ onAlerts, onSignIn, onDone }: Props) {
-  const [step, setStep] = useState<1 | 2>(1);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const alerts = async (enable: boolean) => {
-    await onAlerts(enable).catch(() => {});
-    setStep(2);
-  };
-  const signIn = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      if (await onSignIn()) onDone(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const points = step === 1 ? POINTS : CONNECT;
   return (
     <View style={styles.root}>
-      <View style={styles.mark} />
-      <Text style={type.display} accessibilityRole="header">
-        {step === 1 ? 'Fix production from your lock screen' : 'Connect what you run'}
-      </Text>
-      <View style={styles.points}>
-        {points.map((p) => (
-          <View key={p.title} style={styles.point}>
-            <View style={styles.icon}>
-              <p.icon size={20} color={c.green} weight="bold" />
-            </View>
-            <View style={{ flex: 1, gap: space.xs }}>
-              <Text style={[type.body, { fontWeight: '600' }]}>{p.title}</Text>
-              <Text style={[type.body, { color: c.muted }]}>{p.body}</Text>
-            </View>
-          </View>
+      <View style={styles.top}>
+        <View style={styles.brand}>
+          <Logo />
+          <Text style={[type.monoStrong, { fontWeight: '600' }]}>opsswipe</Text>
+        </View>
+        {!last && (
+          <Pressable onPress={onStart} hitSlop={12} accessibilityRole="button" accessibilityLabel="Skip the tour">
+            <Text style={[type.label, { color: c.muted }]}>Skip</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={{ flex: 1 }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+        {width > 0 && (
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+          >
+            {SLIDES.map((s) => (
+              <View key={s.title} style={[styles.slide, { width }]}>
+                <View style={styles.art}>
+                  {s.art === 'card' ? (
+                    <Image source={require('../assets/welcome-card.png')} style={styles.cardArt} resizeMode="contain" />
+                  ) : (
+                    <View style={styles.badge}>
+                      <s.art size={56} color={c.green} weight="duotone" />
+                    </View>
+                  )}
+                </View>
+                <Text style={[type.display, styles.title]} accessibilityRole="header">{s.title}</Text>
+                <Text style={[type.body, { color: c.muted }]}>{s.body}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+
+      <View style={styles.dots} accessibilityLabel={`Page ${page + 1} of ${SLIDES.length}`}>
+        {SLIDES.map((s, i) => (
+          <View key={s.title} style={[styles.dot, i === page && styles.dotOn]} />
         ))}
       </View>
-      {error && <Text style={[type.label, { color: c.red }]} accessibilityLiveRegion="polite">{error}</Text>}
-      {step === 1
-        ? (
-          <View style={styles.actions}>
-            <Button label="Turn on alerts" icon={Bell} onPress={() => alerts(true)} />
-            <Button label="Not now" kind="secondary" onPress={() => alerts(false)} />
-          </View>
-        )
-        : (
-          <View style={styles.actions}>
-            <Button label={busy ? 'Opening GitHub…' : 'Sign in with GitHub'} icon={GithubLogo} onPress={signIn} />
-            <Text style={[type.caption, { textAlign: 'center' }]}>Keeps your setup when you switch phones.</Text>
-            <Button label="Connect a service" icon={Plug} kind="secondary" onPress={() => onDone(true)} />
-            <Button label="Look around first" kind="secondary" onPress={() => onDone(false)} />
-          </View>
-        )}
+      <View style={styles.actions}>
+        <Button label="Get started" onPress={onStart} />
+        <Button label="I already have an account" kind="secondary" onPress={onSignIn} />
+      </View>
+    </View>
+  );
+}
+
+// Asked once, right after the account exists, with the reason spelled out first.
+export function AlertsPrimer({ onDecide }: { onDecide: (enable: boolean) => void }) {
+  return (
+    <View style={[styles.root, { justifyContent: 'center' }]}>
+      <View style={{ flex: 1, justifyContent: 'center', gap: space.lg }}>
+        <View style={styles.badge}>
+          <Bell size={56} color={c.green} weight="duotone" />
+        </View>
+        <Text style={type.display} accessibilityRole="header">Get paged when something breaks</Text>
+        <Text style={[type.body, { color: c.muted }]}>
+          OpsSwipe alerts you the moment a service fails, and again when CI proves a fix is safe to merge. Alerts reach
+          you even when the app is closed.
+        </Text>
+      </View>
+      <View style={styles.actions}>
+        <Button label="Turn on alerts" icon={Bell} onPress={() => onDecide(true)} />
+        <Button label="Not now" kind="secondary" onPress={() => onDecide(false)} />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, justifyContent: 'center', gap: space.xl, paddingVertical: space.xxl },
-  mark: { width: 28, height: 28, borderRadius: radius.chip, backgroundColor: c.green },
-  points: { gap: space.lg },
-  point: { flexDirection: 'row', gap: space.md },
-  icon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.control,
+  root: { flex: 1, paddingVertical: space.lg, gap: space.lg },
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 48 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  slide: { justifyContent: 'flex-end', gap: space.md, paddingBottom: space.md },
+  art: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  cardArt: { width: '100%', height: '100%' },
+  badge: {
+    width: 112,
+    height: 112,
+    borderRadius: 32,
     backgroundColor: c.greenTint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actions: { gap: space.sm, marginTop: space.sm },
+  title: { fontSize: 30, lineHeight: 36 },
+  dots: { flexDirection: 'row', gap: space.sm, justifyContent: 'center' },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.borderStrong },
+  dotOn: { width: 20, backgroundColor: c.green },
+  actions: { gap: space.sm },
 });

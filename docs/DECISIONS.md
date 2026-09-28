@@ -56,11 +56,14 @@ The one SDK is Anthropic's, for Claude.
   `installation_id` can be spoofed, so OpsSwipe accepts it only after checking, with the installing user's own OAuth token,
   that the installation is theirs.
   Source: [GitHub App tokens](https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app).
-- **GCP:** "Connect Google Cloud" works like a GitHub App install. The user signs in with Google (no refresh token),
-  picks a VM, and OpsSwipe uses that token once to grant its own service account a custom role
-  (`compute.instances.reset`, `compute.instances.get`) on that one VM, then deletes the token. What remains is exactly
-  what the manual `gcloud` commands (still offered) would grant; deleting the binding revokes it. Until Google verifies
-  the app, sign-in shows a warning and is capped at 100 users.
+- **GCP:** "Connect Google Cloud" works like a GitHub App install. The user signs in with Google once; OpsSwipe keeps
+  the refresh token encrypted in Vault so adding more VMs later is just "pick a project, pick a VM", with no new sign-in.
+  For each VM added, it grants its own service account a custom role (`compute.instances.reset`,
+  `compute.instances.get`) on that one VM; fixes always run as that service account, never as the user. We first used
+  one-time tokens deleted after each VM, and changed it because signing in to Google for every VM was the main friction
+  in setup. The cost: the stored token can list projects and manage IAM, so it lives only in Vault, is read only by the
+  `connect` function, and Disconnect revokes it at Google. The manual `gcloud` commands are still offered for anyone who
+  would rather not sign in. Until Google verifies the app, sign-in shows a warning and is capped at 100 users.
   Sources: [instances.setIamPolicy](https://docs.cloud.google.com/compute/docs/reference/rest/v1/instances/setIamPolicy),
   [unverified apps](https://support.google.com/cloud/answer/7454865).
 - **Render:** Render has no OAuth and its keys cover the account, so the key is validated, stored in Supabase Vault, read
@@ -77,8 +80,28 @@ service when an incident opens and when CI proves a fix; tokens Expo reports as 
 are server-only rows, and a push failure never blocks an incident. Realtime still refreshes the open app.
 Source: [Expo push](https://docs.expo.dev/push-notifications/sending-notifications/).
 
-## 14. Guest first, account by linking
-The app starts as an anonymous Supabase user so nothing blocks trying it. Sign in with GitHub links GitHub to that same
-user (`linkIdentity`), so the user id, which is also the RevenueCat appUserID, never changes: services, incidents and
-Pro carry over. If the GitHub account already has OpsSwipe (a new phone), the app signs into it and logs RevenueCat in.
-Source: [Supabase anonymous sign-ins](https://supabase.com/docs/guides/auth/auth-anonymous).
+## 14. Accounts from the first screen
+OpsSwipe holds access to production, so everything belongs to a real account: no guest mode. First run is the standard
+sequence: a three-screen value tour, create an account (Continue with GitHub, or email and password with reset by email),
+the notification permission asked with its reason, then a setup checklist in Services. The Supabase user id is also the
+RevenueCat appUserID, so the plan follows the account to any phone. Signing out unregisters this phone's push token, so a
+shared phone stops receiving the previous account's alerts.
+
+## 15. AI writes fixes, proof decides
+"Fix with AI" asks Claude for the smallest change that makes the failing production requests succeed, given the bad
+commit's diff, the current content of the files it touched, and those requests. Three limits keep it honest: the schema
+only allows files that commit touched, a server-side check drops anything else (and no-op or empty changes), and the
+result is just a PR that carries the replay file, so Merge still unlocks only when CI proves it. If Claude declines, the
+user sees why and the revert PR is still one tap away.
+
+## 16. Any service can be linked to its repo
+Render reports the repo it deploys from; a VM doesn't, so the user picks it (only repos the GitHub App can reach are
+accepted). Which commit to revert or fix comes from Render's deploy history, else the `release` the app reports, else
+the branch head. Code fixes then work the same on every provider, and the reset or rollback stays the instant fix.
+
+## 17. Agents propose, humans approve
+The Approval API lets any AI agent propose a fix the service already allows (never a merge; that needs CI proof). Agents
+authenticate with a token stored only as a SHA-256 hash. A proposal becomes a normal incident card marked with the
+agent's name and reason, gated by the same swipe, biometrics, entitlement and audit log as every other fix, and the
+agent polls for approved, declined or failed. This is where AI SRE tools stop short today: they escalate to a human,
+and OpsSwipe is that human's fastest safe yes or no.

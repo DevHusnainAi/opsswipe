@@ -1,124 +1,43 @@
-// Connect: your account, GitHub, Render and Google Cloud, and the services OpsSwipe watches and fixes.
-// Keys go straight to the server (Supabase Vault); the app never stores or shows them again.
-import * as Clipboard from 'expo-clipboard';
+// The Services tab: a setup checklist until you're set up, the services OpsSwipe watches, and the
+// accounts it's connected to. Adding a service happens in the AddService sheet.
 import * as WebBrowser from 'expo-web-browser';
-import { CaretDown, CaretRight, Check, Cloud, Copy, GithubLogo, GoogleLogo, HardDrives, Key, Plus, Trash, UserCircle, X } from 'phosphor-react-native';
+import type { Icon } from 'phosphor-react-native';
+import { CheckCircle, Cloud, GitBranch, GithubLogo, GoogleLogo, HardDrives, Key, Plus, ShieldCheck, Trash } from 'phosphor-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  type ConnectStatus,
-  type GcpProject,
-  type NewService,
-  type RenderOption,
-  type Service,
-  type VmOption,
-  connect,
-  supabase,
-} from './api';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AddService, type StartAt } from './AddService';
+import { type ConnectStatus, type Service, connect, supabase } from './api';
+import { appBase, appLink } from './env';
 import { paramsOf } from './format';
+import { RepoPicker } from './RepoPicker';
 import { TARGET, c, radius, space, type } from './theme';
 import { Button, Chip, Section } from './ui';
 
-function CopyRow({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <View style={styles.copy}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={type.caption}>{label}</Text>
-        <Text style={type.mono} selectable numberOfLines={3}>{value}</Text>
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Copy ${label}`}
-        onPress={async () => {
-          await Clipboard.setStringAsync(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-        style={styles.iconButton}
-      >
-        {copied ? <Check size={18} color={c.green} weight="bold" /> : <Copy size={18} color={c.text} weight="bold" />}
-      </Pressable>
-    </View>
-  );
-}
-
-function Field(
-  { label, value, onChange, placeholder, secure, hint }: {
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    placeholder?: string;
-    secure?: boolean;
-    hint?: string;
-  },
-) {
-  return (
-    <View style={{ gap: space.xs }}>
-      <Text style={type.label}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={c.muted}
-        secureTextEntry={secure}
-        autoCapitalize="none"
-        autoCorrect={false}
-        style={styles.input}
-        accessibilityLabel={label}
-      />
-      {hint && <Text style={type.caption}>{hint}</Text>}
-    </View>
-  );
-}
-
-type Props = { visible: boolean; onClose: () => void; onSignIn: () => Promise<unknown> };
-type Account = { guest: boolean; login: string | null };
-
-export function Services({ visible, onClose, onSignIn }: Props) {
+export function Services({ active }: { active: boolean }) {
   const [status, setStatus] = useState<ConnectStatus | null>(null);
-  const [services, setServices] = useState<Service[]>([]);
-  const [renderOptions, setRenderOptions] = useState<RenderOption[] | null>(null);
-  const [renderKey, setRenderKey] = useState('');
-  const [tab, setTab] = useState<'render' | 'gcp'>('render');
-  const [gcp, setGcp] = useState({ project: '', zone: 'us-central1-a', instance: '', url: '' });
-  const [account, setAccount] = useState<Account | null>(null);
-  const [projects, setProjects] = useState<GcpProject[] | null>(null);
-  const [project, setProject] = useState<string | null>(null);
-  const [vms, setVms] = useState<VmOption[] | null>(null);
-  const [vm, setVm] = useState<VmOption | null>(null);
-  const [vmUrl, setVmUrl] = useState('');
-  const [manual, setManual] = useState(false);
-  const [created, setCreated] = useState<NewService | null>(null);
-  const [notice, setNotice] = useState<{ text: string; url?: string } | null>(null);
-  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [services, setServices] = useState<Service[] | null>(null);
+  const [sheet, setSheet] = useState<StartAt | null>(null);
+  const [confirm, setConfirm] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; url?: string } | null>(null);
+  const [editing, setEditing] = useState<string | null>(null); // service whose repo is being changed
+  const [repoDraft, setRepoDraft] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [st, sv, me] = await Promise.all([
-      connect<ConnectStatus>('status'),
+    const [st, sv] = await Promise.all([
+      connect<ConnectStatus>('status', { returnTo: appBase }),
       supabase.from('services').select('id, name, provider, config').order('created_at'),
-      supabase.auth.getUser(),
     ]);
     setStatus(st);
     setServices(sv.data ?? []);
-    const user = me.data.user;
-    setAccount({ guest: !user || !!user.is_anonymous, login: user?.user_metadata?.user_name ?? null });
-    if (st.google.connected) {
-      connect<{ projects: GcpProject[] }>('gcp_projects').then((r) => setProjects(r.projects)).catch(() => {});
-    }
-    if (st.render.connected) {
-      connect<{ services: RenderOption[] }>('render_services').then((r) => setRenderOptions(r.services)).catch(() => {});
-    }
   }, []);
 
   useEffect(() => {
-    // Loads when the sheet opens; state is only set after the awaits inside load().
+    // Loads each time the tab opens; state is only set after the awaits inside load().
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (visible) load().catch((e) => setError(e.message));
-  }, [visible, load]);
+    if (active) load().catch((e) => setError(e.message));
+  }, [active, load]);
 
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -133,9 +52,16 @@ export function Services({ visible, onClose, onSignIn }: Props) {
     }
   };
 
+  // Tap once to arm, again to confirm: destructive actions never happen on a single tap.
+  const armed = (key: string, fn: () => void) => {
+    if (confirm !== key) return setConfirm(key);
+    setConfirm(null);
+    fn();
+  };
+
   const connectGithub = () =>
     run('github', async () => {
-      const r = await WebBrowser.openAuthSessionAsync(status!.github.installUrl, 'opsswipe://connect');
+      const r = await WebBrowser.openAuthSessionAsync(status!.github.installUrl, appLink('connect'));
       if (r.type !== 'success') return;
       const q = paramsOf(r.url);
       if (!q.code || !q.installation_id) throw new Error('GitHub did not finish the install. Try again.');
@@ -143,76 +69,24 @@ export function Services({ visible, onClose, onSignIn }: Props) {
       await load();
     });
 
-  const saveRenderKey = () =>
-    run('render', async () => {
-      const r = await connect<{ services: RenderOption[] }>('render_key', { apiKey: renderKey });
-      setRenderKey('');
-      setRenderOptions(r.services);
-      await load();
-    });
+  const disconnect = (kind: 'github' | 'render' | 'google') =>
+    armed(`dc-${kind}`, () =>
+      run(`dc-${kind}`, async () => {
+        await connect('disconnect', { kind });
+        await load();
+      }));
 
-  const addRender = (o: RenderOption) =>
-    run(o.id, async () => {
-      setCreated(await connect<NewService>('add_render', { serviceId: o.id }));
-      await load();
-    });
+  const remove = (s: Service) =>
+    armed(`rm-${s.id}`, () =>
+      run(`rm-${s.id}`, async () => {
+        await connect('remove_service', { serviceId: s.id });
+        await load();
+      }));
 
-  const addGcp = () =>
-    run('gcp', async () => {
-      setCreated(await connect<NewService>('add_gcp', gcp));
-      await load();
-    });
-
-  const signIn = () =>
-    run('signin', async () => {
-      await onSignIn();
-      await load();
-    });
-
-  const pickProject = (id: string) =>
-    run('vms', async () => {
-      setProject(id);
-      setVm(null);
-      setVms(null);
-      setVms((await connect<{ vms: VmOption[] }>('gcp_vms', { project: id })).vms);
-    });
-
-  // Like installing a GitHub App: sign in with Google, pick a VM; the server grants itself reset on
-  // that VM with your token, then deletes the token.
-  const connectGoogle = () =>
-    run('google', async () => {
-      const { url, state } = await connect<{ url: string; state: string }>('gcp_start');
-      const r = await WebBrowser.openAuthSessionAsync(url, 'opsswipe://connect');
-      if (r.type !== 'success') return;
-      const q = paramsOf(r.url);
-      if (q.state !== state) throw new Error('That Google sign-in did not match this request. Try again.');
-      if (!q.code) throw new Error(q.error === 'access_denied' ? 'Google access was not allowed.' : 'Google did not finish the sign-in.');
-      const res = await connect<{ projects: GcpProject[] }>('gcp_complete', { code: q.code });
-      setProjects(res.projects);
-      setTab('gcp');
-      await load();
-      if (res.projects.length === 1) await pickProject(res.projects[0].id);
-    });
-
-  const chooseVm = (v: VmOption) => {
-    setVm(v);
-    setVmUrl(v.ip ? `http://${v.ip}/` : '');
-  };
-
-  const addVm = () =>
-    run('addvm', async () => {
-      const res = await connect<NewService & { vmStatus: string }>('gcp_add', {
-        project,
-        zone: vm!.zone,
-        instance: vm!.name,
-        url: vmUrl,
-      });
-      setCreated(res);
-      if (res.vmStatus === 'pending') setNotice({ text: 'Access is being applied by Google; resets work within a minute.' });
-      setProjects(null);
-      setProject(null);
-      setVms(null);
-      setVm(null);
+  const saveRepo = (s: Service) =>
+    run(`repo-${s.id}`, async () => {
+      await connect('link_repo', { serviceId: s.id, repo: repoDraft ?? '' });
+      setEditing(null);
       await load();
     });
 
@@ -222,361 +96,311 @@ export function Services({ visible, onClose, onSignIn }: Props) {
       setNotice({ text: 'Proof workflow PR opened. Check its commands, then merge it.', url: r.prUrl });
     });
 
-  const remove = (s: Service) => {
-    if (confirmRemove !== s.id) return setConfirmRemove(s.id);
-    setConfirmRemove(null);
-    run(`rm-${s.id}`, async () => {
-      await connect('remove_service', { serviceId: s.id });
-      await load();
-    });
-  };
-
-  const added = new Set(services.map((s) => s.config.serviceId));
-  const p = gcp.project || '<project>';
-  const commands = status?.gcpIdentity
-    ? `gcloud iam roles create opsswipeReset --project ${p} --title "OpsSwipe reset" --permissions compute.instances.reset,compute.instances.get\n\ngcloud compute instances add-iam-policy-binding ${
-      gcp.instance || '<vm-name>'
-    } --zone ${gcp.zone || '<zone>'} --member serviceAccount:${status.gcpIdentity} --role projects/${p}/roles/opsswipeReset`
-    : null;
+  const cloud = !!(status?.render.connected || status?.google.connected);
+  const steps = [
+    { done: cloud, title: 'Connect where your app runs', body: 'Render or Google Cloud.', action: () => setSheet('provider') },
+    { done: !!services?.length, title: 'Add your first service', body: 'OpsSwipe starts watching it right away.', action: () => setSheet('provider') },
+    {
+      done: !!status?.github.connected,
+      title: 'Connect GitHub',
+      body: 'Revert bad releases and merge fixes once CI proves them.',
+      action: connectGithub,
+    },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+  const existing = new Set(
+    (services ?? []).map((s) => (s.provider === 'render' ? s.config.serviceId! : `${s.config.project}/${s.config.zone}/${s.config.instance}`)),
+  );
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView style={styles.root}>
-        <View style={styles.header}>
-          <Text style={type.title} accessibilityRole="header">Services</Text>
-          <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={styles.iconButton}>
-            <X size={20} color={c.text} weight="bold" />
-          </Pressable>
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.titleRow}>
+          <Text style={type.display} accessibilityRole="header">Services</Text>
+          {!!services?.length && <Button label="Add" icon={Plus} onPress={() => setSheet('provider')} style={styles.small} />}
         </View>
 
-        <ScrollView contentContainerStyle={{ paddingBottom: space.xxl, gap: space.sm }} keyboardShouldPersistTaps="handled">
-          {error && <Text style={[type.label, styles.error]} accessibilityLiveRegion="polite">{error}</Text>}
-          {notice && (
-            <Pressable onPress={() => notice.url && Linking.openURL(notice.url)} style={styles.notice} accessibilityRole="link">
-              <Text style={[type.label, { color: c.green }]}>{notice.text}{notice.url ? '  Open PR' : ''}</Text>
-            </Pressable>
-          )}
+        {error && <Text style={[type.label, styles.error]} accessibilityLiveRegion="polite">{error}</Text>}
+        {notice && (
+          <Pressable onPress={() => notice.url && Linking.openURL(notice.url)} style={styles.notice} accessibilityRole="link">
+            <Text style={[type.label, { color: c.green }]}>{notice.text}{notice.url ? '  Open PR' : ''}</Text>
+          </Pressable>
+        )}
 
-          {created && (
-            <View style={styles.created}>
-              <Text style={type.body}>
-                <Text style={{ fontWeight: '600' }}>{created.service.name}</Text> is connected. Set these on its host so failures
-                reach OpsSwipe the moment they happen. The secret is shown only once.
-              </Text>
-              <CopyRow label="OPSSWIPE_REPORT_URL" value={created.report.url} />
-              <CopyRow label="REPORT_SECRET" value={created.report.secret} />
-              <Button label="Done" kind="secondary" onPress={() => setCreated(null)} />
-            </View>
-          )}
-
-          <Section title="Account">
-            <View style={styles.group}>
-              <View style={styles.row}>
-                <UserCircle size={22} color={c.text} weight="bold" />
-                <View style={{ flex: 1 }}>
-                  <Text style={type.body}>{account?.guest ? 'Guest' : `Signed in${account?.login ? ` as @${account.login}` : ''}`}</Text>
-                  <Text style={type.caption}>
-                    {account?.guest
-                      ? 'Sign in to keep your services and plan when you switch phones.'
-                      : 'Your services and plan follow you to any phone.'}
-                  </Text>
+        {!status || !services ? (
+          <View style={styles.loading}>
+            <ActivityIndicator color={c.green} />
+          </View>
+        ) : (
+          <>
+            {doneCount < steps.length && (
+              <View style={styles.setup}>
+                <View style={{ gap: 4 }}>
+                  <Text style={type.title}>Set up OpsSwipe</Text>
+                  <Text style={type.caption}>{doneCount} of {steps.length} done</Text>
+                  <View style={styles.progress}>
+                    <View style={[styles.progressFill, { flex: doneCount }]} />
+                    <View style={{ flex: steps.length - doneCount }} />
+                  </View>
                 </View>
-                {account?.guest && (
-                  <Button label={busy === 'signin' ? 'Opening…' : 'Sign in'} icon={GithubLogo} onPress={signIn} style={styles.small} />
-                )}
+                {steps.map((s, i) => (
+                  <Pressable
+                    key={s.title}
+                    disabled={s.done}
+                    onPress={s.action}
+                    accessibilityRole="button"
+                    accessibilityState={{ checked: s.done }}
+                    style={styles.step}
+                  >
+                    {s.done
+                      ? <CheckCircle size={24} color={c.green} weight="fill" />
+                      : <View style={styles.ring} />}
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={[type.body, s.done && { color: c.muted, textDecorationLine: 'line-through' }]}>
+                        {i + 1}. {s.title}
+                      </Text>
+                      {!s.done && <Text style={type.caption}>{s.body}</Text>}
+                    </View>
+                    {!s.done && (busy === 'github' && i === 2 ? <ActivityIndicator color={c.green} /> : <Text style={[type.label, { color: c.green }]}>Start</Text>)}
+                  </Pressable>
+                ))}
               </View>
-            </View>
-          </Section>
+            )}
 
-          <Section title="Connections">
-            <View style={styles.group}>
-              <View style={styles.row}>
-                <GithubLogo size={22} color={c.text} weight="bold" />
-                <View style={{ flex: 1 }}>
-                  <Text style={type.body}>GitHub</Text>
-                  <Text style={type.caption}>
-                    {status?.github.connected
-                      ? `Connected as @${status.github.account}. Revert and merge PRs on repos you picked.`
-                      : 'Installs the OpsSwipe app on the repos you choose.'}
+            <Section title={`Watching ${services.length}`}>
+              {services.length === 0 ? (
+                <View style={styles.empty}>
+                  <ShieldCheck size={32} color={c.muted} />
+                  <Text style={[type.body, { textAlign: 'center' }]}>No services yet</Text>
+                  <Text style={[type.caption, { textAlign: 'center' }]}>
+                    Add a Render service or a Google Cloud VM. OpsSwipe checks it every minute and pages you when it breaks.
                   </Text>
+                  <Button label="Add a service" icon={Plus} onPress={() => setSheet('provider')} />
                 </View>
-                {!status?.github.connected && (
-                  <Button label={busy === 'github' ? 'Opening…' : 'Connect'} onPress={connectGithub} style={styles.small} />
-                )}
-              </View>
-
-              <View style={styles.row}>
-                <Key size={22} color={c.text} weight="bold" />
-                <View style={{ flex: 1 }}>
-                  <Text style={type.body}>Render</Text>
-                  <Text style={type.caption}>
-                    {status?.render.connected
-                      ? 'Connected. The key is encrypted on the server and never shown again.'
-                      : 'Paste an API key from Render → Account settings → API keys.'}
-                  </Text>
-                </View>
-              </View>
-              {!status?.render.connected && (
-                <View style={{ gap: space.sm }}>
-                  <Field label="Render API key" value={renderKey} onChange={setRenderKey} placeholder="rnd_..." secure />
-                  <Button label={busy === 'render' ? 'Checking…' : 'Save key'} onPress={saveRenderKey} />
-                </View>
-              )}
-
-              <View style={styles.row}>
-                <GoogleLogo size={22} color={c.text} weight="bold" />
-                <View style={{ flex: 1 }}>
-                  <Text style={type.body}>Google Cloud</Text>
-                  <Text style={type.caption}>
-                    {status?.google.connected
-                      ? `Signed in as ${status.google.account ?? 'you'}. Pick a VM below; the sign-in is deleted after.`
-                      : 'Sign in and pick a VM. OpsSwipe keeps only permission to reset that one VM.'}
-                  </Text>
-                </View>
-                {status?.google.available && !status.google.connected && (
-                  <Button label={busy === 'google' ? 'Opening…' : 'Connect'} onPress={connectGoogle} style={styles.small} />
-                )}
-              </View>
-            </View>
-          </Section>
-
-          <Section title="Your services">
-            {services.length === 0
-              ? <Text style={type.caption}>Nothing connected yet. Add a Render service or a GCP VM below.</Text>
-              : (
-                <View style={styles.group}>
-                  {services.map((s) => (
-                    <View key={s.id} style={{ gap: space.sm }}>
-                      <View style={styles.row}>
-                        {s.provider === 'gcp'
-                          ? <HardDrives size={20} color={c.text} weight="bold" />
-                          : <Cloud size={20} color={c.text} weight="bold" />}
-                        <View style={{ flex: 1, gap: 2 }}>
-                          <Text style={type.monoStrong}>{s.name}</Text>
-                          <Text style={type.caption} numberOfLines={1}>{s.config.url}</Text>
-                          {s.config.repo && <Text style={type.monoCaption}>{s.config.repo}</Text>}
-                        </View>
-                        <Chip label={s.provider === 'gcp' ? 'GCP' : 'Render'} />
+              ) : (
+                services.map((s) => (
+                  <View key={s.id} style={styles.card}>
+                    <View style={styles.row}>
+                      <View style={styles.cardIcon}>
+                        {s.provider === 'gcp' ? <HardDrives size={22} color={c.text} /> : <Cloud size={22} color={c.text} />}
                       </View>
-                      <View style={styles.actions}>
-                        {s.config.repo && status?.github.connected && (
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={type.monoStrong}>{s.name}</Text>
+                        <Text style={type.caption} numberOfLines={1}>{s.config.url}</Text>
+                      </View>
+                      <Chip label={s.provider === 'gcp' ? 'Google Cloud' : 'Render'} />
+                    </View>
+                    <View style={styles.repoRow}>
+                      <GitBranch size={16} color={s.config.repo ? c.text : c.muted} />
+                      <Text style={[type.monoCaption, { flex: 1, color: s.config.repo ? c.text : c.muted }]} numberOfLines={1}>
+                        {s.config.repo ? `${s.config.repo} · ${s.config.branch ?? 'main'}` : 'No repo linked'}
+                      </Text>
+                      <Pressable
+                        onPress={() => {
+                          setEditing(editing === s.id ? null : s.id);
+                          setRepoDraft(s.config.repo ?? null);
+                        }}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                      >
+                        <Text style={[type.label, { color: c.green }]}>
+                          {editing === s.id ? 'Cancel' : s.config.repo ? 'Change' : 'Link repo'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                    {editing === s.id && (
+                      <View style={{ gap: space.sm }}>
+                        <RepoPicker value={repoDraft} onChange={setRepoDraft} githubConnected={status.github.connected} />
+                        {status.github.connected && (
                           <Button
-                            label={busy === `proof-${s.id}` ? 'Opening PR…' : 'Add proof to repo'}
-                            kind="secondary"
-                            onPress={() => installProof(s)}
-                            style={{ flex: 1 }}
+                            label={busy === `repo-${s.id}` ? 'Saving…' : 'Save'}
+                            onPress={() => saveRepo(s)}
                           />
                         )}
+                      </View>
+                    )}
+                    <View style={styles.actions}>
+                      {s.config.repo && status.github.connected && (
                         <Button
-                          label={confirmRemove === s.id ? 'Tap to confirm' : 'Remove'}
+                          label={busy === `proof-${s.id}` ? 'Opening PR…' : 'Add proof to repo'}
                           kind="secondary"
-                          icon={Trash}
-                          onPress={() => remove(s)}
+                          onPress={() => installProof(s)}
                           style={{ flex: 1 }}
                         />
-                      </View>
+                      )}
+                      <Button
+                        label={busy === `rm-${s.id}` ? 'Removing…' : confirm === `rm-${s.id}` ? 'Tap to remove' : 'Remove'}
+                        kind="secondary"
+                        icon={Trash}
+                        onPress={() => remove(s)}
+                        style={{ flex: 1 }}
+                      />
                     </View>
-                  ))}
-                </View>
+                  </View>
+                ))
               )}
-          </Section>
+            </Section>
 
-          <Section title="Add a service">
-            <View style={styles.tabs} accessibilityRole="tablist">
-              {(['render', 'gcp'] as const).map((k) => (
-                <Pressable
-                  key={k}
-                  onPress={() => setTab(k)}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: tab === k }}
-                  style={[styles.tab, tab === k && styles.tabOn]}
-                >
-                  <Text style={[type.label, { color: tab === k ? c.green : c.text }]}>{k === 'render' ? 'Render' : 'GCP VM'}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {tab === 'render' && (
-              !status?.render.connected
-                ? <Text style={type.caption}>Save a Render API key above to list your services.</Text>
-                : (
-                  <View style={styles.group}>
-                    {(renderOptions ?? []).length === 0 && <Text style={type.caption}>No web services found on this Render account.</Text>}
-                    {(renderOptions ?? []).map((o) => (
-                      <View key={o.id} style={styles.row}>
-                        <View style={{ flex: 1, gap: 2 }}>
-                          <Text style={type.monoStrong}>{o.name}</Text>
-                          <Text style={type.caption} numberOfLines={1}>{o.repo ?? 'no GitHub repo'}</Text>
-                        </View>
-                        {added.has(o.id)
-                          ? <Chip label="Added" color={c.green} tint={c.greenTint} />
-                          : (
-                            <Button
-                              label={busy === o.id ? 'Adding…' : 'Add'}
-                              icon={Plus}
-                              onPress={() => addRender(o)}
-                              style={styles.small}
-                            />
-                          )}
-                      </View>
-                    ))}
-                  </View>
-                )
-            )}
-
-            {tab === 'gcp' && (
+            <Section title="Connections">
               <View style={styles.group}>
-                {!projects
-                  ? (
-                    <View style={{ gap: space.md }}>
-                      <Text style={type.body}>
-                        Sign in with Google and pick a VM. OpsSwipe grants its own identity one custom role on that VM (see its
-                        status, reset it), then deletes your Google sign-in. Remove the role in Cloud console to revoke.
-                      </Text>
-                      {status?.google.available && (
-                        <Button label={busy === 'google' ? 'Opening…' : 'Connect Google Cloud'} icon={GoogleLogo} onPress={connectGoogle} />
-                      )}
-                    </View>
-                  )
-                  : (
-                    <View style={{ gap: space.md }}>
-                      <Text style={type.label}>Project</Text>
-                      {projects.length === 0 && <Text style={type.caption}>No projects on this Google account.</Text>}
-                      <View style={styles.chips}>
-                        {projects.map((pr) => (
-                          <Pressable
-                            key={pr.id}
-                            onPress={() => pickProject(pr.id)}
-                            accessibilityRole="radio"
-                            accessibilityState={{ selected: project === pr.id }}
-                            style={[styles.tab, styles.chipButton, project === pr.id && styles.tabOn]}
-                          >
-                            <Text style={[type.monoCaption, { color: project === pr.id ? c.green : c.text }]}>{pr.id}</Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                      {busy === 'vms' && <Text style={type.caption}>Loading VMs…</Text>}
-                      {vms?.length === 0 && <Text style={type.caption}>No VMs in this project.</Text>}
-                      {vms?.map((v) => (
-                        <Pressable
-                          key={`${v.zone}/${v.name}`}
-                          onPress={() => chooseVm(v)}
-                          accessibilityRole="radio"
-                          accessibilityState={{ selected: vm?.name === v.name && vm.zone === v.zone }}
-                          style={[styles.vm, vm?.name === v.name && vm.zone === v.zone && styles.tabOn]}
-                        >
-                          <HardDrives size={20} color={c.text} weight="bold" />
-                          <View style={{ flex: 1, gap: 2 }}>
-                            <Text style={type.monoStrong}>{v.name}</Text>
-                            <Text style={type.caption}>{v.zone} · {v.status} · {v.ip ?? 'no public IP'}</Text>
-                          </View>
-                        </Pressable>
-                      ))}
-                      {vm && (
-                        <View style={{ gap: space.md }}>
-                          <Field
-                            label="URL to health-check"
-                            value={vmUrl}
-                            onChange={setVmUrl}
-                            placeholder="http://34.1.2.3/"
-                          />
-                          <Text style={type.caption}>
-                            OpsSwipe will be able to reset and read {vm.name}. Nothing else. Your Google sign-in is deleted
-                            after adding.
-                          </Text>
-                          <Button label={busy === 'addvm' ? 'Granting access…' : `Add ${vm.name}`} icon={Plus} onPress={addVm} />
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                <Pressable
-                  onPress={() => setManual(!manual)}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: manual }}
-                  style={styles.disclosure}
-                >
-                  {manual ? <CaretDown size={16} color={c.muted} weight="bold" /> : <CaretRight size={16} color={c.muted} weight="bold" />}
-                  <Text style={[type.label, { color: c.muted }]}>Prefer commands? Grant access with gcloud</Text>
-                </Pressable>
-                {manual && (
-                  <View style={{ gap: space.md }}>
-                    <Field label="Project ID" value={gcp.project} onChange={(v) => setGcp({ ...gcp, project: v })} placeholder="my-project" />
-                    <Field label="Zone" value={gcp.zone} onChange={(v) => setGcp({ ...gcp, zone: v })} />
-                    <Field label="VM name" value={gcp.instance} onChange={(v) => setGcp({ ...gcp, instance: v })} placeholder="web-1" />
-                    <Field
-                      label="URL to health-check"
-                      value={gcp.url}
-                      onChange={(v) => setGcp({ ...gcp, url: v })}
-                      placeholder="http://34.1.2.3/"
-                    />
-                    {commands
-                      ? <CopyRow label="Run in Google Cloud Shell" value={commands} />
-                      : <Text style={type.caption}>GCP isn&apos;t set up on this OpsSwipe server yet.</Text>}
-                    <Button label={busy === 'gcp' ? 'Verifying…' : 'Verify access and add'} kind="secondary" onPress={addGcp} />
-                  </View>
+                <Connection
+                  icon={GithubLogo}
+                  name="GitHub"
+                  detail={status.github.connected ? `@${status.github.account}` : 'Revert bad releases, merge proven fixes'}
+                  connected={status.github.connected}
+                  busy={busy === 'github' || busy === 'dc-github'}
+                  confirming={confirm === 'dc-github'}
+                  onConnect={connectGithub}
+                  onDisconnect={() => disconnect('github')}
+                />
+                <Connection
+                  icon={Key}
+                  name="Render"
+                  detail={status.render.connected ? 'API key stored encrypted' : 'Restart and roll back services'}
+                  connected={status.render.connected}
+                  busy={busy === 'dc-render'}
+                  confirming={confirm === 'dc-render'}
+                  onConnect={() => setSheet('renderKey')}
+                  onDisconnect={() => disconnect('render')}
+                />
+                {status.google.available && (
+                  <Connection
+                    icon={GoogleLogo}
+                    name="Google Cloud"
+                    detail={status.google.connected ? (status.google.account ?? 'Connected') : 'Reset Compute Engine VMs'}
+                    connected={status.google.connected}
+                    busy={busy === 'dc-google'}
+                    confirming={confirm === 'dc-google'}
+                    onConnect={() => setSheet('google')}
+                    onDisconnect={() => disconnect('google')}
+                    extra={status.google.connected ? { label: 'Add a VM', onPress: () => setSheet('google') } : undefined}
+                  />
                 )}
               </View>
-            )}
-          </Section>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
+              <Text style={type.caption}>
+                Disconnecting stops new fixes through that account. Google access is revoked at Google, and VM roles you
+                granted stay until you remove them in Cloud console.
+              </Text>
+            </Section>
+          </>
+        )}
+      </ScrollView>
+
+      {/* Mounted fresh on each open, so every visit starts clean. */}
+      {sheet && (
+        <AddService
+          key={sheet}
+          start={sheet}
+          status={status}
+        existing={existing}
+          onClose={(changed) => {
+            setSheet(null);
+            if (changed) load().catch((e) => setError(e.message));
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+function Connection(p: {
+  icon: Icon;
+  name: string;
+  detail: string;
+  connected: boolean;
+  busy: boolean;
+  confirming: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  extra?: { label: string; onPress: () => void };
+}) {
+  return (
+    <View style={styles.connection}>
+      <p.icon size={24} color={c.text} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+          <Text style={type.body}>{p.name}</Text>
+          {p.connected && <View style={styles.dot} />}
+        </View>
+        <Text style={type.caption} numberOfLines={1}>{p.detail}</Text>
+        {p.extra && (
+          <Pressable onPress={p.extra.onPress} hitSlop={8} accessibilityRole="button">
+            <Text style={[type.label, { color: c.green, marginTop: 4 }]}>{p.extra.label}</Text>
+          </Pressable>
+        )}
+      </View>
+      {p.busy ? (
+        <ActivityIndicator color={c.green} />
+      ) : p.connected ? (
+        <Pressable onPress={p.onDisconnect} hitSlop={8} accessibilityRole="button" style={styles.textButton}>
+          <Text style={[type.label, { color: p.confirming ? c.red : c.muted }]}>
+            {p.confirming ? 'Tap to disconnect' : 'Disconnect'}
+          </Text>
+        </Pressable>
+      ) : (
+        <Button label="Connect" onPress={p.onConnect} style={styles.small} />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: c.bg, paddingHorizontal: space.lg },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 56 },
-  iconButton: { width: TARGET, height: TARGET, alignItems: 'center', justifyContent: 'center' },
-  group: { backgroundColor: c.surface, borderRadius: radius.card, padding: space.lg, gap: space.lg },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  actions: { flexDirection: 'row', gap: space.sm },
-  small: { paddingHorizontal: space.md },
-  input: {
-    minHeight: TARGET,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: c.borderStrong,
-    backgroundColor: c.surface2,
-    paddingHorizontal: space.md,
-    color: c.text,
-    fontFamily: 'GeistMono',
-    fontSize: 14,
-  },
-  copy: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    backgroundColor: c.surface2,
-    borderRadius: radius.control,
-    padding: space.md,
-  },
-  created: { backgroundColor: c.greenTint, borderRadius: radius.card, padding: space.lg, gap: space.md, marginTop: space.md },
-  notice: { backgroundColor: c.greenTint, borderRadius: radius.control, padding: space.md, minHeight: TARGET, justifyContent: 'center' },
-  error: { color: c.red, backgroundColor: c.redTint, borderRadius: radius.control, padding: space.md, marginTop: space.md },
-  tabs: { flexDirection: 'row', gap: space.sm },
-  tab: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: radius.control,
+  scroll: { paddingBottom: space.xxl, gap: space.sm },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.md },
+  loading: { paddingVertical: space.xxl, alignItems: 'center' },
+  setup: {
+    backgroundColor: c.surface,
+    borderRadius: radius.card,
     borderWidth: 1,
     borderColor: c.border,
+    padding: space.lg,
+    gap: space.md,
+    marginTop: space.sm,
+  },
+  progress: {
+    flexDirection: 'row',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: c.surface2,
+    marginTop: space.sm,
+    overflow: 'hidden',
+  },
+  progressFill: { height: 4, backgroundColor: c.green },
+  step: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: TARGET },
+  ring: { width: 22, height: 22, margin: 1, borderRadius: 11, borderWidth: 2, borderColor: c.borderStrong },
+  empty: {
+    borderWidth: 1,
+    borderColor: c.border,
+    borderStyle: 'dashed',
+    borderRadius: radius.card,
+    alignItems: 'center',
+    gap: space.sm,
+    padding: space.xl,
+  },
+  card: { backgroundColor: c.surface, borderRadius: radius.card, padding: space.lg, gap: space.md },
+  cardIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.control,
+    backgroundColor: c.surface2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tabOn: { borderColor: c.green, backgroundColor: c.greenTint },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  chipButton: { flex: 0, paddingHorizontal: space.md },
-  vm: {
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  actions: { flexDirection: 'row', gap: space.sm },
+  repoRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 32 },
+  group: { backgroundColor: c.surface, borderRadius: radius.card, paddingHorizontal: space.lg },
+  connection: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    minHeight: TARGET,
-    padding: space.md,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: c.border,
+    paddingVertical: space.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
   },
-  disclosure: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minHeight: TARGET },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: c.green },
+  small: { paddingHorizontal: space.md },
+  textButton: { minHeight: TARGET, justifyContent: 'center' },
+  notice: { backgroundColor: c.greenTint, borderRadius: radius.control, padding: space.md, minHeight: TARGET, justifyContent: 'center' },
+  error: { color: c.red, backgroundColor: c.redTint, borderRadius: radius.control, padding: space.md },
 });

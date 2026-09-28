@@ -56,10 +56,16 @@ export async function verifyInstallation(code: string, installationId: number): 
   return me.login as string;
 }
 
-export async function listRepos(installationId: number): Promise<string[]> {
+export type RepoOption = { name: string; branch: string };
+
+// The repos this installation can reach, with each one's default branch.
+export async function listRepos(installationId: number): Promise<RepoOption[]> {
   const res = await fetch(`${API}/installation/repositories?per_page=100`, {
     headers: headers(await installationToken(installationId)),
   });
   if (!res.ok) throw new Error(`github repos ${res.status}`);
-  return (await res.json()).repositories.map((r: { full_name: string }) => r.full_name);
+  return (await res.json()).repositories.map((r: { full_name: string; default_branch: string }) => ({
+    name: r.full_name,
+    branch: r.default_branch,
+  }));
 }

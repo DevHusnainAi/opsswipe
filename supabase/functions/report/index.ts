@@ -1,6 +1,8 @@
 // Event-driven detection: a service reports its own failing requests the moment they happen.
 // POST /report?service=<id>, signed with that service's own HMAC secret (shown once at connect).
 // Only 5xx responses count; samples are scrubbed and kept so a PR can be proven against them.
+// Optional `release`: the commit the app is running (e.g. GIT_SHA set at deploy). On hosts with no
+// deploy history of their own (a VM), it tells a revert or AI fix which commit broke things.
 import { json } from '../_shared/db.ts';
 import { verify } from '../_shared/hmac.ts';
 import { addSamples, openIncident, openIncidentFor } from '../_shared/incidents.ts';
@@ -38,6 +40,7 @@ Deno.serve(async (req) => {
     return json(200, { added: true });
   }
   const metric = `${sample.method} ${sample.path} → ${sample.status} (reported by the app)`;
-  const { opened } = await openIncident(service, 'Requests are failing', metric, [sample]);
+  const release = typeof body.release === 'string' && /^[0-9a-f]{40}$/.test(body.release) ? body.release : undefined;
+  const { opened } = await openIncident(service, 'Requests are failing', metric, [sample], release);
   return json(200, { opened });
 });

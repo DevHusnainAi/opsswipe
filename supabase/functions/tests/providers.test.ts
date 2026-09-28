@@ -42,8 +42,19 @@ Deno.test('validateTarget accepts both providers and maps the fixes each allows'
     'restart',
     'rollback',
     'revert_pr',
+    'fix_pr',
     'merge_pr',
   ]);
+  // A VM linked to its repo gets the same code fixes; the reset stays the instant one.
+  const linkedVm = validateTarget('gcp', {
+    project: 'my-proj-1',
+    zone: 'us-central1-a',
+    instance: 'vm-1',
+    url: 'http://1.2.3.4/',
+    repo: 'me/app',
+    branch: 'main',
+  });
+  assertEquals(actionsFor(linkedVm), ['reset', 'revert_pr', 'fix_pr', 'merge_pr']);
 });
 
 Deno.test('validateTarget rejects anything that could reach the wrong resource', () => {

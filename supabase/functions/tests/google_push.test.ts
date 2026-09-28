@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
-import { consentUrl, GoogleError, grantReset, ROLE_ID, withBinding } from '../_shared/google.ts';
+import { accessFromRefresh, consentUrl, GoogleError, grantReset, ROLE_ID, withBinding } from '../_shared/google.ts';
 import { pushMessages, sendPush } from '../_shared/push.ts';
 
 type Call = { url: string; method: string; body?: unknown };
@@ -10,7 +10,9 @@ function mockFetch(routes: Record<string, [number, unknown]>) {
   const real = globalThis.fetch;
   globalThis.fetch = ((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
-    calls.push({ url: String(url), method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    const raw = init?.body ? String(init.body) : undefined;
+    const sent = raw?.startsWith('{') ? JSON.parse(raw) : raw; // token requests are form-encoded
+    calls.push({ url: String(url), method, body: sent });
     const key = Object.keys(routes).find((k) => {
       const [m, frag] = k.split(' ');
       return m === method && String(url).includes(frag);
@@ -39,11 +41,12 @@ Deno.test('withBinding adds our member once and leaves other bindings alone', ()
   assertEquals(withBinding(conditional, role, 'user:b').bindings!.length, 2, 'never widens a conditional binding');
 });
 
-Deno.test('consentUrl asks for no refresh token and carries state', () => {
+Deno.test('consentUrl asks for lasting (offline) access with a fresh consent and carries state', () => {
   Deno.env.set('SUPABASE_URL', 'https://ref.supabase.co');
   Deno.env.set('GOOGLE_CLIENT_ID', 'cid');
   const q = new URL(consentUrl('st4te')).searchParams;
-  assertEquals(q.get('access_type'), 'online');
+  assertEquals(q.get('access_type'), 'offline');
+  assert(q.get('prompt')!.includes('consent'), 'consent is what makes Google return a refresh token');
   assertEquals(q.get('redirect_uri'), 'https://ref.supabase.co/functions/v1/oauth-callback');
   assertEquals(q.get('state'), 'st4te');
   assert(q.get('scope')!.includes('https://www.googleapis.com/auth/cloud-platform'));
@@ -74,6 +77,14 @@ Deno.test('grantReset: missing permission and disabled API become plain sentence
   await assertRejects(() => grantReset('tok', vm, SA), GoogleError, 'needs Owner').finally(f.restore);
   f = mockFetch({ 'POST /roles': [403, { error: { details: [{ reason: 'SERVICE_DISABLED' }] } }] });
   await assertRejects(() => grantReset('tok', vm, SA), GoogleError, 'Turn on the IAM API').finally(f.restore);
+});
+
+Deno.test('refresh tokens mint access tokens; a revoked one asks the user to reconnect', async () => {
+  let f = mockFetch({ 'POST oauth2.googleapis.com/token': [200, { access_token: 'fresh' }] });
+  assertEquals(await accessFromRefresh('r1').finally(f.restore), 'fresh');
+  assertEquals(f.calls[0].method, 'POST');
+  f = mockFetch({ 'POST oauth2.googleapis.com/token': [400, { error: 'invalid_grant' }] });
+  await assertRejects(() => accessFromRefresh('r1'), GoogleError, 'Connect Google Cloud again').finally(f.restore);
 });
 
 Deno.test('push: high priority on the incidents channel; dead tokens are reported back', async () => {

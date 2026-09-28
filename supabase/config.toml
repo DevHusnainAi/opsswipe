@@ -19,3 +19,7 @@ verify_jwt = false
 
 [functions.oauth-callback]
 verify_jwt = false
+
+# Agents authenticate with their own ops_ token (hashed lookup), not a Supabase JWT.
+[functions.agent]
+verify_jwt = false

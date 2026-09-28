@@ -91,8 +91,39 @@ export async function mergePr(pr: PrRef, token: string) {
   return `merged #${pr.number}`;
 }
 
-// Open a PR that adds files (e.g. the proof workflow) on top of the branch head. The user reviews
-// and merges it themselves; nothing lands in their repo without that.
+export async function commitMessage(repo: string, sha: string, token: string): Promise<string> {
+  return String((await gh(`${repo}/git/commits/${sha}`, token)).message);
+}
+
+// The commit a branch points at now.
+export async function branchHead(repo: string, branch: string, token: string): Promise<string> {
+  return (await gh(`${repo}/git/ref/heads/${branch}`, token)).object.sha;
+}
+
+export type ChangedFile = { path: string; patch: string; content: string | null };
+
+// What a commit changed (its diff per file) and each file's content now on the branch, for the AI
+// fix. Capped so the prompt stays small: at most 5 files, 40 KB each; removed files have no content.
+export async function commitFiles(repo: string, sha: string, branch: string, token: string): Promise<ChangedFile[]> {
+  const commit = await gh(`${repo}/commits/${sha}`, token);
+  const files = (commit.files ?? []).slice(0, 5) as { filename: string; patch?: string; status: string }[];
+  return await Promise.all(files.map(async (f) => {
+    let content: string | null = null;
+    if (f.status !== 'removed') {
+      const c = await gh(`${repo}/contents/${encodeURIComponent(f.filename).replace(/%2F/g, '/')}?ref=${branch}`, token)
+        .catch(() => null);
+      if (c?.content && c.size <= 40_000) {
+        content = new TextDecoder().decode(
+          Uint8Array.from(atob(c.content.replace(/\n/g, '')), (ch) => ch.charCodeAt(0)),
+        );
+      }
+    }
+    return { path: f.filename, patch: (f.patch ?? '').slice(0, 20_000), content };
+  }));
+}
+
+// Open a PR that adds or changes files on top of the branch head (the proof workflow, an AI fix).
+// The user reviews and merges; with a replay file in it, merging is gated on CI proof.
 export async function openFilesPr(
   { repo, branch, branchName, title, body, files }: {
     repo: string;
@@ -103,7 +134,7 @@ export async function openFilesPr(
     files: { path: string; content: string }[];
   },
   token: string,
-): Promise<string> {
+): Promise<PrRef> {
   const head = await gh(`${repo}/git/ref/heads/${branch}`, token);
   const base = await gh(`${repo}/git/commits/${head.object.sha}`, token);
   const tree = await gh(`${repo}/git/trees`, token, {
@@ -125,5 +156,5 @@ export async function openFilesPr(
     method: 'POST',
     body: JSON.stringify({ title, head: branchName, base: branch, body }),
   });
-  return pr.html_url as string;
+  return { repo, number: pr.number, headSha: commit.sha, url: pr.html_url, branch: branchName };
 }

@@ -3,14 +3,16 @@
 // the service's validated config AND the fixes stored on the incident. Nothing else is trusted.
 import { db, env, json } from '../_shared/db.ts';
 import { isActive } from '../_shared/entitlement.ts';
-import { resetInstance } from '../_shared/gcp.ts';
-import { mergePr, openRevertPr } from '../_shared/github.ts';
+import { accessToken, resetInstance } from '../_shared/gcp.ts';
+import { branchHead, commitFiles, commitMessage, mergePr, openFilesPr, openRevertPr } from '../_shared/github.ts';
 import { afterFix } from '../_shared/flow.ts';
+import { aiEnabled } from '../_shared/incidents.ts';
+import { checkPatch, vertexPatcher } from '../_shared/patch.ts';
 import { canMerge, type Proof, type PrRef } from '../_shared/proof.ts';
 import type { ReplaySample } from '../_shared/replay.ts';
 import { type Deploy, listDeploys, pickRollback, restartService, rollbackToPrevious } from '../_shared/render.ts';
 import { getService, githubToken, platformSa, renderKey, type Service, toTarget } from '../_shared/services.ts';
-import { type Action, actionsFor } from '../_shared/targets.ts';
+import { type Action, actionsFor, type Target } from '../_shared/targets.ts';
 
 const ENTITLEMENT = 'pro';
 const FREE_RUNS = 1;
@@ -40,9 +42,70 @@ async function isPro(uid: string) {
   return isActive((await res.json()).subscriber.entitlements[ENTITLEMENT]);
 }
 
+// The commit that broke production: the release live when the incident opened (Render's deploy
+// history, or the `release` the app reported). A rollback since then changes what's live, but the
+// bad commit is still the one to fix. A VM with neither falls back to the branch head.
+async function badCommit(s: Service, t: Target, inc: Incident, token: string) {
+  if (inc.context.live?.commit?.id) return inc.context.live.commit.id;
+  if (t.provider === 'render') {
+    const live = pickRollback(await listDeploys(t.serviceId, await renderKey(s.owner))).live;
+    if (live?.commit?.id) return live.commit.id;
+  }
+  return await branchHead(t.repo!, t.branch ?? 'main', token);
+}
+
+// Claude writes the smallest fix to the files the bad commit touched; it ships as a PR with the
+// failing requests, so the merge still waits for CI to prove it.
+async function aiFixPr(t: Target, sha: string, inc: Incident, token: string): Promise<Outcome> {
+  const sa = platformSa();
+  if (!aiEnabled() || !sa.project_id) throw new Error('AI fixes are not switched on for this server');
+  const branch = t.branch ?? 'main';
+  const commit = await commitMessage(t.repo!, sha, token);
+  const input = {
+    repo: t.repo!,
+    commit: { sha, message: commit },
+    symptom: inc.metric,
+    failing: inc.context.replay ?? [],
+    files: await commitFiles(t.repo!, sha, branch, token),
+  };
+  const patch = checkPatch(await vertexPatcher(sa.project_id, () => accessToken(sa))(input), input);
+  const short = sha.slice(0, 7);
+  const pr = await openFilesPr({
+    repo: t.repo!,
+    branch,
+    branchName: `opsswipe/fix-${short}-${Date.now().toString(36)}`,
+    title: `Fix ${inc.title.toLowerCase()} after ${short}`,
+    body: [
+      'Written by Claude and opened by OpsSwipe after the on-call engineer approved it with biometrics.',
+      '',
+      `**Incident:** ${inc.title} on \`${inc.target_server}\``,
+      `**Symptom:** ${inc.metric}`,
+      `**Broke in:** \`${short}\` ${commit.split('\n')[0]}`,
+      `**Fix:** ${patch.summary}`,
+      '',
+      `CI replays the ${input.failing.length} failing production request(s) against this PR;`,
+      'OpsSwipe only lets you merge once they all pass. Review the change like any other PR.',
+    ].join('\n'),
+    files: [
+      ...patch.files,
+      {
+        path: `.opsswipe/replays/${short}.json`,
+        content: `${JSON.stringify({ fixes: sha, samples: input.failing }, null, 2)}\n`,
+      },
+    ],
+  }, token);
+  return { detail: pr.url, pr };
+}
+
 // Runs one fix. The detail goes to the audit log (e.g. the PR link).
 async function runAction(s: Service, action: Action, inc: Incident): Promise<Outcome> {
   const t = toTarget(s);
+  if (action === 'merge_pr') return { detail: await mergePr(inc.context.pr!, await githubToken(s.owner)) };
+  if (action === 'revert_pr' || action === 'fix_pr') {
+    const token = await githubToken(s.owner);
+    const sha = await badCommit(s, t, inc, token);
+    return action === 'fix_pr' ? await aiFixPr(t, sha, inc, token) : await revertPr(t, sha, inc, token);
+  }
   if (t.provider === 'gcp') {
     await resetInstance(t, platformSa());
     return { detail: 'vm reset issued' };
@@ -52,17 +115,14 @@ async function runAction(s: Service, action: Action, inc: Incident): Promise<Out
     await restartService(t.serviceId, key);
     return { detail: 'restart issued' };
   }
-  if (action === 'rollback') return { detail: await rollbackToPrevious(t.serviceId, key) };
-  if (action === 'merge_pr') return { detail: await mergePr(inc.context.pr!, await githubToken(s.owner)) };
+  return { detail: await rollbackToPrevious(t.serviceId, key) };
+}
 
-  // revert_pr: revert the release that was live when the incident opened. A rollback since then
-  // changes what's live, but the bad commit is still the one to revert.
-  const live = inc.context.live?.commit?.id ? inc.context.live : pickRollback(await listDeploys(t.serviceId, key)).live;
-  if (!live?.commit?.id) throw new Error('no deploy commit to revert');
+async function revertPr(t: Target, sha: string, inc: Incident, token: string): Promise<Outcome> {
   const pr = await openRevertPr({
     repo: t.repo!,
     branch: t.branch ?? 'main',
-    commitSha: live.commit.id,
+    commitSha: sha,
     body: [
       'Opened by OpsSwipe after the on-call engineer approved it with biometrics.',
       '',
@@ -70,12 +130,12 @@ async function runAction(s: Service, action: Action, inc: Incident): Promise<Out
       `**Symptom:** ${inc.metric}`,
       inc.reason ? `**Why this commit:** ${inc.reason} _(suggested by ${inc.suggested_by ?? 'rules'})_` : null,
       '',
-      `Merging deploys the code from before \`${live.commit.id.slice(0, 7)}\`.`,
+      `Merging deploys the code from before \`${sha.slice(0, 7)}\`.`,
       `CI replays the ${inc.context.replay?.length ?? 0} failing production request(s) against this PR;`,
-      'OpsSwipe only lets you merge once they all pass. Roll back in OpsSwipe to restore service now.',
+      'OpsSwipe only lets you merge once they all pass.',
     ].filter((l) => l !== null).join('\n'),
     replay: inc.context.replay ?? [],
-  }, await githubToken(s.owner));
+  }, token);
   return { detail: pr.url, pr };
 }
 

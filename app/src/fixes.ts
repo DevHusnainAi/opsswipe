@@ -1,6 +1,6 @@
 // Display metadata for each allowlisted fix. The server decides what's allowed; this only words it.
 import type { Icon } from 'phosphor-react-native';
-import { ArrowClockwise, ArrowCounterClockwise, GitMerge, GitPullRequest, Power } from 'phosphor-react-native';
+import { ArrowClockwise, ArrowCounterClockwise, GitMerge, GitPullRequest, MagicWand, Power } from 'phosphor-react-native';
 
 export type Fix = {
   label: string; // picker chip
@@ -43,6 +43,14 @@ export const FIXES: Record<string, Fix> = {
     doing: 'Opening a revert PR for',
     confirm: 'Opens a pull request. Production changes only after it is merged.',
     icon: GitPullRequest,
+  },
+  fix_pr: {
+    label: 'Fix with AI',
+    rail: 'Swipe to write a fix',
+    verb: 'Write an AI fix for',
+    doing: 'Claude is writing a fix for',
+    confirm: 'Claude writes a code fix and opens a PR. Nothing changes until CI proves it and you merge.',
+    icon: MagicWand,
   },
   merge_pr: {
     label: 'Merge PR',

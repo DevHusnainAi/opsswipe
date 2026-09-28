@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { ArrowRight, ArrowSquareOut, Fingerprint, Flask, ListChecks, SealCheck, SealWarning, Sparkle } from 'phosphor-react-native';
+import { ArrowRight, ArrowSquareOut, Fingerprint, Flask, ListChecks, Robot, SealCheck, SealWarning, Sparkle } from 'phosphor-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -35,9 +35,10 @@ type Props = {
   // done: card leaves · stay: fix ran but the incident stays open (revert PR) · failed: snap back + error haptic
   onFix: (incident: Incident, action: string) => Promise<'done' | 'stay' | 'failed'>;
   onMeasure?: (height: number) => void; // top card reports its height so the stack fits it
+  onDecline?: (incident: Incident) => void; // an AI agent's proposal can be turned down
 };
 
-export function SwipeCard({ incident, depth, now, onFix, onMeasure }: Props) {
+export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline }: Props) {
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const limit = width * THRESHOLD;
@@ -146,12 +147,20 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure }: Props) {
           <Text style={type.mono}>{incident.metric}</Text>
           {incident.reason && (
             <View style={styles.reason}>
-              {incident.suggested_by === 'ai'
+              {incident.suggested_by === 'agent'
+                ? <Robot size={16} color={c.amber} weight="fill" />
+                : incident.suggested_by === 'ai'
                 ? <Sparkle size={16} color={c.green} weight="fill" />
                 : <ListChecks size={16} color={c.muted} weight="bold" />}
               <Text style={[type.body, { flex: 1, fontSize: 14, lineHeight: 20 }]}>
                 {incident.reason}
-                <Text style={type.caption}>{incident.suggested_by === 'ai' ? '  Claude' : '  Rules'}</Text>
+                <Text style={type.caption}>
+                  {incident.suggested_by === 'agent'
+                    ? `  ${incident.context?.agent?.name ?? 'AI agent'}`
+                    : incident.suggested_by === 'ai'
+                    ? '  Claude'
+                    : '  Rules'}
+                </Text>
               </Text>
             </View>
           )}
@@ -203,6 +212,16 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure }: Props) {
             <Fingerprint size={24} color={live ? c.onGreen : c.muted} weight="bold" />
           </Pressable>
         </View>
+        {live && incident.suggested_by === 'agent' && onDecline && (
+          <Pressable
+            onPress={() => onDecline(incident)}
+            accessibilityRole="button"
+            accessibilityLabel={`Decline ${incident.context?.agent?.name ?? 'the agent'}'s proposal`}
+            style={styles.decline}
+          >
+            <Text style={[type.label, { color: c.muted }]}>Decline this proposal</Text>
+          </Pressable>
+        )}
       </Animated.View>
     </GestureDetector>
   );
@@ -308,4 +327,5 @@ const styles = StyleSheet.create({
   },
   fixDisabled: { backgroundColor: c.surface2 },
   pressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
+  decline: { alignSelf: 'center', minHeight: TARGET, justifyContent: 'center', paddingHorizontal: space.md },
 });

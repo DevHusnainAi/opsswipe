@@ -1,6 +1,8 @@
 // Connect: the signed-in user links GitHub, Render and their services from the app.
 // Every action runs for the caller only (verified JWT). Keys go straight into Vault; the app gets
 // back only non-secret info, plus each service's report secret exactly once, at creation.
+import { hashToken, newToken } from '../_shared/agents.ts';
+import { withReturn } from '../_shared/appLink.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
 import { consentUrl, exchangeCode, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
@@ -58,6 +60,21 @@ async function addService(owner: string, name: string, provider: 'gcp' | 'render
   return { service: data, report: { url: `${functionUrl('report')}?service=${data.id}`, secret } };
 }
 
+// The repo the user picked for a service: undefined = keep what was detected, {} = no repo.
+// A repo is accepted only if the user's GitHub App installation can reach it.
+async function chosenRepo(
+  owner: string,
+  p: Record<string, unknown>,
+): Promise<{ repo?: string; branch?: string } | undefined> {
+  if (p.repo === undefined) return undefined;
+  if (p.repo === null || p.repo === '') return {};
+  const c = await connection(owner, 'github');
+  need(c?.installation_id, 'Connect GitHub first to link a repo.');
+  const found = (await listRepos(c!.installation_id!)).find((r) => r.name === String(p.repo));
+  need(found, 'OpsSwipe cannot see that repo. Add it to the OpsSwipe GitHub App installation.');
+  return { repo: found!.name, branch: typeof p.branch === 'string' && p.branch ? p.branch : found!.branch };
+}
+
 async function handle(owner: string, action: string, p: Record<string, unknown>) {
   switch (action) {
     case 'status': {
@@ -66,8 +83,14 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         connection(owner, 'render'),
         connection(owner, 'google'),
       ]);
+      // GitHub hands `state` back to oauth-callback, which uses it to return to Expo Go if needed.
+      const state = withReturn('gh', p.returnTo);
       return {
-        github: { connected: !!gh?.installation_id, account: gh?.account ?? null, installUrl: installUrl() },
+        github: {
+          connected: !!gh?.installation_id,
+          account: gh?.account ?? null,
+          installUrl: state === 'gh' ? installUrl() : `${installUrl()}?state=${state}`,
+        },
         render: { connected: !!rd?.secret_id },
         google: { connected: !!gc?.secret_id, account: gc?.account ?? null, available: !!env('GOOGLE_CLIENT_ID') },
         gcpIdentity: env('GCP_SA_KEY') ? platformSa().client_email : null,
@@ -111,30 +134,34 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       const r = await getRenderService(serviceId, await renderKey(owner));
       need(r.url, 'That service has no public URL to check.');
       const config: Record<string, string> = { serviceId, url: r.url };
-      if (r.repo) Object.assign(config, { repo: r.repo, branch: r.branch ?? 'main' });
+      // Render reports the repo it deploys from; the user can confirm, change or remove it.
+      const picked = await chosenRepo(owner, p);
+      if (picked) Object.assign(config, picked);
+      else if (r.repo) Object.assign(config, { repo: r.repo, branch: r.branch ?? 'main' });
       return await addService(owner, String(p.name ?? r.name).toLowerCase(), 'render', config);
     }
 
-    // Connect Google Cloud: sign in, pick a VM, OpsSwipe grants itself reset on it, the token is deleted.
+    // Connect Google Cloud once; then pick projects and VMs any time. Each VM added grants OpsSwipe reset on it.
     case 'gcp_start': {
       need(env('GOOGLE_CLIENT_ID') && env('GCP_SA_KEY'), 'Google Cloud sign-in is not set up on this OpsSwipe server.');
-      const state = randomSecret().slice(0, 32); // the app checks it comes back unchanged
+      // The app checks it comes back unchanged; it also carries the Expo Go return address, if any.
+      const state = withReturn(randomSecret().slice(0, 32), p.returnTo);
       return { url: consentUrl(state), state };
     }
 
     case 'gcp_complete': {
       const code = String(p.code ?? '');
       need(code, 'Google did not finish the sign-in.');
-      const { token, email } = await exchangeCode(code);
+      const { access, refresh, email } = await exchangeCode(code);
       const old = await connection(owner, 'google');
       await db.from('connections').upsert({
         owner,
         kind: 'google',
-        secret_id: await storeSecret(token),
+        secret_id: await storeSecret(refresh),
         account: email,
       });
       await deleteSecret(old?.secret_id);
-      return { google: { connected: true, account: email }, projects: await listProjects(token) };
+      return { google: { connected: true, account: email }, projects: await listProjects(access) };
     }
 
     case 'gcp_projects':
@@ -148,7 +175,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
 
     case 'gcp_add': {
       const vm = { project: String(p.project ?? ''), zone: String(p.zone ?? ''), instance: String(p.instance ?? '') };
-      const config = { ...vm, url: String(p.url ?? '') };
+      const config = { ...vm, url: String(p.url ?? ''), ...(await chosenRepo(owner, p)) };
       try {
         validateTarget('gcp', config);
       } catch (e) {
@@ -163,7 +190,6 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         vmStatus = await getInstanceStatus(vm, sa).catch(() => 'pending');
       }
       const added = await addService(owner, String(p.name ?? vm.instance).toLowerCase(), 'gcp', config);
-      await forgetConnection(owner, 'google');
       return { ...added, vmStatus };
     }
 
@@ -172,6 +198,47 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       need(/^Expo(nent)?PushToken\[[\w-]+\]$/.test(token), 'Not a push token.');
       await db.from('push_tokens').upsert({ token, owner });
       return { registered: true };
+    }
+
+    // Approval API tokens: shown once at creation; only a hash is kept.
+    case 'agent_tokens': {
+      const { data } = await db.from('agent_tokens').select('id, name, created_at, last_used_at')
+        .eq('owner', owner).order('created_at');
+      return { tokens: data ?? [], url: functionUrl('agent') };
+    }
+
+    case 'agent_token_create': {
+      const name = String(p.name ?? '').trim();
+      need(/^[\w .-]{1,40}$/.test(name), 'Name the agent (letters, numbers, spaces; up to 40).');
+      const token = newToken();
+      const { data, error } = await db.from('agent_tokens')
+        .insert({ owner, name, token_hash: await hashToken(token) }).select('id, name').single();
+      if (error) throw error;
+      return { ...data, token, url: functionUrl('agent') };
+    }
+
+    case 'agent_token_revoke': {
+      await db.from('agent_tokens').delete().eq('id', String(p.id ?? '')).eq('owner', owner);
+      return { revoked: true };
+    }
+
+    // The human says no to an agent's proposal; the agent sees "declined".
+    case 'decline': {
+      const { data } = await db.from('incidents').select('id, context')
+        .eq('id', String(p.incidentId ?? '')).eq('owner', owner).eq('status', 'active').maybeSingle();
+      need(data, 'That proposal is no longer open.');
+      await db.from('incidents').update({
+        status: 'resolved',
+        resolved_at: new Date().toISOString(),
+        context: { ...data!.context, declined: true },
+      }).eq('id', data!.id);
+      return { declined: true };
+    }
+
+    // Sign-out: this phone stops receiving this account's alerts.
+    case 'unregister_push': {
+      await db.from('push_tokens').delete().eq('token', String(p.token ?? '')).eq('owner', owner);
+      return { unregistered: true };
     }
 
     // Manual fallback: the user ran the two gcloud commands themselves.
@@ -198,11 +265,10 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       const s = await getService(String(p.serviceId ?? ''));
       need(s && s.owner === owner, 'Service not found.');
       const t = toTarget(s!);
-      need(t.provider === 'render' && t.repo, 'This service has no GitHub repo.');
-      const repo = (t as { repo: string }).repo;
-      const url = await openFilesPr({
-        repo,
-        branch: (t as { branch?: string }).branch ?? 'main',
+      need(t.repo, 'Link a GitHub repo to this service first.');
+      const { url } = await openFilesPr({
+        repo: t.repo!,
+        branch: t.branch ?? 'main',
         branchName: 'opsswipe/add-proof',
         title: 'Add OpsSwipe proof: replay production failures on every PR',
         body: [
@@ -218,6 +284,22 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         ],
       }, await githubToken(owner));
       return { prUrl: url };
+    }
+
+    // Link, change or unlink the repo of an existing service.
+    case 'link_repo': {
+      const s = await getService(String(p.serviceId ?? ''));
+      need(s && s.owner === owner, 'Service not found.');
+      const picked = (await chosenRepo(owner, { ...p, repo: p.repo ?? '' }))!;
+      const { repo: _r, branch: _b, ...rest } = s!.config;
+      const config = { ...rest, ...picked };
+      try {
+        validateTarget(s!.provider, config);
+      } catch (e) {
+        throw new UserError(`Check the details: ${(e as Error).message}.`);
+      }
+      await db.from('services').update({ config }).eq('id', s!.id);
+      return { config };
     }
 
     case 'remove_service': {

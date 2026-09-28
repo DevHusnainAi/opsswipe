@@ -2,6 +2,7 @@
 // on the server, from Supabase Vault; the app never sees them after they're entered.
 import { db, env } from './db.ts';
 import type { ServiceAccount } from './gcp.ts';
+import { accessFromRefresh, GoogleError, revoke } from './google.ts';
 import { installationToken } from './githubApp.ts';
 import { type Push, sendPush } from './push.ts';
 import { type Target, validateTarget } from './targets.ts';
@@ -69,16 +70,17 @@ export async function githubToken(owner: string) {
 // OpsSwipe's own GCP identity; users grant it a reset-only role on their VM.
 export const platformSa = (): ServiceAccount => JSON.parse(env('GCP_SA_KEY'));
 
-// Short-lived Google token from "Connect Google Cloud"; deleted once the VM is granted.
+// A 1-hour Google access token, minted from the refresh token kept in Vault by "Connect Google Cloud".
 export async function googleToken(owner: string) {
   const c = await connection(owner, 'google');
-  const token = c?.secret_id ? await readSecret(c.secret_id) : null;
-  if (!token) throw new Error('Google Cloud is not connected');
-  return token;
+  const refresh = c?.secret_id ? await readSecret(c.secret_id) : null;
+  if (!refresh) throw new GoogleError('Connect Google Cloud first.');
+  return accessFromRefresh(refresh);
 }
 
 export async function forgetConnection(owner: string, kind: ConnectionKind) {
   const c = await connection(owner, kind);
+  if (kind === 'google' && c?.secret_id) await revoke((await readSecret(c.secret_id)) ?? '');
   await db.from('connections').delete().eq('owner', owner).eq('kind', kind);
   await deleteSecret(c?.secret_id);
 }

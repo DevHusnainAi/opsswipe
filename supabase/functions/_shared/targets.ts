@@ -1,19 +1,18 @@
 // What a connected service is and which fixes it allows. Services are stored per user
 // (table `services`); this module validates their config and maps them to targets.
-export type GcpTarget = { provider: 'gcp'; project: string; zone: string; instance: string; url: string };
-export type RenderTarget = {
-  provider: 'render';
-  serviceId: string;
-  url: string;
-  repo?: string; // "owner/name" the service deploys from; enables revert and merge PRs
-  branch?: string; // defaults to main
-};
+// Any service can be linked to the GitHub repo it deploys from ("owner/name" + branch). That
+// enables the code fixes: revert PR, AI fix PR, and merging a PR once CI proves it.
+type Linked = { repo?: string; branch?: string };
+export type GcpTarget = { provider: 'gcp'; project: string; zone: string; instance: string; url: string } & Linked;
+export type RenderTarget = { provider: 'render'; serviceId: string; url: string } & Linked;
 export type Target = GcpTarget | RenderTarget;
-export type Action = 'reset' | 'restart' | 'rollback' | 'revert_pr' | 'merge_pr';
+export type Action = 'reset' | 'restart' | 'rollback' | 'revert_pr' | 'fix_pr' | 'merge_pr';
+
+export const CODE_FIXES: Action[] = ['revert_pr', 'fix_pr'];
 
 export function actionsFor(t: Target): Action[] {
-  if (t.provider === 'gcp') return ['reset'];
-  return t.repo ? ['restart', 'rollback', 'revert_pr', 'merge_pr'] : ['restart', 'rollback'];
+  const code: Action[] = t.repo ? ['revert_pr', 'fix_pr', 'merge_pr'] : [];
+  return t.provider === 'gcp' ? ['reset', ...code] : ['restart', 'rollback', ...code];
 }
 
 const REQUIRED = { gcp: ['project', 'zone', 'instance', 'url'], render: ['serviceId', 'url'] } as const;
