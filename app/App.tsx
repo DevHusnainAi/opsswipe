@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Font from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowClockwise, Crown, Plug, ShieldCheck, WarningCircle } from 'phosphor-react-native';
+import { ArrowClockwise, CheckCircle, Crown, Hand, Plug, ShieldCheck, WarningCircle } from 'phosphor-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
@@ -25,6 +25,7 @@ import { Activity } from './src/Activity';
 import { Auth, type AuthMode, NewPassword } from './src/Auth';
 import { inExpoGo, Notifications } from './src/env';
 import { fixFor } from './src/fixes';
+import { recoveryLine } from './src/format';
 import { AlertsPrimer, Logo, Welcome } from './src/Onboarding';
 import { Services } from './src/Services';
 import { Settings } from './src/Settings';
@@ -36,6 +37,39 @@ import { Banner, type BannerState, Button, Skeleton, useNow } from './src/ui';
 const FREE_RUNS = 1; // mirrors the server; display only
 const WELCOMED = 'opsswipe.welcomed'; // the value tour is shown once per phone
 const ALERTS_ASKED = 'opsswipe.alerts-asked'; // so is the notification primer
+
+// A practice card: the real swipe and fingerprint, with a simulated recovery. It lives only in this
+// screen's state, never reaches the server, and never uses the free fix.
+const SAMPLE_ID = 'sample';
+const sampleIncident = (): Incident => {
+  const replay = [
+    { method: 'POST', path: '/checkout', status: 500 },
+    { method: 'POST', path: '/checkout', status: 500 },
+    { method: 'GET', path: '/cart', status: 500 },
+  ];
+  return {
+    id: SAMPLE_ID,
+    title: 'Sample: requests are failing',
+    target_server: 'sample-api',
+    environment: 'production',
+    severity: 'CRITICAL',
+    metric: 'POST /checkout → 500 (3 failing requests)',
+    action: 'rollback',
+    provider: 'render',
+    status: 'active',
+    created_at: new Date(Date.now() - 94_000).toISOString(),
+    resolved_at: null,
+    recovered_at: null,
+    actions: ['rollback', 'restart'],
+    reason: 'a1b2c3d deployed 4m before the failure. Roll back to the last good release.',
+    suggested_by: 'rules',
+    context: {
+      replay,
+      pr: { number: 42, url: 'https://github.com/DevHusnainAi/opsswipe#the-verified-fix-loop', headSha: 'sample' },
+      proof: { ok: true, passed: 3, total: 3, tests: true, headSha: 'sample' },
+    },
+  };
+};
 
 type Phase = 'loading' | 'welcome' | 'auth' | 'recovery' | 'primer' | 'ready' | 'error';
 
@@ -56,6 +90,9 @@ export default function App() {
   const [cardHeight, setCardHeight] = useState(420);
   const [serviceCount, setServiceCount] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('incidents');
+  const [sample, setSample] = useState<Incident | null>(null);
+  const [recovered, setRecovered] = useState<Incident | null>(null);
+  const seenRecovered = useRef<Set<string>>(null); // null until the first load, so old recoveries don't pop up
   const channel = useRef<ReturnType<typeof supabase.channel>>(undefined);
   const purchasesReady = useRef(false);
   const now = useNow();
@@ -72,6 +109,14 @@ export default function App() {
     if (failed) throw failed;
     setIncidents(i.data ?? []);
     setFixed(r.data ?? []);
+    // A service that came back since the last look gets its moment (the push covers a closed app).
+    const back = (r.data ?? []).filter((x: Incident) => x.recovered_at);
+    const fresh = seenRecovered.current && back.find((x: Incident) => !seenRecovered.current!.has(x.id));
+    if (fresh) {
+      setRecovered(fresh);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    seenRecovered.current = new Set(back.map((x: Incident) => x.id));
     setAudit(a.data ?? []);
     setFreeUsed(u.data?.free_used ?? 0);
     setServiceCount(sv.count ?? 0);
@@ -189,6 +234,9 @@ export default function App() {
     channel.current = undefined;
     setIncidents([]);
     setFixed([]);
+    setSample(null);
+    setRecovered(null);
+    seenRecovered.current = null;
     setAudit([]);
     setServiceCount(null);
     setPro(false);
@@ -273,6 +321,16 @@ export default function App() {
       });
       return 'failed' as const;
     }
+    if (inc.id === SAMPLE_ID) {
+      setBanner({ kind: 'busy', text: `${fix.doing} ${inc.target_server}` });
+      const fixedAt = Date.now();
+      await new Promise((r) => setTimeout(r, 2500));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setSample(null);
+      setBanner(null);
+      setRecovered({ ...inc, resolved_at: new Date(fixedAt).toISOString(), recovered_at: new Date().toISOString() });
+      return 'done' as const;
+    }
     const result = await run(inc, action);
     if (result === 'paywall') setTimeout(() => upsell(inc, action), 350);
     if (result !== 'ok') return 'failed' as const;
@@ -291,6 +349,11 @@ export default function App() {
   };
 
   const down = incidents.length;
+  const cards = sample ? [sample, ...incidents] : incidents;
+  const trySample = () => {
+    setRecovered(null);
+    setSample(sampleIncident());
+  };
   const fixesLeft = Math.max(0, FREE_RUNS - freeUsed);
 
   return (
@@ -373,9 +436,11 @@ export default function App() {
                 <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                   <View style={styles.hero}>
                     <View style={styles.statusRow}>
-                      <View style={[styles.dot, { backgroundColor: down ? c.red : serviceCount ? c.green : c.muted }]} />
-                      <Text style={[type.label, { color: down ? c.red : serviceCount ? c.green : c.muted }]}>
-                        {down
+                      <View style={[styles.dot, { backgroundColor: cards.length ? c.red : serviceCount ? c.green : c.muted }]} />
+                      <Text style={[type.label, { color: cards.length ? c.red : serviceCount ? c.green : c.muted }]}>
+                        {sample && !down
+                          ? 'Practice run: nothing real is touched'
+                          : down
                           ? `${down} service${down > 1 ? 's' : ''} down`
                           : serviceCount
                           ? `Watching ${serviceCount} service${serviceCount > 1 ? 's' : ''}`
@@ -383,12 +448,24 @@ export default function App() {
                       </Text>
                     </View>
                     <Text style={type.display} accessibilityRole="header">
-                      {down ? 'A fix is waiting for you' : 'Nothing to fix'}
+                      {cards.length ? 'A fix is waiting for you' : serviceCount ? 'Nothing to fix' : 'Watch your first service'}
                     </Text>
                   </View>
 
-                  <View style={[styles.stack, { height: down ? cardHeight + 24 : 300 }]}>
-                    {down === 0 && serviceCount === 0 ? (
+                  <View style={[styles.stack, { height: cards.length ? cardHeight + 24 : 300 }]}>
+                    {recovered && cards.length === 0 ? (
+                      <View style={[styles.empty, styles.recovered]} accessibilityLiveRegion="polite">
+                        <CheckCircle size={48} color={c.green} weight="fill" />
+                        <Text style={type.title}>{recovered.target_server} is back up</Text>
+                        <Text style={[type.mono, { textAlign: 'center' }]}>{recoveryLine(recovered)}</Text>
+                        <Text style={[type.caption, { textAlign: 'center' }]}>
+                          {recovered.id === SAMPLE_ID
+                            ? 'That was a practice run. With a real service, OpsSwipe runs the fix and the health check confirms it came back.'
+                            : 'The health check confirmed it. The fix is in your activity log.'}
+                        </Text>
+                        <Button label="Done" kind="secondary" onPress={() => setRecovered(null)} />
+                      </View>
+                    ) : cards.length === 0 && serviceCount === 0 ? (
                       <View style={styles.empty}>
                         <Plug size={32} color={c.green} weight="bold" />
                         <Text style={type.body}>Connect your first service</Text>
@@ -396,17 +473,19 @@ export default function App() {
                           Add a Render service or a GCP VM. OpsSwipe watches it and pages you when it breaks.
                         </Text>
                         <Button label="Connect a service" icon={Plug} onPress={() => setTab('services')} />
+                        <Button label="Try a sample incident" icon={Hand} kind="secondary" onPress={trySample} />
                       </View>
-                    ) : down === 0 ? (
+                    ) : cards.length === 0 ? (
                       <View style={styles.empty}>
                         <ShieldCheck size={32} color={c.green} weight="bold" />
                         <Text style={[type.body, { textAlign: 'center' }]}>Your apps report failures the moment they happen.</Text>
                         <Text style={[type.caption, { textAlign: 'center' }]}>
                           A health check also runs every minute. You&apos;ll get an alert when something breaks.
                         </Text>
+                        <Button label="Try a sample incident" icon={Hand} kind="secondary" onPress={trySample} />
                       </View>
                     ) : (
-                      incidents
+                      cards
                         .map((inc, i) => (
                           <SwipeCard
                             key={inc.id}
@@ -499,6 +578,7 @@ const styles = StyleSheet.create({
     gap: space.sm,
     padding: space.xl,
   },
+  recovered: { borderStyle: 'solid', borderColor: c.green, backgroundColor: c.greenTint },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md, paddingHorizontal: space.xl },
 });
 

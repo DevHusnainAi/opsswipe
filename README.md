@@ -61,8 +61,29 @@ From the app's **Services** screen:
 | **GitHub** | Install the OpsSwipe GitHub App on the repos you pick | 1-hour tokens to open and merge PRs on those repos |
 | **Render** | Paste an API key once | Restart, roll back and read deploys; the key is encrypted and never shown again |
 | **Google Cloud** | Sign in with Google once, then pick a project and a VM any time | A custom role on each VM you add: read its status and reset it. Google access is kept encrypted so adding VMs needs no new sign-in; Disconnect revokes it |
-| **Failure reports** | Set the two env vars the app shows once | Your app's 5xx responses, signed, the moment they happen |
+| **Failure reports** (optional) | Set the two env vars the app shows once and add the snippet below | Your app's 5xx responses, signed, the moment they happen. Without it, the every-minute health check still pages you |
 | **Proof in CI** | Tap "Add proof to repo" and merge the PR | A workflow that replays saved production failures on every PR, authenticated by GitHub OIDC |
+
+### Failure reports
+
+Any stack works: POST a small JSON body to `OPSSWIPE_REPORT_URL`, signed with HMAC-SHA256 of the exact body under
+`REPORT_SECRET`, in the header `x-opsswipe-signature: sha256=<hex>`. Only 5xx responses count. `release` (the deployed
+commit, 40 hex characters) is optional and tells a revert or AI fix which commit broke production. Express:
+
+```js
+// Express, Node 18+: report every 5xx to OpsSwipe (method, path, status only)
+const { createHmac } = require('node:crypto');
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    const { OPSSWIPE_REPORT_URL: url, REPORT_SECRET: key, GIT_SHA } = process.env;
+    if (res.statusCode < 500 || !url || !key) return;
+    const body = JSON.stringify({ method: req.method, path: req.originalUrl, status: res.statusCode, release: GIT_SHA });
+    const sig = 'sha256=' + createHmac('sha256', key).update(body).digest('hex');
+    fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-opsswipe-signature': sig }, body }).catch(() => {});
+  });
+  next();
+});
+```
 
 ## Monetization (RevenueCat)
 

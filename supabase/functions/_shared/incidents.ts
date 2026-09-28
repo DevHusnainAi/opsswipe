@@ -107,7 +107,22 @@ export async function openIncident(
 }
 
 // Recovery proof: the first healthy check after a fix stamps recovered_at.
+// The owner hears about it even with the app closed: the payoff of the swipe.
 export async function markRecovered(serviceId: string) {
-  await db.from('incidents').update({ recovered_at: new Date().toISOString() })
-    .eq('service_id', serviceId).eq('status', 'resolved').is('recovered_at', null);
+  const now = new Date().toISOString();
+  const { data } = await db.from('incidents').update({ recovered_at: now })
+    .eq('service_id', serviceId).eq('status', 'resolved').is('recovered_at', null)
+    .select('id, owner, target_server, created_at');
+  for (const i of data ?? []) {
+    await notify(i.owner, {
+      title: `${i.target_server} is back up`,
+      body: `Down ${formatDuration(Date.parse(now) - Date.parse(i.created_at))}. Healthy again after your fix.`,
+      data: { incidentId: i.id },
+    });
+  }
 }
+
+const formatDuration = (ms: number) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+};

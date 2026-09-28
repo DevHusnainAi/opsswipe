@@ -94,7 +94,22 @@ export function Services({ active }: { active: boolean }) {
     run(`proof-${s.id}`, async () => {
       const r = await connect<{ prUrl: string }>('install_proof', { serviceId: s.id });
       setNotice({ text: 'Proof workflow PR opened. Check its commands, then merge it.', url: r.prUrl });
+      await load();
     });
+
+  // The last setup step does whatever is missing first: GitHub, then a linked repo, then the workflow PR.
+  const turnOnProof = () => {
+    const linked = services?.find((s) => s.config.repo);
+    if (!status?.github.connected) return connectGithub();
+    if (!linked) {
+      const first = services?.[0];
+      if (!first) return setSheet('provider');
+      setEditing(first.id);
+      setRepoDraft(null);
+      return setNotice({ text: `Pick the repo ${first.name} deploys from, then tap Turn on proof again.` });
+    }
+    installProof(linked);
+  };
 
   const cloud = !!(status?.render.connected || status?.google.connected);
   const steps = [
@@ -105,6 +120,12 @@ export function Services({ active }: { active: boolean }) {
       title: 'Connect GitHub',
       body: 'Revert bad releases and merge fixes once CI proves them.',
       action: connectGithub,
+    },
+    {
+      done: !!services?.some((s) => s.config.proofPr),
+      title: 'Turn on proof',
+      body: 'One PR adds a workflow that replays production failures, so code fixes merge only once proven.',
+      action: turnOnProof,
     },
   ];
   const doneCount = steps.filter((s) => s.done).length;
@@ -161,7 +182,7 @@ export function Services({ active }: { active: boolean }) {
                       </Text>
                       {!s.done && <Text style={type.caption}>{s.body}</Text>}
                     </View>
-                    {!s.done && (busy === 'github' && i === 2 ? <ActivityIndicator color={c.green} /> : <Text style={[type.label, { color: c.green }]}>Start</Text>)}
+                    {!s.done && ((busy === 'github' && i === 2) || (i === 3 && busy?.startsWith('proof-')) ? <ActivityIndicator color={c.green} /> : <Text style={[type.label, { color: c.green }]}>Start</Text>)}
                   </Pressable>
                 ))}
               </View>
@@ -222,9 +243,9 @@ export function Services({ active }: { active: boolean }) {
                     <View style={styles.actions}>
                       {s.config.repo && status.github.connected && (
                         <Button
-                          label={busy === `proof-${s.id}` ? 'Opening PR…' : 'Add proof to repo'}
+                          label={busy === `proof-${s.id}` ? 'Opening PR…' : s.config.proofPr ? 'Proof PR' : 'Add proof to repo'}
                           kind="secondary"
-                          onPress={() => installProof(s)}
+                          onPress={() => (s.config.proofPr ? Linking.openURL(s.config.proofPr) : installProof(s))}
                           style={{ flex: 1 }}
                         />
                       )}

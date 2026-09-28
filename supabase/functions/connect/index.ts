@@ -283,6 +283,8 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
           { path: PROOF_WORKFLOW_PATH, content: proofWorkflow(functionUrl('proof')) },
         ],
       }, await githubToken(owner));
+      // Remembered so the app's setup checklist can tick "proof" off.
+      await db.from('services').update({ config: { ...s!.config, proofPr: url } }).eq('id', s!.id);
       return { prUrl: url };
     }
 
@@ -291,7 +293,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       const s = await getService(String(p.serviceId ?? ''));
       need(s && s.owner === owner, 'Service not found.');
       const picked = (await chosenRepo(owner, { ...p, repo: p.repo ?? '' }))!;
-      const { repo: _r, branch: _b, ...rest } = s!.config;
+      const { repo: _r, branch: _b, proofPr: _p, ...rest } = s!.config as Record<string, unknown>; // a new repo needs its own proof
       const config = { ...rest, ...picked };
       try {
         validateTarget(s!.provider, config);

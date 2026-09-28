@@ -354,18 +354,17 @@ export function AddService({ start, status, existing, onClose }: Props) {
                 <CheckCircle size={40} color={c.green} weight="fill" />
                 <Text style={type.title}>{created.service.name} is being watched</Text>
                 <Text style={[type.body, { color: c.muted, textAlign: 'center' }]}>
-                  A health check runs every minute. For instant alerts, set these two values on the app itself so it
-                  reports failing requests the moment they happen. The secret is shown only once.
+                  A health check already runs every minute, so you&apos;re covered. Optional, for alerts within seconds: set
+                  these two values on your app and add the snippet. The secret is shown only once.
                 </Text>
               </View>
               <CopyRow label="OPSSWIPE_REPORT_URL" value={created.report.url} />
               <CopyRow label="REPORT_SECRET" value={created.report.secret} />
-              {created.service.config.repo && (
-                <Text style={type.caption}>
-                  Also send the running commit as `release` in each report (for example from a GIT_SHA variable set at
-                  deploy). OpsSwipe then knows exactly which commit to revert or fix.
-                </Text>
-              )}
+              <CopyRow label="Snippet (Express)" value={REPORT_SNIPPET} lines={14} />
+              <Text style={type.caption}>
+                Set GIT_SHA to the deployed commit so a revert or AI fix targets exactly the release that broke. Other
+                stacks: sign the JSON body with HMAC-SHA256 the same way (see Failure reports in the README).
+              </Text>
               {created.vmStatus === 'pending' && (
                 <Text style={type.caption}>Google is still applying access; resets work within a minute.</Text>
               )}
@@ -439,13 +438,26 @@ function Loading({ text }: { text: string }) {
 
 const Empty = ({ text }: { text: string }) => <Text style={[type.body, { color: c.muted, paddingVertical: space.lg }]}>{text}</Text>;
 
-export function CopyRow({ label, value }: { label: string; value: string }) {
+const REPORT_SNIPPET = `// Express, Node 18+: report every 5xx to OpsSwipe (method, path, status only)
+const { createHmac } = require('node:crypto');
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    const { OPSSWIPE_REPORT_URL: url, REPORT_SECRET: key, GIT_SHA } = process.env;
+    if (res.statusCode < 500 || !url || !key) return;
+    const body = JSON.stringify({ method: req.method, path: req.originalUrl, status: res.statusCode, release: GIT_SHA });
+    const sig = 'sha256=' + createHmac('sha256', key).update(body).digest('hex');
+    fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-opsswipe-signature': sig }, body }).catch(() => {});
+  });
+  next();
+});`;
+
+export function CopyRow({ label, value, lines = 4 }: { label: string; value: string; lines?: number }) {
   const [copied, setCopied] = useState(false);
   return (
     <View style={styles.copy}>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={type.caption}>{label}</Text>
-        <Text style={type.mono} selectable numberOfLines={4}>{value}</Text>
+        <Text style={[type.mono, lines > 4 && { fontSize: 11, lineHeight: 15 }]} selectable numberOfLines={lines}>{value}</Text>
       </View>
       <Pressable
         accessibilityRole="button"

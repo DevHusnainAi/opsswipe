@@ -30,6 +30,12 @@ export function Activity({ audit, fixed, now }: { audit: AuditEntry[]; fixed: In
     else days.push([label, [a]]);
   }
 
+  // Which approved fix brought it back, so each recovery reads as one story.
+  const fixUsed = (id: string) => {
+    const a = audit.find((x) => x.incident_id === id && x.outcome === 'executed');
+    return a ? fixFor(a.action).label : null;
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <Text style={[type.display, { marginTop: space.md }]} accessibilityRole="header">Activity</Text>
@@ -42,7 +48,7 @@ export function Activity({ audit, fixed, now }: { audit: AuditEntry[]; fixed: In
                 <View style={[styles.dot, { backgroundColor: f.recovered_at ? c.green : c.amber }]} />
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={type.mono}>{f.target_server}</Text>
-                  <Text style={type.caption}>{recoveryLine(f)}</Text>
+                  <Text style={type.caption}>{[fixUsed(f.id), recoveryLine(f)].filter(Boolean).join(' · ')}</Text>
                 </View>
               </View>
             ))}

@@ -63,6 +63,7 @@ Given a failing health check and deploy context, choose exactly one action from 
 - restart: restarts the running process. Prefer it when nothing was deployed recently.
 - reset: hard-reboots a VM. The only option for VM targets.
 - revert_pr: opens a pull request reverting the bad commit. It fixes the code but only helps after it is merged and deployed, so prefer rollback for restoring service.
+- fix_pr: Claude writes the smallest code fix for the bad commit as a pull request. Prefer it over revert_pr when the commit also shipped work worth keeping; like revert_pr, it only helps after merge.
 The reason is one plain sentence under 20 words, naming the evidence (the commit, the timing, the status code). No speculation beyond the input.`;
 
 export function vertexSuggester(projectId: string, accessToken: () => Promise<string>): Suggester {

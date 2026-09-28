@@ -29,7 +29,7 @@ export type Incident = {
   } | null;
 };
 
-export type AuditEntry = { id: number; action: string; target: string; outcome: string; detail: string | null; created_at: string };
+export type AuditEntry = { id: number; incident_id: string | null; action: string; target: string; outcome: string; detail: string | null; created_at: string };
 
 export const supabase = createClient(process.env.EXPO_PUBLIC_SUPABASE_URL!, process.env.EXPO_PUBLIC_SUPABASE_KEY!, {
   auth: { storage: AsyncStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
@@ -55,7 +55,7 @@ export type Service = {
   id: string;
   name: string;
   provider: 'gcp' | 'render';
-  config: { url: string; repo?: string; branch?: string; serviceId?: string; project?: string; zone?: string; instance?: string };
+  config: { url: string; repo?: string; branch?: string; proofPr?: string; serviceId?: string; project?: string; zone?: string; instance?: string };
 };
 export type RenderOption = { id: string; name: string; url: string; repo?: string };
 export type ConnectStatus = {
