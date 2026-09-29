@@ -87,23 +87,27 @@ jobs:
       TEST_COMMAND: npm test
       START_COMMAND: npm start
       PORT: '3000'
+      NODE_IMAGE: node:22
       OPSSWIPE_PROOF_URL: ${proofUrl}
-      SANDBOX: env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL
     steps:
       - uses: actions/checkout@v4
+      # The PR's own code (install scripts, tests, the app) runs only inside containers, on copies of the
+      # repo: it can't see this runner's memory, environment or OIDC token, and can't touch the reporter,
+      # which runs from the untouched checkout. Only OpsSwipe's own script can sign the proof.
+      - name: Tests (in a container)
+        id: tests
+        run: |
+          cp -r "$GITHUB_WORKSPACE" /tmp/test
+          if docker run --rm -e CI=true -v /tmp/test:/app -w /app "$NODE_IMAGE" sh -c "$INSTALL_COMMAND && $TEST_COMMAND"; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"; else echo "passed=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Start this PR's build (in a container)
+        run: |
+          cp -r "$GITHUB_WORKSPACE" /tmp/run
+          docker run -d --name app -p "$PORT:$PORT" -e PORT="$PORT" -v /tmp/run:/app -w /app "$NODE_IMAGE" \
+            sh -c "$INSTALL_COMMAND && $START_COMMAND"
+          for i in $(seq 120); do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 1; done
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      # The PR's own code (install scripts, tests, the app) runs without the variables that mint the OIDC
-      # token, so it can't sign a proof itself; only the last step, OpsSwipe's own script, can.
-      # ponytail: a process of the same OS user could still read the runner's memory; isolate further if needed.
-      - run: $SANDBOX $INSTALL_COMMAND
-      - name: Tests
-        id: tests
-        run: if $SANDBOX $TEST_COMMAND; then echo "passed=true" >> "$GITHUB_OUTPUT"; else echo "passed=false" >> "$GITHUB_OUTPUT"; fi
-      - name: Start this PR's build
-        run: |
-          $SANDBOX $START_COMMAND &
-          for i in $(seq 60); do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 1; done
       - name: Replay production failures and report
         env:
           TESTS_PASSED: \${{ steps.tests.outputs.passed }}

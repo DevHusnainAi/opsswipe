@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from 'jsr:@std/assert@1';
+import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
 import { checkPostmortem, writePostmortem } from '../_shared/postmortem.ts';
 
 const input = {
@@ -32,6 +32,10 @@ Deno.test('the model gets what was recorded and an unusable answer is an error',
     return Promise.resolve({ why: 'The release flipped RELEASE_OK.', prevent: ['Test /api/price'] });
   }, input);
   assertEquals(p, { why: 'The release flipped RELEASE_OK.', prevent: ['Test /api/price'] });
-  assertEquals(JSON.parse(seen).badCommit.message, 'Ship new pricing');
+  assert(seen.startsWith('<incident>') && seen.endsWith('</incident>'), 'input arrives as tagged data');
+  assertEquals(
+    JSON.parse(seen.slice('<incident>'.length, -'</incident>'.length)).badCommit.message,
+    'Ship new pricing',
+  );
   await assertRejects(() => writePostmortem(() => Promise.resolve(null), input), Error, 'could not write');
 });

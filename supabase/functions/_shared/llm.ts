@@ -69,3 +69,8 @@ export const withFallback = (primary: Llm, backup?: Llm): Llm =>
       return await backup(s, u, schema);
     }
     : primary;
+
+// Model input as labelled data: <tag>JSON</tag>. "<" is escaped inside the JSON (still valid JSON), so text
+// from a request path or a commit message can never close the tag and pose as instructions.
+export const asData = (tag: string, value: unknown) =>
+  `<${tag}>\n${JSON.stringify(value, null, 1).replace(/</g, '\\u003c')}\n</${tag}>`;
