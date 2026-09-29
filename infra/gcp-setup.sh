@@ -22,7 +22,7 @@ gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$SA_E
   --role roles/aiplatform.user --condition=None >/dev/null
 gcloud iam service-accounts keys create gcp-sa-key.json --iam-account "$SA_EMAIL"
 
-# 2. Demo VM (runs the demo repo and redeploys main, infra/demo-box.sh), then the same two commands the app shows any user connecting a VM.
+# 2. Demo VM (runs the demo repo and redeploys main, infra/demo-box.sh), then OpsSwipe's reset role on it (what the app's Connect Google Cloud does for any user).
 gcloud compute instances create "$VM" --zone "$ZONE" --machine-type e2-micro \
   --image-family debian-12 --image-project debian-cloud \
   --boot-disk-size 10GB --boot-disk-type pd-standard \

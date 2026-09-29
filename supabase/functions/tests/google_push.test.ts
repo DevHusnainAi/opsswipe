@@ -1,5 +1,15 @@
 import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
-import { accessFromRefresh, consentUrl, GoogleError, grantReset, ROLE_ID, withBinding } from '../_shared/google.ts';
+import {
+  accessFromRefresh,
+  canManage,
+  consentUrl,
+  GoogleError,
+  grantReset,
+  revokeReset,
+  ROLE_ID,
+  withBinding,
+  withoutBinding,
+} from '../_shared/google.ts';
 import { pushMessages, sendPush } from '../_shared/push.ts';
 
 type Call = { url: string; method: string; body?: unknown };
@@ -112,4 +122,38 @@ Deno.test('push: high priority on the incidents channel; dead tokens are reporte
   } finally {
     f.restore();
   }
+});
+
+Deno.test('withoutBinding removes only our member; an emptied binding goes', () => {
+  const me = `serviceAccount:${SA}`;
+  const policy = { etag: 'e', bindings: [{ role, members: [me] }, { role: 'roles/owner', members: ['user:a'] }] };
+  assertEquals(withoutBinding(policy, role, me), {
+    etag: 'e',
+    bindings: [{ role: 'roles/owner', members: ['user:a'] }],
+  });
+  const shared = { bindings: [{ role, members: [me, 'user:b'] }] };
+  assertEquals(withoutBinding(shared, role, me).bindings, [{ role, members: ['user:b'] }]);
+});
+
+Deno.test('revokeReset: unbinds our identity on that VM, and deletes the role only for the last VM', async () => {
+  const routes: Record<string, [number, unknown]> = {
+    'GET /getIamPolicy': [200, { etag: 'e1', bindings: [{ role, members: [`serviceAccount:${SA}`] }] }],
+    'POST /setIamPolicy': [200, {}],
+    'DELETE /roles/': [200, {}],
+  };
+  let f = mockFetch(routes);
+  await revokeReset('tok', vm, SA, false).finally(f.restore);
+  assertEquals(f.calls.find((c) => c.url.endsWith('/setIamPolicy'))!.body, { policy: { etag: 'e1', bindings: [] } });
+  assert(!f.calls.some((c) => c.method === 'DELETE'), 'other VMs in the project still use the role');
+  f = mockFetch(routes);
+  await revokeReset('tok', vm, SA, true).finally(f.restore);
+  assert(f.calls.some((c) => c.method === 'DELETE' && c.url.endsWith(`/projects/my-proj/roles/${ROLE_ID}`)));
+});
+
+Deno.test('canManage: the owner must still hold setIamPolicy on the VM', async () => {
+  let f = mockFetch({ 'POST /testIamPermissions': [200, { permissions: ['compute.instances.setIamPolicy'] }] });
+  assertEquals(await canManage('tok', vm).finally(f.restore), true);
+  assertEquals(f.calls[0].body, { permissions: ['compute.instances.setIamPolicy'] });
+  f = mockFetch({ 'POST /testIamPermissions': [200, {}] }); // Google returns no list when none are held
+  assertEquals(await canManage('tok', vm).finally(f.restore), false);
 });

@@ -132,6 +132,12 @@ export async function grantReset(token: string, vm: GcpVm, serviceAccountEmail: 
     });
   } catch (e) {
     if ((e as { status?: number }).status !== 409) throw e; // 409: the role already exists
+    // It may exist only as deleted (revokeReset removes it; Google keeps it 7 days). Undelete is a
+    // no-op error on a live role.
+    await call(token, `https://iam.googleapis.com/v1/projects/${vm.project}/roles/${ROLE_ID}:undelete`, {
+      method: 'POST',
+      body: '{}',
+    }).catch(() => {});
   }
   const policy = await call(token, `${vmUrl(vm)}/getIamPolicy?optionsRequestedPolicyVersion=3`);
   // The etag in the policy makes this fail rather than overwrite a concurrent change.
@@ -141,4 +147,43 @@ export async function grantReset(token: string, vm: GcpVm, serviceAccountEmail: 
       policy: withBinding(policy, `projects/${vm.project}/roles/${ROLE_ID}`, `serviceAccount:${serviceAccountEmail}`),
     }),
   });
+}
+
+// The reverse of withBinding: our member leaves the role; a binding left empty goes too.
+export function withoutBinding(policy: Policy, role: string, member: string): Policy {
+  const bindings = (policy.bindings ?? [])
+    .map((b) => (b.role === role && !b.condition ? { ...b, members: b.members.filter((m) => m !== member) } : b))
+    .filter((b) => b.members.length > 0);
+  return { ...policy, bindings };
+}
+
+// Removing a VM (or Google, or the account) takes OpsSwipe's reset right away at Google, not just in
+// our database. The custom role goes when it's the project's last OpsSwipe VM.
+export async function revokeReset(token: string, vm: GcpVm, serviceAccountEmail: string, lastInProject: boolean) {
+  const policy = await call(token, `${vmUrl(vm)}/getIamPolicy?optionsRequestedPolicyVersion=3`);
+  await call(token, `${vmUrl(vm)}/setIamPolicy`, {
+    method: 'POST',
+    body: JSON.stringify({
+      policy: withoutBinding(
+        policy,
+        `projects/${vm.project}/roles/${ROLE_ID}`,
+        `serviceAccount:${serviceAccountEmail}`,
+      ),
+    }),
+  });
+  if (lastInProject) {
+    await call(token, `https://iam.googleapis.com/v1/projects/${vm.project}/roles/${ROLE_ID}`, { method: 'DELETE' });
+  }
+}
+
+// Checked before every reset: the owner's own Google account must still be able to manage this VM.
+// OpsSwipe's reset identity is shared, so this is what ties each reset to someone who controls the VM,
+// and losing access in Google Cloud stops OpsSwipe resets the same minute.
+export async function canManage(token: string, vm: GcpVm) {
+  const permission = 'compute.instances.setIamPolicy';
+  const r = await call(token, `${vmUrl(vm)}/testIamPermissions`, {
+    method: 'POST',
+    body: JSON.stringify({ permissions: [permission] }),
+  });
+  return ((r.permissions ?? []) as string[]).includes(permission);
 }

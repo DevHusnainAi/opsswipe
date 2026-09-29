@@ -7,7 +7,7 @@ import { withReturn } from '../_shared/appLink.ts';
 import { isTeam } from '../_shared/codeFix.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
-import { consentUrl, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
+import { consentUrl, GoogleError, grantReset, listProjects, listVms, revokeReset } from '../_shared/google.ts';
 import { commitFiles, fileExists, openFilesPr, prFiles } from '../_shared/github.ts';
 import { aiLlm } from '../_shared/incidents.ts';
 import { writePostmortem } from '../_shared/postmortem.ts';
@@ -30,6 +30,7 @@ import {
   platformSa,
   railwayToken,
   renderKey,
+  type Service,
   storeSecret,
   toTarget,
 } from '../_shared/services.ts';
@@ -51,6 +52,32 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const need = (ok: unknown, message: string) => {
   if (!ok) throw new UserError(message);
 };
+
+// Takes OpsSwipe's reset right on these VMs away at Google (not just in our database), before the
+// Google connection that can do it is gone. A VM another service still watches keeps its binding.
+// Returns the VMs Google refused, so the user can remove the binding by hand.
+async function releaseVms(owner: string, vms: Service[]) {
+  const failed: string[] = [];
+  const token = vms.length ? await googleToken(owner).catch(() => null) : null;
+  for (const s of vms) {
+    const vm = { project: s.config.project, zone: s.config.zone, instance: s.config.instance };
+    const others = (field: string, value: string) =>
+      db.from('services').select('id', { count: 'exact', head: true }).eq('provider', 'gcp')
+        .eq(`config->>${field}`, value).neq('id', s.id);
+    try {
+      const { count: sameVm } = await others('instance', vm.instance).eq('config->>project', vm.project)
+        .eq('config->>zone', vm.zone);
+      if (sameVm) continue;
+      if (!token) throw new Error('no Google access');
+      const { count: inProject } = await others('project', vm.project);
+      await revokeReset(token, vm, platformSa().client_email, !inProject);
+    } catch (e) {
+      console.error('revoke failed:', vm.instance, String(e));
+      failed.push(`${vm.project}/${vm.instance}`);
+    }
+  }
+  return failed;
+}
 
 async function addService(
   owner: string,
@@ -431,25 +458,6 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     }
 
     // Manual fallback: the user ran the two gcloud commands themselves.
-    case 'add_gcp': {
-      const config = {
-        project: String(p.project ?? ''),
-        zone: String(p.zone ?? ''),
-        instance: String(p.instance ?? ''),
-        url: String(p.url ?? ''),
-      };
-      try {
-        validateTarget('gcp', config);
-      } catch (e) {
-        throw new UserError(`Check the details: ${(e as Error).message}.`);
-      }
-      // Proves the two commands were run: OpsSwipe can now see (and only reset) this VM.
-      const status = await getInstanceStatus(config, platformSa()).catch((e) => {
-        throw new UserError((e as Error).message);
-      });
-      return { ...(await addService(owner, String(p.name ?? config.instance), 'gcp', config)), vmStatus: status };
-    }
-
     case 'install_proof': {
       const s = await getService(String(p.serviceId ?? ''));
       need(s && s.owner === owner, 'Service not found.');
@@ -594,10 +602,11 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     case 'remove_service': {
       const s = await getService(String(p.serviceId ?? ''));
       need(s && s.owner === owner, 'Service not found.');
+      const cleanup = s!.provider === 'gcp' ? await releaseVms(owner, [s!]) : [];
       await db.from('services').delete().eq('id', s!.id);
       await deleteSecret(s!.report_secret_id);
       await deleteSecret(s!.sentry_secret_id);
-      return { removed: true };
+      return { removed: true, cleanup };
     }
 
     case 'disconnect': {
@@ -605,13 +614,26 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         ? p.kind as ConnectionKind
         : null;
       need(kind, 'Unknown connection.');
+      // Without Google, OpsSwipe can't check you still control a VM, so its VMs go too (the app says so).
+      let cleanup: string[] = [];
+      if (kind === 'google') {
+        const { data: vms } = await db.from('services').select('*').eq('owner', owner).eq('provider', 'gcp');
+        cleanup = await releaseVms(owner, (vms ?? []) as Service[]);
+        for (const v of (vms ?? []) as Service[]) {
+          await db.from('services').delete().eq('id', v.id);
+          await deleteSecret(v.report_secret_id);
+          await deleteSecret(v.sentry_secret_id);
+        }
+      }
       await forgetConnection(owner, kind!);
-      return { disconnected: kind };
+      return { disconnected: kind, cleanup };
     }
 
     // Delete the account and everything it holds (Play policy: deletion inside the app). Google access
     // is revoked at Google; the GitHub App install is the user's to remove on GitHub.
     case 'delete_account': {
+      const { data: vms } = await db.from('services').select('*').eq('owner', owner).eq('provider', 'gcp');
+      await releaseVms(owner, (vms ?? []) as Service[]);
       for (const kind of ['google', 'github', 'render', 'railway', 'alerts', 'revenuecat'] as const) {
         await forgetConnection(owner, kind);
       }

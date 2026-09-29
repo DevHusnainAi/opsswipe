@@ -5,6 +5,7 @@ import { aiFixPr, badCommit, type Incident, isPro, type Outcome, revertPr } from
 import { db, json } from '../_shared/db.ts';
 import { resetInstance } from '../_shared/gcp.ts';
 import { mergePr } from '../_shared/github.ts';
+import { canManage } from '../_shared/google.ts';
 import { afterFix } from '../_shared/flow.ts';
 import { aiPatcher } from '../_shared/incidents.ts';
 import { canMerge } from '../_shared/proof.ts';
@@ -13,6 +14,7 @@ import { restartRailway, rollbackRailway } from '../_shared/railway.ts';
 import {
   getService,
   githubToken,
+  googleToken,
   ownersFor,
   platformSa,
   railwayToken,
@@ -38,6 +40,9 @@ async function runAction(s: Service, action: Action, inc: Incident): Promise<Out
     return { detail: action === 'rollback' ? await rollbackRailway(t, token) : await restartRailway(t, token) };
   }
   if (t.provider === 'gcp') {
+    if (!(await canManage(await googleToken(s.owner), t))) {
+      throw new Error('your Google account can no longer manage this VM, so OpsSwipe did not reset it');
+    }
     await resetInstance(t, platformSa());
     return { detail: 'vm reboot issued' };
   }

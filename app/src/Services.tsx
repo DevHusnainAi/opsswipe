@@ -83,15 +83,24 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
   const disconnect = (kind: 'github' | 'render' | 'google' | 'railway' | 'revenuecat') =>
     armed(`dc-${kind}`, () =>
       run(`dc-${kind}`, async () => {
-        await connect('disconnect', { kind });
+        const r = await connect<{ cleanup?: string[] }>('disconnect', { kind });
         await load();
+        leftovers(r.cleanup);
       }));
+
+  // Google refused to take OpsSwipe's reset role off a VM: say which, so it can be removed by hand.
+  const leftovers = (vms: string[] = []) =>
+    vms.length > 0 &&
+    setNotice({
+      text: `Google didn't let OpsSwipe remove its reset role from ${vms.join(', ')}. Remove "OpsSwipe reset" in the VM's permissions in Cloud console.`,
+    });
 
   const remove = (s: Service) =>
     armed(`rm-${s.id}`, () =>
       run(`rm-${s.id}`, async () => {
-        await connect('remove_service', { serviceId: s.id });
+        const r = await connect<{ cleanup?: string[] }>('remove_service', { serviceId: s.id });
         await load();
+        leftovers(r.cleanup);
       }));
 
   const saveRepo = (s: Service) =>
@@ -402,8 +411,8 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
                 )}
               </View>
               <Text style={type.caption}>
-                Disconnecting stops new fixes through that account. Google access is revoked at Google, and VM roles you
-                granted stay until you remove them in Cloud console.
+                Disconnecting stops new fixes through that account. Disconnecting Google also removes your VMs from
+                OpsSwipe and takes OpsSwipe&apos;s reset role off each one at Google, then revokes the sign-in.
               </Text>
             </Section>
           </>
