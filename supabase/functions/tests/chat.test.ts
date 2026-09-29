@@ -24,7 +24,7 @@ Deno.test('Add to Slack / Discord ask for a channel webhook and come back to oau
   assertEquals(slack.searchParams.get('redirect_uri'), 'https://x.supabase.co/functions/v1/oauth-callback');
   assertEquals(slack.searchParams.get('state'), 'st8');
   const discord = new URL(chatAuthorizeUrl('discord', 'st8'));
-  assertEquals(discord.searchParams.get('scope'), 'webhook.incoming');
+  assertEquals(discord.searchParams.get('scope'), 'webhook.incoming guilds');
   assertEquals(discord.searchParams.get('client_id'), 'discord-id');
 });
 
@@ -50,6 +50,20 @@ Deno.test('the webhook in the OAuth answer is kept only if it really is Slack or
     );
   } finally {
     f.restore();
+  }
+  // Discord: the server's name, from the user's guild list, instead of "your channel".
+  const real = globalThis.fetch;
+  globalThis.fetch = ((url: string) =>
+    Promise.resolve(Response.json(
+      String(url).endsWith('/users/@me/guilds') ? [{ id: '7', name: 'Other' }, { id: '9', name: 'My Team' }] : {
+        access_token: 'a',
+        webhook: { url: 'https://discord.com/api/webhooks/1/abc', guild_id: '9', name: 'OpsSwipe' },
+      },
+    ))) as typeof fetch;
+  try {
+    assertEquals((await exchangeChat('discord', 'c')).channel, 'My Team');
+  } finally {
+    globalThis.fetch = real;
   }
   f = mockFetch({ ok: true, incoming_webhook: { url: 'https://evil.example/hook', channel: '#x' } });
   try {

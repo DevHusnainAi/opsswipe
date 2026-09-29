@@ -37,9 +37,12 @@ type Props = {
   onMeasure?: (height: number) => void; // top card reports its height so the stack fits it
   onDecline?: (incident: Incident) => void; // close without a fix: decline an agent's proposal, dismiss a false alarm
   onOpen?: (incident: Incident) => void; // the full incident: cause, AI opinion, timeline
+  // A single card in normal layout (onboarding). Without it the card is absolutely positioned, to stack
+  // on the Incidents screen, and takes no space of its own.
+  inline?: boolean;
 };
 
-export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline, onOpen }: Props) {
+export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline, onOpen, inline }: Props) {
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const limit = width * THRESHOLD;
@@ -113,7 +116,12 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline, o
   return (
     <GestureDetector gesture={pan}>
       <Animated.View
-        style={[styles.card, { zIndex: 10 - depth, opacity: depth > 2 ? 0 : 1 - depth * 0.25 }, cardStyle]}
+        style={[
+          styles.card,
+          inline && styles.inline,
+          { zIndex: 10 - depth, opacity: depth > 2 ? 0 : 1 - depth * 0.25 },
+          cardStyle,
+        ]}
         onLayout={(e) => top && onMeasure?.(e.nativeEvent.layout.height)}
         accessible={top}
         importantForAccessibility={top ? 'yes' : 'no-hide-descendants'}
@@ -307,6 +315,7 @@ const styles = StyleSheet.create({
     padding: space.lg,
     gap: space.lg,
   },
+  inline: { position: 'relative' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   time: { marginLeft: 'auto' },
   evidence: { backgroundColor: c.surface2, borderRadius: radius.control, padding: space.md, gap: space.sm },

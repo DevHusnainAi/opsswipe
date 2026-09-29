@@ -247,7 +247,8 @@ export default function App() {
   const decideAlerts = async (enable: boolean) => {
     await AsyncStorage.setItem(ALERTS_ASKED, '1');
     if (enable && Notifications && (await Notifications.requestPermissionsAsync()).granted) {
-      await registerPush().catch(() => {});
+      // Registering the phone for push is a network round trip: done in the background, not before moving on.
+      registerPush().catch(() => {});
     }
     setPhase((await AsyncStorage.getItem(ONBOARDED)) || serviceCount ? 'ready' : 'secure');
   };

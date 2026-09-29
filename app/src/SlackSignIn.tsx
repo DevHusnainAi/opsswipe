@@ -4,8 +4,8 @@
 // sign-in and channel picker; when Slack redirects to oauth-callback it bounces back to the app's own
 // link with a one-time claim, which we catch here and hand to the settings screen.
 import { X } from 'phosphor-react-native';
-import type { ComponentType } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TurboModuleRegistry, View } from 'react-native';
+import { type ComponentType, useState } from 'react';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TurboModuleRegistry, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { appBase } from './env';
 import { c, space, TARGET, type } from './theme';
@@ -15,18 +15,31 @@ import { c, space, TARGET, type } from './theme';
 export const canSignInHere = !!TurboModuleRegistry.get('RNCWebViewModule');
 
 type WebViewProps = {
-  source: { uri: string };
-  userAgent: string;
-  onShouldStartLoadWithRequest: (r: { url: string }) => boolean;
+  source: { uri: string } | { html: string };
+  userAgent?: string;
+  injectedJavaScript?: string;
+  onMessage?: (e: { nativeEvent: { data: string } }) => void;
+  onShouldStartLoadWithRequest?: (r: { url: string }) => boolean;
   style: object;
 };
 
-const DESKTOP_UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36';
+// Slack turns away browsers it thinks are old ("your browser is not supported"), so a desktop Chrome
+// user agent with a fixed, ageing version stops working. The phone's own web view is kept up to date by
+// Android: we read its Chrome version and present as desktop Chrome of that same version.
+const desktopUa = (chrome: string) =>
+  `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} Safari/537.36`;
+const READ_UA = 'window.ReactNativeWebView.postMessage(navigator.userAgent); true;';
+// ponytail: a phone whose web view is itself years old gets a recent version instead; bump the floor yearly.
+const FLOOR = 145;
+const currentChrome = (agent: string) => {
+  const v = /Chrome\/([\d.]+)/.exec(agent)?.[1];
+  return v && Number(v.split('.')[0]) >= FLOOR ? v : `${FLOOR}.0.0.0`;
+};
 
 export function SlackSignIn({ url, onDone }: { url: string; onDone: (back?: string) => void }) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { WebView } = require('react-native-webview') as { WebView: ComponentType<WebViewProps> };
+  const [ua, setUa] = useState<string | null>(null);
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={() => onDone()}>
       <SafeAreaView style={styles.root}>
@@ -36,19 +49,32 @@ export function SlackSignIn({ url, onDone }: { url: string; onDone: (back?: stri
             <X size={22} color={c.text} weight="bold" />
           </Pressable>
         </View>
-        <WebView
-          source={{ uri: url }}
-          userAgent={DESKTOP_UA}
-          // The redirect back to opsswipe:// (or exp:// in Expo Go) carries the one-time claim for the channel.
-          onShouldStartLoadWithRequest={(r) => {
-            if (r.url.startsWith(appBase) || r.url.startsWith('opsswipe:')) {
-              onDone(r.url);
-              return false;
-            }
-            return r.url.startsWith('https://') || r.url.startsWith('about:'); // Slack uses about:blank frames
-          }}
-          style={{ flex: 1 }}
-        />
+        {ua === null ? (
+          <View style={styles.loading}>
+            <ActivityIndicator color={c.green} />
+            {/* Invisible: reports the phone's web view version, then Slack loads with a matching desktop agent. */}
+            <WebView
+              source={{ html: '<html><body></body></html>' }}
+              injectedJavaScript={READ_UA}
+              onMessage={(e) => setUa(desktopUa(currentChrome(e.nativeEvent.data)))}
+              style={styles.hidden}
+            />
+          </View>
+        ) : (
+          <WebView
+            source={{ uri: url }}
+            userAgent={ua}
+            // The redirect back to opsswipe:// (or exp:// in Expo Go) carries the one-time claim for the channel.
+            onShouldStartLoadWithRequest={(r) => {
+              if (r.url.startsWith(appBase) || r.url.startsWith('opsswipe:')) {
+                onDone(r.url);
+                return false;
+              }
+              return r.url.startsWith('https://') || r.url.startsWith('about:'); // Slack uses about:blank frames
+            }}
+            style={{ flex: 1 }}
+          />
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -58,4 +84,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: c.bg },
   header: { flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingHorizontal: space.lg, gap: space.md },
   icon: { width: TARGET, height: TARGET, alignItems: 'center', justifyContent: 'center' },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  hidden: { width: 1, height: 1, opacity: 0 },
 });

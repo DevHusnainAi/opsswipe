@@ -52,7 +52,7 @@ export function chatAuthorizeUrl(kind: AlertKind, state: string) {
   }
   q.set('client_id', env('DISCORD_CLIENT_ID'));
   q.set('response_type', 'code');
-  q.set('scope', 'webhook.incoming');
+  q.set('scope', 'webhook.incoming guilds'); // guilds: only to show which server the alerts go to
   return `https://discord.com/oauth2/authorize?${q}`;
 }
 
@@ -73,8 +73,15 @@ export async function exchangeChat(kind: AlertKind, code: string): Promise<{ url
       headers: { Authorization: `Basic ${btoa(`${env('DISCORD_CLIENT_ID')}:${env('DISCORD_CLIENT_SECRET')}`)}` },
     });
     if (!res.ok) throw new Error(`discord oauth ${res.status}`);
-    url = (await res.json()).webhook?.url;
-    channel = 'your channel'; // Discord's answer names the webhook, not the channel
+    const r = await res.json();
+    url = r.webhook?.url;
+    // Discord's answer has the channel's and server's ids, not names. A channel name needs a bot in the server;
+    // the server name only needs the user's guild list, so show that: "Discord · My Team".
+    const guilds = await fetch('https://discord.com/api/users/@me/guilds', {
+      headers: { Authorization: `Bearer ${r.access_token}` },
+    }).then((g) => (g.ok ? g.json() : []), () => []) as unknown;
+    const server = Array.isArray(guilds) ? guilds.find((g) => g?.id === r.webhook?.guild_id)?.name : undefined;
+    channel = server ?? r.webhook?.name;
   }
   if (typeof url !== 'string' || alertKind(url) !== kind) throw new Error(`${kind} did not return a webhook`);
   return { url, channel: typeof channel === 'string' ? channel : 'your channel' };

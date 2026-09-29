@@ -5,7 +5,8 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { approve } from './api';
 import { Bell, CheckCircle, Crown, Fingerprint, LockKey, Sparkle } from 'phosphor-react-native';
 import { useEffect, useState } from 'react';
-import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Rect } from 'react-native-svg';
 import type { Incident } from './api';
 import { SwipeCard } from './SwipeCard';
 import { c, radius, space, type } from './theme';
@@ -56,8 +57,16 @@ const HERO: Incident = {
 const HERO_NOW = Date.parse(HERO.created_at); // "just now"
 const noop = async () => 'stay' as const;
 
+// The mark (assets/logo-mark.png) drawn as a vector: sharp at any size, and nothing to load, so it shows even
+// when the dev server can't serve images.
 export function Logo({ size = 28 }: { size?: number }) {
-  return <Image source={require('../assets/logo-mark.png')} style={{ width: size, height: size }} accessibilityIgnoresInvertColors />;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 560 560" accessibilityLabel="OpsSwipe">
+      <Rect x={48} y={72} width={250} height={400} rx={40} fill="#27272A" stroke={c.green} strokeWidth={16} transform="rotate(-8 173 272)" />
+      <Rect x={214} y={84} width={300} height={400} rx={44} fill="#ECECEC" transform="rotate(8 364 284)" />
+      <Circle cx={314} cy={141} r={25} fill={c.green} />
+    </Svg>
+  );
 }
 
 export function Welcome({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void }) {
@@ -92,7 +101,7 @@ export function Welcome({ onStart, onSignIn }: { onStart: () => void; onSignIn: 
                 <View style={styles.art}>
                   {s.art === 'card' ? (
                     <View pointerEvents="none" style={styles.hero} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-                      <SwipeCard incident={HERO} depth={0} now={HERO_NOW} onFix={noop} />
+                      <SwipeCard incident={HERO} depth={0} now={HERO_NOW} onFix={noop} inline />
                     </View>
                   ) : (
                     <View style={styles.badge}>
@@ -122,7 +131,14 @@ export function Welcome({ onStart, onSignIn }: { onStart: () => void; onSignIn: 
 }
 
 // Asked once, right after the account exists, with the reason spelled out first.
-export function AlertsPrimer({ onDecide }: { onDecide: (enable: boolean) => void }) {
+export function AlertsPrimer({ onDecide }: { onDecide: (enable: boolean) => Promise<void> }) {
+  // The permission dialog and the setup after it take a moment: show it, so the button never looks stuck.
+  const [busy, setBusy] = useState<boolean | null>(null);
+  const decide = (enable: boolean) => {
+    if (busy !== null) return;
+    setBusy(enable);
+    onDecide(enable).finally(() => setBusy(null));
+  };
   return (
     <View style={[styles.root, { justifyContent: 'center' }]}>
       <View style={{ flex: 1, justifyContent: 'center', gap: space.lg }}>
@@ -136,8 +152,8 @@ export function AlertsPrimer({ onDecide }: { onDecide: (enable: boolean) => void
         </Text>
       </View>
       <View style={styles.actions}>
-        <Button label="Turn on alerts" icon={Bell} onPress={() => onDecide(true)} />
-        <Button label="Not now" kind="secondary" onPress={() => onDecide(false)} />
+        <Button label={busy === true ? 'Turning on alerts…' : 'Turn on alerts'} icon={Bell} onPress={() => decide(true)} />
+        <Button label="Not now" kind="secondary" onPress={() => decide(false)} />
       </View>
     </View>
   );
@@ -209,7 +225,7 @@ export function SecureStep({ onDone }: { onDone: () => void }) {
           </View>
         ) : lock === 'ready' ? (
           <View style={{ width: '100%' }}>
-            <SwipeCard incident={PRACTICE} depth={0} now={HERO_NOW} onFix={practise} />
+            <SwipeCard incident={PRACTICE} depth={0} now={HERO_NOW} onFix={practise} inline />
           </View>
         ) : lock === 'none' ? (
           <View style={styles.badge}>
