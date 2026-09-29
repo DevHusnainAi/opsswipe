@@ -221,13 +221,16 @@ curl -H "Authorization: Bearer ops_..." "https://<ref>.supabase.co/functions/v1/
 - **Discord:** discord.com/developers → New Application → OAuth2 → add the same redirect. No bot needed.
 - `npx supabase secrets set SLACK_CLIENT_ID=… SLACK_CLIENT_SECRET=… DISCORD_CLIENT_ID=… DISCORD_CLIENT_SECRET=…`
 - Slack refuses sign-in in phone browsers (it redirects Android to the Play Store), so Add to Slack runs in an
-  in-app web view that presents as desktop (`app/src/SlackSignIn.tsx`, needs a build with `react-native-webview`);
-  "Add to Slack from a computer" shares the link as a fallback.
+  in-app web view that presents as desktop (`app/src/SlackSignIn.tsx`, needs a build with `react-native-webview`).
+  Every Connect flow (GitHub, Google, Slack, Discord) finishes on the phone that approved it: the redirect carries a
+  one-time claim the same account presents, so a Connect link can't be finished on another device.
 
 ### Claude Code gate
 
 `integrations/claude-code/README.md`: create an agent token in Settings → Agent access, export
-`OPSSWIPE_AGENT_TOKEN`, add the PreToolUse hook. Risky commands wait for your swipe; no answer means not run.
+`OPSSWIPE_AGENT_TOKEN`, add the PreToolUse hook. Only read-only commands run unasked; everything else waits for your
+swipe (`OPSSWIPE_GATE_MODE=deny` switches to a best-effort list of risky commands). No answer, no `jq` or no token
+means not run.
 
 ### Status page and weekly report
 
@@ -278,7 +281,8 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh heal     # between rehearsals
 - [ ] Bad release: the card appears within seconds (reported by the app, not polling); fixes offered are **Reset**,
       **Revert PR** and **Fix with AI**
 - [ ] **Revert PR** opens a real PR containing `.opsswipe/replays/<sha>.json`; the card shows "CI is replaying..."
-- [ ] The proof workflow runs; the card shows "N/N failing production requests now pass" and offers **Merge PR**
+- [ ] The proof workflow runs; the card shows "N/N failing production requests now answer 2xx" and offers **Merge PR**;
+      the incident detail lists each request's status then and now
 - [ ] **Merge PR** merges; CI tests and deploys `main` in about a minute; "back up" arrives. Pushing to the PR after the proof
       makes merge refuse
 - [ ] The whole first outage is free (revert and merge both run); a fix on a second outage: card snaps back, paywall
@@ -293,6 +297,11 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh heal     # between rehearsals
 - [ ] Settings → Discord or Slack: the test message arrives; the next incident posts there too
 - [ ] Sentry (optional): an issue alert on the linked project opens a card with the failing request
 - [ ] Activity: week stats show; Share on a recovery opens the share sheet with the report
+- [ ] Services: each service shows "Last failure report … ago" (or none yet); **New secret** shows the new URL and
+      secret once, the test command (and on a VM the gcloud command); running the test shows "(test)" and opens no card
+- [ ] The first fix after installing asks for the fingerprint to set up the fix key (onboarding's practice swipe does
+      it for new accounts); signed in long ago, the app asks you to sign in again first
+- [ ] Removing a VM service: `gcloud compute instances get-iam-policy <vm>` no longer lists OpsSwipe's account
 - [ ] Activity shows Executed / Paywalled / Failed / Dismissed; the PR row opens the PR
 - [ ] Settings → Delete account (a throwaway account): signed out, services gone, Google access revoked
 - [ ] A second test user (another phone, or reinstall) sees none of your services or incidents

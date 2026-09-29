@@ -36,7 +36,7 @@ Built for the RevenueCat Shipaton 2026 (Next Gen Award), with Claude Code.
 >   yearly plans and a 7-day trial offered once, never mid-outage; entitlements checked on the server, with a
 >   webhook-kept copy so a billing outage never blocks a fix. [Monetization](#monetization-revenuecat).
 > - **Care:** least-privilege cloud access, row-level security, OIDC-signed proofs with the PR's code isolated in
->   Docker, prompts that treat request data as data, 86 backend tests, SQL tenancy tests on Postgres 17, a 100%-safety
+>   Docker, prompts that treat request data as data, 99 backend tests, SQL tenancy tests on Postgres 17, a 100%-safety
 >   eval, CI and CD on every push, privacy policy and terms. Built openly with Claude Code.
 >   [Security model](#security-model), [Quality](#quality).
 
@@ -163,36 +163,42 @@ Every paid plan starts with a 7-day free trial. App stores can't price per seat,
 
 | Threat | Mitigation |
 | --- | --- |
-| Stolen or unlocked phone | Every fix requires biometrics, and the prompt names the consequence |
+| Stolen or unlocked phone | Every fix requires the fingerprint, and the server checks it: the phone keeps a fix key in its secure hardware that Android releases only after the fingerprint, and `execute` refuses a fix without it. A copied session token alone can't run a fix, and enrolling a new key needs a sign-in from the last 15 minutes |
+| Copied session | The session lives in the phone's secure storage (Android Keystore), not plain app storage |
+| Crafted sign-in links | Sign-in uses PKCE: a link carries a one-time code only the app that started the sign-in can exchange; tokens in a link are never accepted |
 | Leaked keys | The app holds only public keys. Users' Render keys and report secrets are encrypted in Supabase Vault; GitHub access uses 1-hour app tokens |
 | Client picks what to run | The phone sends an incident id and an offered fix; the server checks the service's validated config and the incident |
 | Another user's services | Row-level security on every table; a fix can only be claimed by the incident's owner |
-| Handing over cloud keys | Nobody does. Fixes run as OpsSwipe's own identity, which can only `reset` and `get` the VMs you added. Your Google refresh token (used only to list projects and grant that role) is encrypted in Vault and revoked at Google on Disconnect |
+| Handing over cloud keys | Nobody does. Fixes run as OpsSwipe's own identity, which can only `reset` and `get` the VMs you added. A VM can only be added through your own Google account's IAM rights on it, and before every reset OpsSwipe checks your account can still manage that VM. Removing a VM, disconnecting Google or deleting the account takes the role off at Google; the refresh token is encrypted in Vault and revoked at Google on Disconnect |
+| A Connect link sent to someone else | Connections finish only on the phone that approved them, for the account that started them: the redirect carries a one-time claim the same account must present within 15 minutes |
+| Service URL pointing inside a network | Loopback, private, link-local (cloud metadata) and internal addresses are refused when saved and, after resolving the name, before every probe; probes don't follow redirects |
 | Spoofed GitHub installation | Each installation is verified with the installing user's own OAuth token before it's stored |
 | Forged failure reports | Each service signs reports with its own secret (HMAC-SHA256, constant-time check); Sentry webhooks are verified with the integration's Client Secret; RevenueCat webhooks with a shared Authorization value |
 | Alert channel as a way into your network | Only `https://discord.com/api/webhooks/…` and `https://hooks.slack.com/services/…` are accepted, and a test message must succeed before the URL is kept |
 | Account deletion | Settings → Delete account revokes Google, deletes every secret, service, incident and log row (the audit log goes with the account) |
 | Replaying untrusted traffic | Replays run your users' failing requests in CI, never in production; the job has read-only repo access, and only the OpsSwipe proof workflow's OIDC token is accepted, for the exact commit OpsSwipe opened |
 | One stray error at 3am | A single reported 500 is held; a second within a minute pages you. Health checks retry once before paging |
-| Forged CI proofs | Proofs carry a GitHub Actions OIDC token, verified against GitHub's keys; no secrets live in your repo. The PR's own code (install, tests, the app) runs in Docker on a copy of the repo, so it can't reach the token or the reporter |
+| Forged CI proofs | Proofs carry a GitHub Actions OIDC token, verified against GitHub's keys; no secrets live in your repo. The PR's own code runs in locked-down containers (normal user, no capabilities, tests with no network, the app on a network with no way out), never beside the token. OpsSwipe grades the run itself: every failing request the PR carries must now answer 2xx (a 4xx or a redirect is not a fix), and GitHub is asked which commit the PR points at |
 | Prompt injection through requests | Failing requests and commit messages reach the AI as escaped, tagged data, and every prompt says to treat them as data; the AI's answer is checked by code (allowed fixes only, only the bad commit's files plus one test path, never CI config) |
-| AI agents going rogue | Agents only propose; the Claude Code hook blocks a risky command when nobody answers or OpsSwipe is unreachable |
+| AI agents going rogue | Agents only propose. The Claude Code hook is default-deny (only read-only commands run unasked) and fails closed: no `jq`, no token, bad input or no answer blocks the command |
 | Teammates | They see and can fix the owner's incidents, never services, keys or connections (row-level security, proven by a SQL test) |
 | Merging something other than what was proven | Proof is bound to the PR's head commit, and the merge is pinned to that `sha` (GitHub returns 409 otherwise) |
 | Replay causing side effects | Requests are replayed only against the PR build in CI, never production; samples carry no headers or cookies |
-| Double swipe | The incident is claimed atomically; the second request gets 409 |
-| Tampered state | Row-level security: clients only read their own audit and usage rows; every write goes through the server |
+| Double swipe | The incident is claimed atomically; the second request gets 409. A fix whose function dies mid-run is handed back after 5 minutes, so a service is never stuck |
+| Tampered state | Row-level security: clients only read their own audit and usage rows; every write goes through the server (a SQL test grants clients full rights and checks every write is still refused) |
 
 More in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Quality
 
-- **Tests:** 86 Deno tests (providers incl. Railway, revenue at risk, proof-workflow pinning, report confirmation, Connect keys and OIDC, Google grant, push, alert-webhook allowlist,
+- **Tests:** 99 Deno tests (providers incl. Railway, revenue at risk, proof-workflow pinning, report confirmation, Connect keys and OIDC, Google grant, push, alert-webhook allowlist,
   Sentry and RevenueCat webhooks, confirm-before-paging, rollback, revert and merge PRs, signing, sample scrubbing, proof
   binding, the incident flow incl. failed proofs, suggestions), SQL tests for the free-outage meter and tenant isolation
   (row-level security, Vault access) on Postgres 17, 2 tests for the demo service's reporting, and app tests for the
   recovery timeline, incident report and weekly stats. Since then: regression-test patches, postmortems, the alert
-  inbox parser, status page, weekly report, escalation, chat OAuth and command approvals, all with tests.
+  inbox parser, status page, weekly report, escalation, chat OAuth and command approvals, all with tests. A SQL
+  hardening test (client writes refused with full grants, RLS on every table, the team audit policy, the team cap),
+  and a shell test that the Claude Code hook fails closed and can't be dodged.
 - **Eval:** 14 labeled incident scenarios score fix suggestions on allowlist safety (must be 100%), correctness and concision.
   `deno task eval` runs the rules in CI; `deno task eval nvidia` (or `openai`, `vertex`) scores a model. With the
   structured prompt, NVIDIA Nemotron answered 10 of 10 cases correctly (4 more fell back to rules when the API was busy).
@@ -219,6 +225,7 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh release   # a bad release: re
 ## Roadmap
 
 - One-tap Connect Railway and RevenueCat through OAuth (no pasted keys)
+- Connect to the probed IP after the DNS check (closes DNS rebinding); a signed-in-phones list to revoke fix keys
 - More fixes: scale up, restart a Kubernetes deployment, roll back on Fly, Vercel and Coolify
 - Escalation by phone call or SMS; on-call rotations; two-person approval for risky fixes
 - An MCP server so any agent (Cursor, Claude Desktop) can ask for approval

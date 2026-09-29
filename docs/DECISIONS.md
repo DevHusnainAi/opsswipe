@@ -39,9 +39,11 @@ build in CI; production is verified by watching it recover. Samples are scrubbed
 values redacted, bodies capped at 2 KB.
 
 ## 8. Rules first, AI second
-A deterministic rule picks the fix and writes the reason immediately (recent deploy: roll back, otherwise restart). Claude Opus 5
-on Vertex AI may refine it in the background, constrained by a schema to the allowed fixes; any error or refusal keeps the
-rule's answer. A labeled eval gates the rules in CI at 100%.
+A deterministic rule picks the fix and writes the reason immediately (a known bad release: roll back or revert;
+otherwise restart or reboot). An AI model (NVIDIA Nemotron with a Groq backup, or Claude on Vertex) gives a second
+opinion in the background; its words replace the rule's only when it picks the same fix, and its view is stored and
+shown either way (#23, #24). Measured on the eval, models picked worse fixes, so they explain, rules decide. A labeled
+eval gates the rules in CI at 100%.
 
 ## 9. Free, personal demo infrastructure
 A GCP e2-micro VM (free tier) and a Render free web service, both in personal accounts. OpsSwipe's GCP identity can only reset and read that one VM.
@@ -178,8 +180,11 @@ next to the repo's tests): it can't rewrite or weaken an existing test, and a te
 ## 27. The proof runs the PR's code in containers
 The proof workflow must run the PR's code (install scripts, tests, the app) and must also sign its result with an OIDC
 token. In one job, the PR's code could mint that token and sign a fake "3/3 passed". Now install, tests and the app run
-in Docker on copies of the repo: they can't see the runner's memory, environment or token, and can't touch the
-reporter, which runs from the untouched checkout. Verified on a throwaway PR in the demo repo.
+in Docker on copies of the repo: they can't see the runner's memory, environment or token. Update (#34): the containers
+are locked down, and the claim was narrowed to what's true: on `pull_request` GitHub runs the workflow file as the PR
+has it, so this guards against a PR's code, not against someone who can already push workflows (they can mint tokens
+anyway). `pull_request_target` would load the workflow from `main`, but hands fork PRs the token: GitHub's "pwn
+request" pattern. The sha pin is what makes a forged verdict useless.
 
 ## 28. Prompts as specifications, input as escaped data
 The three prompts (triage, fix, postmortem) follow one structure: role, what happens to the answer, input, rules, output,
@@ -210,3 +215,24 @@ quiet and is counted in the weekly report. That turns "only 2 to 5% of pages nee
 ## 33. The status page lives on GitHub Pages
 Supabase serves HTML as plain text without a custom domain, so the status data is a public JSON function and the page
 is one static HTML file on GitHub Pages. It shows service names, up or down and daily downtime, never errors or paths.
+
+## 34. The Sep 29 security audit, fixed at the root
+An outside line-by-line audit found 28 issues. Each fix went where the cause was, not where the symptom showed:
+- **A VM reset is tied to someone who controls the VM.** The manual add path proved access with OpsSwipe's shared
+  identity, so anyone could add a VM another user had connected. It's gone; adding needs your own IAM rights on the VM,
+  every reset first checks your Google account still manages it, and removing takes the role off at Google.
+- **Connections finish on the phone that approved them.** A state names who started a flow, but whoever gets the link
+  can approve on their own account. The callback now keeps the result under a one-time claim that only reaches the
+  device that approved, and only the account that started it can present it.
+- **The fingerprint is checked by the server.** The phone's fix key is released by its secure hardware only after the
+  fingerprint; `execute` requires it. Enrolling a key needs a fresh sign-in (JWT `amr`), so a copied refresh token
+  can't add its own. Sign-in uses PKCE, so a crafted link can't swap the account.
+- **OpsSwipe grades the proof.** CI reports what each request returns now; a request counts only if it was 5xx and now
+  answers 2xx, judged against the requests the PR carries. A 4xx that hides the bug isn't "proven". Trade-off: a
+  correct "500 becomes 400 on bad input" fix shows as not proven, with its statuses, and merges on GitHub instead.
+- **The Claude Code hook is default-deny and fails closed.** A denylist over shell strings can't be made safe.
+- **Nothing gets stuck, nothing gets overwritten.** Everything after the claim is inside one try, and the health check
+  hands back a fix whose function died; `incidents.context` updates merge in the database, so concurrent writers keep
+  each other's keys. Caps (team size) live in the database.
+- **Reports can be checked.** Each service shows when a signed report last arrived, the secret can be re-issued, and a
+  test report checks the whole path: the live demo lost an hour to a VM holding an old secret.
