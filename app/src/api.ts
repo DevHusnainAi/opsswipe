@@ -78,7 +78,7 @@ export type ConnectStatus = {
   github: { connected: boolean; account: string | null; installUrl: string };
   render: { connected: boolean };
   railway: { connected: boolean };
-  alerts: { connected: boolean; kind: 'discord' | 'slack' | null };
+  alerts: { connected: boolean; kind: 'discord' | 'slack' | null; channel?: string | null };
   revenuecat: { connected: boolean; project: string | null };
   google: { connected: boolean; account: string | null; available: boolean };
   gcpIdentity: string | null;

@@ -8,19 +8,23 @@ import {
   ChatCircleText,
   BellSlash,
   CreditCard,
+  DiscordLogo,
   Crown,
   GithubLogo,
   Info,
   ShieldCheck,
   SignOut,
+  SlackLogo,
   Trash,
   UserCircle,
 } from 'phosphor-react-native';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AgentAccess } from './AgentAccess';
 import { type ConnectStatus, connect, supabase } from './api';
-import { inExpoGo, Notifications } from './env';
+import * as WebBrowser from 'expo-web-browser';
+import { appBase, appLink, inExpoGo, Notifications } from './env';
+import { paramsOf } from './format';
 import { c, radius, space, TARGET, type } from './theme';
 import { Section } from './ui';
 
@@ -47,7 +51,6 @@ export function Settings(p: Props) {
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [channel, setChannel] = useState<ConnectStatus['alerts'] | null>(null);
-  const [hookUrl, setHookUrl] = useState('');
 
   const load = useCallback(async () => {
     const user = (await supabase.auth.getUser()).data.user;
@@ -84,6 +87,15 @@ export function Settings(p: Props) {
       setBusy(null);
     }
   };
+
+  // The server stores the channel when the provider calls back, so whatever the browser returns,
+  // looking again (run's load) shows the result.
+  const addChat = (kind: 'slack' | 'discord') =>
+    run(kind, async () => {
+      const { url } = await connect<{ url: string }>('alerts_start', { kind, returnTo: appBase });
+      const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
+      if (r.type === 'success' && paramsOf(r.url).error) throw new Error(`${kind === 'slack' ? 'Slack' : 'Discord'} did not finish. Try again.`);
+    });
 
   const version = Constants.expoConfig?.version ?? '1.0.0';
 
@@ -180,15 +192,18 @@ export function Settings(p: Props) {
             <Action icon={ArrowSquareOut} label="Open system notification settings" onPress={() => Linking.openSettings()} />
           )}
         </View>
-        {/* A second channel: when the phone is on silent, the team channel still sees it. */}
+        {/* A second channel: when the phone is on silent, the team channel still sees it. One click: the
+            provider asks which channel, and the server keeps the webhook it hands back. */}
         <View style={styles.group}>
           <Row
             icon={ChatCircleText}
             tint={channel?.connected ? c.green : undefined}
-            title={channel?.connected ? `Also posting to ${channel.kind === 'slack' ? 'Slack' : 'Discord'}` : 'Discord or Slack'}
+            title={channel?.connected
+              ? `Posting to ${channel.kind === 'slack' ? 'Slack' : 'Discord'}${channel.channel ? ` · ${channel.channel}` : ''}`
+              : 'Slack or Discord'}
             body={channel?.connected
               ? 'Incidents, recoveries and proven fixes post there too.'
-              : 'Paste an incoming webhook URL to post every alert to a channel as well.'}
+              : 'Post every alert to a team channel as well. You pick the channel; nothing to copy.'}
           />
           {channel?.connected ? (
             <Action
@@ -198,30 +213,10 @@ export function Settings(p: Props) {
               onPress={() => run('hook', async () => void (await connect('set_alerts', { url: '' })))}
             />
           ) : (
-            <View style={{ gap: space.sm, paddingBottom: space.md }}>
-              <TextInput
-                value={hookUrl}
-                onChangeText={setHookUrl}
-                placeholder="https://discord.com/api/webhooks/…"
-                placeholderTextColor={c.muted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry
-                style={styles.input}
-                accessibilityLabel="Discord or Slack webhook URL"
-              />
-              <Action
-                icon={ChatCircleText}
-                label={busy === 'hook' ? 'Sending a test message…' : 'Connect channel'}
-                primary
-                onPress={() =>
-                  run('hook', async () => {
-                    await connect('set_alerts', { url: hookUrl.trim() });
-                    setHookUrl('');
-                    return 'Connected. A test message was posted.';
-                  })}
-              />
-            </View>
+            <>
+              <Action icon={SlackLogo} label={busy === 'slack' ? 'Waiting for Slack…' : 'Add to Slack'} primary onPress={() => addChat('slack')} />
+              <Action icon={DiscordLogo} label={busy === 'discord' ? 'Waiting for Discord…' : 'Add to Discord'} onPress={() => addChat('discord')} />
+            </>
           )}
         </View>
       </Section>
@@ -280,14 +275,4 @@ const styles = StyleSheet.create({
   },
   note: { color: c.green, backgroundColor: c.greenTint, padding: space.md, borderRadius: radius.control },
   noteError: { color: c.red, backgroundColor: c.redTint },
-  input: {
-    minHeight: TARGET,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.surface2,
-    color: c.text,
-    paddingHorizontal: space.md,
-    fontFamily: 'GeistMono',
-  },
 });

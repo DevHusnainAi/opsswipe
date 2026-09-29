@@ -1,4 +1,5 @@
-// GitHub (after installing the OpsSwipe GitHub App) and Google (after "Connect Google Cloud")
+// GitHub (after installing the OpsSwipe GitHub App), Google (after "Connect Google Cloud") and Slack/Discord
+// (after "Add to Slack/Discord")
 // redirect here. When the state is one the server issued, the connection is finished right here, for
 // the user who started it; the app only needs to look again. Otherwise the one-time code is bounced
 // back to the app, which hands it to /connect.
@@ -7,7 +8,7 @@
 // which the browser carries across this redirect untouched.
 import { returnBase } from '../_shared/appLink.ts';
 import { installUrl } from '../_shared/githubApp.ts';
-import { completeGithub, completeGoogle, newState, takeState } from '../_shared/oauthState.ts';
+import { completeChat, completeGithub, completeGoogle, newState, takeState } from '../_shared/oauthState.ts';
 
 const ALLOWED = ['code', 'installation_id', 'setup_action', 'state', 'error', 'error_code'];
 
@@ -37,7 +38,8 @@ Deno.serve(async (req) => {
           const next = [await newState(pending.owner, 'github'), ...(state?.split('~').slice(1) ?? [])].join('~');
           return new Response(null, { status: 302, headers: { Location: `${installUrl()}?state=${next}` } });
         }
-      } else await completeGoogle(pending.owner, code!);
+      } else if (pending.kind === 'google') await completeGoogle(pending.owner, code!);
+      else await completeChat(pending.owner, pending.kind, code!);
       out.delete('code');
       out.set('done', pending.kind);
     } catch (e) {

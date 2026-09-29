@@ -2,7 +2,7 @@
 // Every action runs for the caller only (verified JWT). Keys go straight into Vault; the app gets
 // back only non-secret info, plus each service's report secret exactly once, at creation.
 import { hashToken, newToken } from '../_shared/agents.ts';
-import { alertKind, postAlert } from '../_shared/alerts.ts';
+import { alertKind, chatAuthorizeUrl } from '../_shared/alerts.ts';
 import { withReturn } from '../_shared/appLink.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
@@ -12,7 +12,7 @@ import { aiLlm } from '../_shared/incidents.ts';
 import { writePostmortem } from '../_shared/postmortem.ts';
 import type { PrRef } from '../_shared/proof.ts';
 import { authorizeUrl, installUrl, listRepos } from '../_shared/githubApp.ts';
-import { completeGithub, completeGoogle, newState } from '../_shared/oauthState.ts';
+import { completeGithub, completeGoogle, newState, saveAlerts } from '../_shared/oauthState.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
 import { idsFromLink, listDeployments } from '../_shared/railway.ts';
 import { keyProject, RevenueError, revenuePerHour } from '../_shared/revenue.ts';
@@ -109,7 +109,11 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         },
         render: { connected: !!rd?.secret_id },
         railway: { connected: !!rw?.secret_id },
-        alerts: { connected: !!al?.secret_id, kind: al?.account ?? null },
+        alerts: {
+          connected: !!al?.secret_id,
+          kind: al?.account?.split(' ')[0] ?? null,
+          channel: al?.account?.split(' ').slice(1).join(' ') || null,
+        },
         revenuecat: { connected: !!rc?.secret_id, project: rc?.account ?? null },
         google: { connected: !!gc?.secret_id, account: gc?.account ?? null, available: !!env('GOOGLE_CLIENT_ID') },
         gcpIdentity: env('GCP_SA_KEY') ? platformSa().client_email : null,
@@ -150,30 +154,29 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       return { render: { connected: true }, services };
     }
 
-    // Discord or Slack as a second alert channel. A test message proves the URL works before it's kept.
+    // Discord or Slack as a second alert channel, in one click: the provider asks which channel and
+    // oauth-callback stores the webhook it returns. set_alerts with an empty url stops posting (a pasted
+    // webhook URL still works, for self-hosted setups).
+    case 'alerts_start': {
+      const kind = p.kind === 'slack' ? 'slack' : 'discord';
+      need(
+        env(kind === 'slack' ? 'SLACK_CLIENT_ID' : 'DISCORD_CLIENT_ID'),
+        `Add to ${kind === 'slack' ? 'Slack' : 'Discord'} is not set up on this OpsSwipe server.`,
+      );
+      return { url: chatAuthorizeUrl(kind, withReturn(await newState(owner, kind), p.returnTo)) };
+    }
+
     case 'set_alerts': {
       const url = String(p.url ?? '').trim();
-      const old = await connection(owner, 'alerts');
       if (!url) {
         await forgetConnection(owner, 'alerts');
         return { alerts: { connected: false } };
       }
-      const kind = alertKind(url);
-      need(
-        kind,
-        'Paste a Discord or Slack incoming webhook URL (https://discord.com/api/webhooks/… or https://hooks.slack.com/services/…).',
-      );
-      await postAlert(url, {
-        title: 'OpsSwipe alerts are on',
-        body: 'Incidents, recoveries and proven fixes will post here.',
-      })
-        .catch(() => {
-          throw new UserError(`${kind === 'discord' ? 'Discord' : 'Slack'} rejected that webhook URL.`);
-        });
-      const secretId = await storeSecret(url);
-      await db.from('connections').upsert({ owner, kind: 'alerts', secret_id: secretId, account: kind });
-      await deleteSecret(old?.secret_id);
-      return { alerts: { connected: true, kind } };
+      need(alertKind(url), 'Paste a Discord or Slack incoming webhook URL.');
+      const r = await saveAlerts(owner, url, 'your channel').catch(() => {
+        throw new UserError('That webhook URL was rejected.');
+      });
+      return { alerts: { connected: true, ...r } };
     }
 
     // Revenue at risk: the user's own RevenueCat v2 secret key (Charts & Metrics read) and project id.
