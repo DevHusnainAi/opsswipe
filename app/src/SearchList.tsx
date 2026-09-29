@@ -38,7 +38,7 @@ export function SearchList<T>(
       <ScrollView style={[styles.list, { maxHeight: height }]} nestedScrollEnabled keyboardShouldPersistTaps="handled">
         {pinned}
         {shown.map(render)}
-        {shown.length === 0 && <Text style={[type.caption, { padding: space.md }]}>Nothing matches “{q}”.</Text>}
+        {!!needle && shown.length === 0 && <Text style={[type.caption, { padding: space.md }]}>Nothing matches “{q}”.</Text>}
       </ScrollView>
     </View>
   );
