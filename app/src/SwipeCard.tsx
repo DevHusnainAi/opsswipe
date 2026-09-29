@@ -149,7 +149,11 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline, o
         >
           <Text style={type.title}>{incident.title}</Text>
           <Text style={type.monoStrong}>{incident.target_server}</Text>
-          {onOpen && <Text style={[type.label, { color: c.green }]}>Details: cause, AI opinion, timeline</Text>}
+          {onOpen && (
+            <Text style={[type.label, { color: c.green }]}>
+              {incident.context?.pr ? 'Read the diff before you merge' : 'Details: cause, AI opinion, timeline'}
+            </Text>
+          )}
         </Pressable>
 
         <View style={styles.evidence}>

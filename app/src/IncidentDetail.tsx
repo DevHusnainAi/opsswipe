@@ -4,13 +4,15 @@
 import { ArrowSquareOut, X } from 'phosphor-react-native';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { AuditEntry, Incident } from './api';
+import { connect, type AuditEntry, type Incident } from './api';
 import { fixFor } from './fixes';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { atRisk, formatDuration, lostLine, recoveryLine } from './format';
 import { PROVIDER } from './SwipeCard';
 import { TARGET, c, radius, space, type } from './theme';
 import { Chip } from './ui';
+
+type PrFile = { file: string; status: string; additions: number; deletions: number; patch: string };
 
 const clock = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
 const shortSha = (sha?: string) => (sha ? sha.slice(0, 7) : null);
@@ -37,6 +39,13 @@ export function IncidentDetail(
   const note = aiNote(ctx, i.action);
   const proof = ctx.proof && ctx.pr && ctx.proof.headSha === ctx.pr.headSha ? ctx.proof : null;
   const cost = atRisk(i);
+  // The PR's diff, read here before swiping Merge (the swipe and fingerprint are the review).
+  const [diff, setDiff] = useState<PrFile[] | string | null>(null);
+  const prNumber = ctx.pr?.number;
+  useEffect(() => {
+    if (!prNumber) return;
+    connect<{ files: PrFile[] }>('pr_diff', { incidentId: i.id }).then((r) => setDiff(r.files), (e) => setDiff(String(e.message ?? e)));
+  }, [i.id, prNumber]);
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -116,6 +125,29 @@ export function IncidentDetail(
             </Block>
           )}
 
+          {ctx.pr && (
+            <Block title="Changes">
+              {diff === null && <Text style={type.caption}>Loading the diff…</Text>}
+              {typeof diff === 'string' && <Text style={type.caption}>{diff}</Text>}
+              {Array.isArray(diff) && diff.map((f) => (
+                <View key={f.file} style={styles.file}>
+                  <Text style={type.monoStrong}>
+                    {f.file}  <Text style={{ color: c.green }}>+{f.additions}</Text> <Text style={{ color: c.red }}>−{f.deletions}</Text>
+                  </Text>
+                  <ScrollView horizontal>
+                    <Text style={type.monoCaption}>
+                      {f.patch.split('\n').map((line, n) => (
+                        <Text key={n} style={{ color: line.startsWith('+') ? c.green : line.startsWith('-') ? c.red : c.muted }}>
+                          {line}{'\n'}
+                        </Text>
+                      ))}
+                    </Text>
+                  </ScrollView>
+                </View>
+              ))}
+            </Block>
+          )}
+
           <Block title="Timeline">
             <Line when={i.created_at} what="Detected and confirmed" />
             {steps.map((a) => (
@@ -167,4 +199,5 @@ const styles = StyleSheet.create({
   block: { backgroundColor: c.surface, borderRadius: radius.card, padding: space.lg, gap: space.sm },
   list: { gap: 4, marginTop: space.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  file: { gap: space.xs, paddingTop: space.xs },
 });

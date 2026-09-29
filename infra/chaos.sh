@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Break a demo target on purpose so OpsSwipe opens an incident. gcloud must be on your personal account.
 #   ./infra/chaos.sh gcp       stops the demo app on the GCP VM (a reset brings it back on boot)
-#   ./infra/chaos.sh release   pushes a bad release of the demo repo; CI tests and deploys it in ~1 min
-#                              and reports its 500s (revert or AI fix PR, proven in CI, then merge)
+#   ./infra/chaos.sh release   pushes a bad release of the demo repo (it breaks /api/price, which the tests
+#                              don't cover); CI deploys it in ~1 min, then a few visits make it report its 500s
+#                              (revert or AI fix PR, proven in CI, then merge). DEMO_URL defaults to the demo VM.
 #   ./infra/chaos.sh heal      pushes a good release again, to reset between rehearsals
 #   ./infra/chaos.sh render    wedges a Render deploy of the demo (a restart brings it back)
 set -euo pipefail
@@ -18,8 +19,15 @@ case "${1:-}" in
     gcloud compute ssh "${VM:-opsswipe-demo}" --zone "${ZONE:-us-central1-a}" \
       --command 'sudo systemctl stop opsswipe-demo && echo "demo app stopped on $(hostname)"' ;;
   release)
-    release true false "Ship new homepage"
-    echo "bad release pushed; CI deploys it in ~1 min" ;;
+    release true false "Ship new pricing"
+    url="${DEMO_URL:-http://34.135.145.87}/api/price"
+    echo "bad release pushed; waiting for CI to deploy it…"
+    for _ in $(seq 36); do
+      [ "$(curl -s -o /dev/null -w '%{http_code}' "$url")" = 500 ] && break
+      sleep 5
+    done
+    # Two reported failures within a minute page the phone; a third in case one report is lost.
+    for i in 1 2 3; do echo "visit $i: $(curl -s -o /dev/null -w '%{http_code}' "$url")"; sleep 20; done ;;
   heal)
     release false true "Restore homepage"
     echo "good release pushed" ;;

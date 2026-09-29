@@ -4,10 +4,18 @@
 import { db, env, json } from '../_shared/db.ts';
 import { isActive, proFromRow } from '../_shared/entitlement.ts';
 import { resetInstance } from '../_shared/gcp.ts';
-import { branchHead, commitFiles, commitMessage, mergePr, openFilesPr, openRevertPr } from '../_shared/github.ts';
+import {
+  branchHead,
+  commitFiles,
+  commitMessage,
+  mergePr,
+  openFilesPr,
+  openRevertPr,
+  testExample,
+} from '../_shared/github.ts';
 import { afterFix } from '../_shared/flow.ts';
 import { aiPatcher } from '../_shared/incidents.ts';
-import { checkPatch } from '../_shared/patch.ts';
+import { checkPatch, regressionTestPath } from '../_shared/patch.ts';
 import { canMerge, type Proof, type PrRef } from '../_shared/proof.ts';
 import type { ReplaySample } from '../_shared/replay.ts';
 import { type Deploy, listDeploys, pickRollback, restartService, rollbackToPrevious } from '../_shared/render.ts';
@@ -79,14 +87,17 @@ async function aiFixPr(t: Target, sha: string, inc: Incident, token: string): Pr
   if (!patcher) throw new Error('AI fixes are not switched on for this server');
   const branch = t.branch ?? 'main';
   const commit = await commitMessage(t.repo!, sha, token);
+  const example = await testExample(t.repo!, branch, token);
   const input = {
     repo: t.repo!,
     commit: { sha, message: commit },
     symptom: inc.metric,
     failing: inc.context.replay ?? [],
     files: await commitFiles(t.repo!, sha, branch, token),
+    test: example ? { example, path: regressionTestPath(example.path, sha) } : null,
   };
   const patch = checkPatch(await patcher(input), input);
+  const test = patch.files.find((f) => f.path === input.test?.path);
   const short = sha.slice(0, 7);
   const pr = await openFilesPr({
     repo: t.repo!,
@@ -101,8 +112,13 @@ async function aiFixPr(t: Target, sha: string, inc: Incident, token: string): Pr
       `**Broke in:** \`${short}\` ${commit.split('\n')[0]}`,
       `**Fix:** ${patch.summary}`,
       '',
-      `CI replays the ${input.failing.length} failing production request(s) against this PR;`,
-      'OpsSwipe only lets you merge once they all pass. Review the change like any other PR.',
+      '### How this is proven',
+      test
+        ? `- Your test suite runs, including a new regression test for the failing requests: \`${test.path}\``
+        : '- Your test suite runs (no test file found to model a regression test on)',
+      `- CI starts this PR's build and replays the ${input.failing.length} production request(s) that failed`,
+      '',
+      'OpsSwipe only lets you merge once both pass. Review the change like any other PR.',
     ].join('\n'),
     files: [
       ...patch.files,

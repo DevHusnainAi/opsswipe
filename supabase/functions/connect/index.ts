@@ -7,7 +7,8 @@ import { withReturn } from '../_shared/appLink.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
 import { consentUrl, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
-import { openFilesPr } from '../_shared/github.ts';
+import { openFilesPr, prFiles } from '../_shared/github.ts';
+import type { PrRef } from '../_shared/proof.ts';
 import { authorizeUrl, installUrl, listRepos } from '../_shared/githubApp.ts';
 import { completeGithub, completeGoogle, newState } from '../_shared/oauthState.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
@@ -348,6 +349,15 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         detail: 'dismissed as a false alarm',
       });
       return { dismissed: true };
+    }
+
+    // The incident's PR diff, to read on the phone before swiping Merge.
+    case 'pr_diff': {
+      const { data } = await db.from('incidents').select('context').eq('id', String(p.incidentId ?? ''))
+        .eq('owner', owner).maybeSingle();
+      const pr = (data?.context as { pr?: PrRef } | undefined)?.pr;
+      need(pr, 'This incident has no pull request.');
+      return { files: await prFiles(pr!, await githubToken(owner)) };
     }
 
     // Sign-out: this phone stops receiving this account's alerts.

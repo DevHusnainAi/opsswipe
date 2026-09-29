@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from 'jsr:@std/assert@1';
-import { checkPatch, type PatchInput } from '../_shared/patch.ts';
+import { checkPatch, type PatchInput, regressionTestPath } from '../_shared/patch.ts';
 
 const input: PatchInput = {
   repo: 'me/app',
@@ -46,4 +46,22 @@ Deno.test('a declined fix becomes a plain error that points to the revert', () =
     Error,
     'Try a revert instead',
   );
+});
+
+Deno.test('the regression test lands only at the path OpsSwipe picked, and never on its own', () => {
+  const path = regressionTestPath('server.test.js', 'a'.repeat(40));
+  assertEquals(path, 'opsswipe-aaaaaaa.test.js');
+  assertEquals(regressionTestPath('test/api/price.spec.ts', 'b'.repeat(40)), 'test/api/opsswipe-bbbbbbb.test.ts');
+  const withTest = { ...input, test: { example: { path: 'server.test.js', content: 'test()' }, path } };
+  const p = checkPatch({
+    summary: 's',
+    files: [
+      { path: 'server.js', content: 'const ok = true;\n' },
+      { path, content: 'test("price is back")' },
+      { path: 'server.test.js', content: '// weakened' }, // an existing test: not the AI's to rewrite
+      { path: 'other.test.js', content: 'test()' }, // a test somewhere else
+    ],
+  }, withTest);
+  assertEquals(p.files.map((f) => f.path), ['server.js', path]);
+  assertThrows(() => checkPatch({ summary: 's', files: [{ path, content: 'test()' }] }, withTest), Error, 'confident');
 });

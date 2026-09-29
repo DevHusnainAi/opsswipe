@@ -4,8 +4,9 @@
 const http = require('node:http');
 const { createHmac, timingSafeEqual } = require('node:crypto');
 
-// Bad-release demo: commit this as false and push (infra/chaos.sh release). The host deploys it,
-// requests fail, and OpsSwipe offers a revert or AI fix PR, proven in CI before it can merge.
+// Bad-release demo: commit this as false and push (infra/chaos.sh release). It breaks only the
+// pricing API, a path the tests don't cover, so CI passes and deploys it, like a real regression.
+// Requests fail, and OpsSwipe offers a revert or AI fix PR, proven in CI before it can merge.
 const RELEASE_OK = true;
 
 const KEY = Buffer.from(process.env.CHAOS_KEY ?? '');
@@ -19,7 +20,10 @@ const keyOk = (given = '') => {
 
 const page = `<!doctype html><meta name=viewport content="width=device-width"><title>opsswipe-demo-web</title>
 <body style="background:#0A0A0A;color:#10B981;font:22px monospace;display:grid;place-items:center;height:100vh;margin:0">
-<div>&#9679; opsswipe-demo-web is up<br><small style="color:#A1A1AA">process started ${bootedAt}</small></div>`;
+<div>&#9679; opsswipe-demo-web is up<br><small style="color:#A1A1AA">process started ${bootedAt}</small>
+<br><small id=price style="color:#A1A1AA"></small></div>
+<script>fetch('/api/price').then((r) => r.json()).then((p) => (price.textContent = 'Pro: $' + p.price + '/mo'))
+  .catch(() => (price.textContent = 'pricing unavailable'))</script>`;
 
 // Event-driven detection: every 5xx is reported to OpsSwipe the moment it happens (signed, fire-and-forget).
 // OPSSWIPE_REPORT_URL and REPORT_SECRET come from the app's Services screen when you connect this
@@ -48,7 +52,10 @@ http.createServer((req, res) => {
     wedged = true;
     return res.writeHead(200).end('wedged until restart\n');
   }
-  if (!RELEASE_OK) return fail(req, res, 500, 'bad release\n');
   if (wedged) return fail(req, res, 503, 'service wedged\n');
+  if (req.url === '/api/price') {
+    if (!RELEASE_OK) return fail(req, res, 500, 'bad release\n');
+    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ plan: 'pro', price: 9 }));
+  }
   res.writeHead(200, { 'content-type': 'text/html' }).end(page);
 }).listen(process.env.PORT || 3000);

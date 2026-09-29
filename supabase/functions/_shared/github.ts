@@ -102,24 +102,54 @@ export async function branchHead(repo: string, branch: string, token: string): P
 
 export type ChangedFile = { path: string; patch: string; content: string | null };
 
+// A file's text on a branch, or null when it's missing or bigger than `max` bytes.
+async function fileText(repo: string, path: string, ref: string, token: string, max = 40_000) {
+  const c = await gh(`${repo}/contents/${encodeURIComponent(path).replace(/%2F/g, '/')}?ref=${ref}`, token)
+    .catch(() => null);
+  if (!c?.content || c.size > max) return null;
+  return new TextDecoder().decode(Uint8Array.from(atob(c.content.replace(/\n/g, '')), (ch) => ch.charCodeAt(0)));
+}
+
 // What a commit changed (its diff per file) and each file's content now on the branch, for the AI
 // fix. Capped so the prompt stays small: at most 5 files, 40 KB each; removed files have no content.
 export async function commitFiles(repo: string, sha: string, branch: string, token: string): Promise<ChangedFile[]> {
   const commit = await gh(`${repo}/commits/${sha}`, token);
   const files = (commit.files ?? []).slice(0, 5) as { filename: string; patch?: string; status: string }[];
-  return await Promise.all(files.map(async (f) => {
-    let content: string | null = null;
-    if (f.status !== 'removed') {
-      const c = await gh(`${repo}/contents/${encodeURIComponent(f.filename).replace(/%2F/g, '/')}?ref=${branch}`, token)
-        .catch(() => null);
-      if (c?.content && c.size <= 40_000) {
-        content = new TextDecoder().decode(
-          Uint8Array.from(atob(c.content.replace(/\n/g, '')), (ch) => ch.charCodeAt(0)),
-        );
-      }
-    }
-    return { path: f.filename, patch: (f.patch ?? '').slice(0, 20_000), content };
-  }));
+  return await Promise.all(files.map(async (f) => ({
+    path: f.filename,
+    patch: (f.patch ?? '').slice(0, 20_000),
+    content: f.status === 'removed' ? null : await fileText(repo, f.filename, branch, token),
+  })));
+}
+
+export const TEST_FILE = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
+
+// One of the repo's own tests, so the AI's regression test follows the same style and runner.
+export async function testExample(repo: string, branch: string, token: string) {
+  const tree = await gh(`${repo}/git/trees/${branch}?recursive=1`, token).catch(() => null);
+  const path = (tree?.tree ?? []).map((e: { path: string; type: string }) => e.type === 'blob' ? e.path : '')
+    .find((p: string) => TEST_FILE.test(p) && !p.includes('node_modules/'));
+  const content = path ? await fileText(repo, path, branch, token, 20_000) : null;
+  return path && content ? { path, content } : null;
+}
+
+export type PrFile = { file: string; status: string; additions: number; deletions: number; patch: string };
+
+// A PR's diff, for reading it on the phone before merging. Capped at 20 KB of patch in total.
+export async function prFiles(pr: PrRef, token: string): Promise<PrFile[]> {
+  const files = await gh(`${pr.repo}/pulls/${pr.number}/files?per_page=30`, token) as {
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+    patch?: string;
+  }[];
+  let budget = 20_000;
+  return files.map((f) => {
+    const patch = (f.patch ?? '').slice(0, Math.max(budget, 0));
+    budget -= patch.length;
+    return { file: f.filename, status: f.status, additions: f.additions, deletions: f.deletions, patch };
+  });
 }
 
 // Open a PR that adds or changes files on top of the branch head (the proof workflow, an AI fix).
