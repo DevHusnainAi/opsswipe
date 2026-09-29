@@ -6,6 +6,7 @@ import { db, json } from '../_shared/db.ts';
 import { resetInstance } from '../_shared/gcp.ts';
 import { mergePr } from '../_shared/github.ts';
 import { canManage } from '../_shared/google.ts';
+import { hasFixKey } from '../_shared/fixKeys.ts';
 import { afterFix } from '../_shared/flow.ts';
 import { aiPatcher } from '../_shared/incidents.ts';
 import { canMerge } from '../_shared/proof.ts';
@@ -58,6 +59,10 @@ Deno.serve(async (req) => {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
   const { data: { user } } = await db.auth.getUser(token);
   if (!user) return json(401, { error: 'unauthorized' });
+
+  // The fingerprint, checked here and not only in the app: the key is released by the phone's secure
+  // hardware only after it (_shared/fixKeys.ts).
+  if (!(await hasFixKey(user.id, req.headers.get('x-fix-key')))) return json(403, { error: 'fix_key' });
 
   const { incidentId, action: requested } = await req.json().catch(() => ({}));
   if (typeof incidentId !== 'string') return json(400, { error: 'incidentId required' });

@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-import * as LocalAuthentication from 'expo-local-authentication';
 import * as Font from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { ArrowClockwise, CheckCircle, Crown, Hand, Plug, ShieldCheck, WarningCircle } from 'phosphor-react-native';
@@ -14,10 +13,13 @@ import {
   AuditEntry,
   connect,
   currentUserId,
+  approve,
   execute,
+  githubSignInOpen,
   Incident,
   registerPush,
   sessionFromRedirect,
+  SIGN_IN_AGAIN,
   signOut as endSession,
   supabase,
 } from './src/api';
@@ -30,7 +32,7 @@ import { atRisk, lostLine, recoveryLine } from './src/format';
 import { AlertsPrimer, Logo, SecureStep, TrialStep, Welcome } from './src/Onboarding';
 import { Services } from './src/Services';
 import { Settings } from './src/Settings';
-import { PROVIDER, SwipeCard } from './src/SwipeCard';
+import { SwipeCard } from './src/SwipeCard';
 import { type Tab, TabBar } from './src/TabBar';
 import { c, radius, space, type } from './src/theme';
 import { Banner, type BannerState, Button, Skeleton, useNow } from './src/ui';
@@ -209,11 +211,11 @@ export default function App() {
     return () => sub.remove();
   }, [refresh]);
 
-  // Email links (confirm the account, reset the password) open the app signed in. OAuth redirects
-  // are handled by the sign-in call itself; they carry no `type`, so they are skipped here.
+  // Email links (confirm the account, reset the password) come back to opsswipe://auth with a one-time
+  // code that only this phone can exchange (PKCE). GitHub sign-in is handled by its own call.
   useEffect(() => {
     const open = async (url: string | null) => {
-      if (!url || !/[#&?]type=/.test(url)) return;
+      if (!url || !/\/auth\?(.*&)?code=/.test(url) || githubSignInOpen()) return;
       try {
         const s = await sessionFromRedirect(url);
         if (s?.recovery) setPhase('recovery');
@@ -308,11 +310,11 @@ export default function App() {
     return active;
   };
 
-  const run = async (inc: Incident, action: string) => {
+  const run = async (inc: Incident, action: string, key: string) => {
     const fix = fixFor(action);
     setBanner({ kind: 'busy', text: `${fix.doing} ${inc.target_server}` });
-    const res = await execute(inc.id, action);
-    if (res.result === 'error') setBanner({ kind: 'error', text: 'The fix failed. Details are in the activity log.' });
+    const res = await execute(inc.id, action, key);
+    if (res.result === 'error') setBanner({ kind: 'error', text: res.detail ?? 'The fix failed. Details are in the activity log.' });
     if (res.result === 'ok') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setBanner(
@@ -337,7 +339,7 @@ export default function App() {
   };
 
   // FR-12 → FR-14: the card snaps back first, then the paywall slides up, saying what's at stake.
-  const upsell = async (inc: Incident, action: string) => {
+  const upsell = async (inc: Incident, action: string, key: string) => {
     const cost = atRisk(inc);
     setBanner({
       kind: 'warn',
@@ -346,7 +348,7 @@ export default function App() {
         : `${inc.target_server} is down and your free outage is used. Pro fixes it now.`,
     });
     try {
-      if (await paywall()) await run(inc, action); // already authorized
+      if (await paywall()) await run(inc, action, key); // already authorized
     } catch (e) {
       setBanner({ kind: 'warn', text: e instanceof Error ? e.message : String(e) });
     }
@@ -355,20 +357,13 @@ export default function App() {
   const onFix = async (inc: Incident, action: string) => {
     const fix = fixFor(action);
     setBanner({ kind: 'busy', text: 'Confirm with your fingerprint' });
-    const auth = await LocalAuthentication.authenticateAsync({
-      promptMessage: `${fix.verb} ${inc.target_server}?`,
-      promptSubtitle: `${PROVIDER[inc.provider ?? ''] ?? 'Server'} · ${fix.label}`,
-      promptDescription: fix.confirm,
-      cancelLabel: 'Cancel',
-    });
-    if (!auth.success) {
-      const noLock = ['not_enrolled', 'not_available', 'passcode_not_set'].includes(auth.error);
-      setBanner({
-        kind: 'warn',
-        text: noLock
-          ? 'Set up a screen lock or fingerprint on this phone to approve fixes.'
-          : 'Cancelled. Nothing was changed.',
-      });
+    let key: string;
+    try {
+      key = inc.id === SAMPLE_ID ? '' : await approve(`${fix.verb} ${inc.target_server}?`);
+    } catch (e) {
+      const text = e instanceof Error ? e.message : String(e);
+      setBanner({ kind: 'warn', text });
+      if (text === SIGN_IN_AGAIN) setTimeout(() => signOut().catch(() => {}), 2500);
       return 'failed' as const;
     }
     if (inc.id === SAMPLE_ID) {
@@ -381,8 +376,8 @@ export default function App() {
       setRecovered({ ...inc, resolved_at: new Date(fixedAt).toISOString(), recovered_at: new Date().toISOString() });
       return 'done' as const;
     }
-    const result = await run(inc, action);
-    if (result === 'paywall') setTimeout(() => upsell(inc, action), 350);
+    const result = await run(inc, action, key);
+    if (result === 'paywall') setTimeout(() => upsell(inc, action, key), 350);
     if (result !== 'ok') return 'failed' as const;
     return action === 'revert_pr' || action === 'fix_pr' ? ('stay' as const) : ('done' as const);
   };

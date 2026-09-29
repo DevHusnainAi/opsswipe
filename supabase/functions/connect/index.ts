@@ -7,6 +7,7 @@ import { withReturn } from '../_shared/appLink.ts';
 import { isTeam } from '../_shared/codeFix.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
+import { freshSignIn, registerFixKey, validKey } from '../_shared/fixKeys.ts';
 import { consentUrl, GoogleError, grantReset, listProjects, listVms, revokeReset } from '../_shared/google.ts';
 import { commitFiles, fileText, openFilesPr, prFiles } from '../_shared/github.ts';
 import { aiLlm } from '../_shared/incidents.ts';
@@ -676,6 +677,14 @@ Deno.serve(async (req) => {
   if (!user) return json(401, { error: 'unauthorized' });
   const { action, ...params } = await req.json().catch(() => ({}));
   try {
+    // The phone's fix key (see _shared/fixKeys.ts). Enrolling one needs a sign-in from the last 15
+    // minutes, so a lifted refresh token can't add its own key; the app asks to sign in again then.
+    if (action === 'register_fix_key') {
+      if (!validKey(params.key)) return json(400, { error: 'Not a fix key.' });
+      if (!freshSignIn(token)) return json(403, { error: 'sign_in_again' });
+      await registerFixKey(user.id, params.key);
+      return json(200, { registered: true });
+    }
     return json(200, await handle(user.id, String(action ?? ''), params));
   } catch (e) {
     if (e instanceof UserError || e instanceof GoogleError) return json(400, { error: e.message });

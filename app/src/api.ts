@@ -1,9 +1,9 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import { appLink, authRedirect, Notifications } from './env';
 import { paramsOf } from './format';
+import { fixKey, FixKeyError, forgetFixKey, secureStorage } from './secure';
 
 export type Incident = {
   id: string;
@@ -48,7 +48,9 @@ export type Incident = {
 export type AuditEntry = { id: number; incident_id: string | null; action: string; target: string; outcome: string; detail: string | null; created_at: string };
 
 export const supabase = createClient(process.env.EXPO_PUBLIC_SUPABASE_URL!, process.env.EXPO_PUBLIC_SUPABASE_KEY!, {
-  auth: { storage: AsyncStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+  // PKCE: a sign-in link carries a one-time code that only this app (holding the matching verifier) can turn
+  // into a session, so a crafted link can't sign the phone into someone else's account.
+  auth: { storage: secureStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, flowType: 'pkce' },
 });
 
 // The signed-in user, or null (show the auth screen). The id doubles as the RevenueCat appUserID, so the
@@ -60,11 +62,35 @@ export async function currentUserId() {
 
 export type ExecuteResult = { result: 'ok' | 'paywall' | 'error'; detail?: string };
 
-// The server re-checks the chosen fix against the incident and the allowlist.
-export async function execute(incidentId: string, action: string): Promise<ExecuteResult> {
-  const { data, error } = await supabase.functions.invoke('execute', { body: { incidentId, action } });
+export const SIGN_IN_AGAIN =
+  'For your security, sign in again to approve fixes on this phone (new phone or new fingerprint).';
+
+// A new fix key is enrolled only right after a sign-in (the server checks), see secure.ts.
+async function enroll(key: string) {
+  try {
+    await connect('register_fix_key', { key });
+  } catch (e) {
+    await forgetFixKey();
+    throw new FixKeyError(e instanceof Error && e.message === 'sign_in_again' ? SIGN_IN_AGAIN : String(e));
+  }
+}
+
+// The fingerprint prompt, as the phone's secure hardware releasing the fix key. Throws FixKeyError.
+export const approve = (prompt: string) => fixKey(prompt, enroll);
+
+// The server re-checks the chosen fix against the incident and the allowlist, and the fix key.
+export async function execute(incidentId: string, action: string, key: string): Promise<ExecuteResult> {
+  const { data, error } = await supabase.functions.invoke('execute', {
+    body: { incidentId, action },
+    headers: { 'x-fix-key': key },
+  });
   if (!error) return { result: 'ok', detail: data?.detail };
-  return { result: (error as { context?: Response }).context?.status === 402 ? 'paywall' : 'error' };
+  const res = (error as { context?: Response }).context;
+  if (res?.status === 403 && (await res.clone().json().catch(() => null))?.error === 'fix_key') {
+    await forgetFixKey(); // not this account's key (or removed): the next fix enrolls a new one
+    return { result: 'error', detail: SIGN_IN_AGAIN };
+  }
+  return { result: res?.status === 402 ? 'paywall' : 'error' };
 }
 
 export type Service = {
@@ -111,19 +137,33 @@ export async function connect<T>(action: string, params: Record<string, unknown>
 
 const AUTH_REDIRECT = appLink('auth');
 
-// Supabase puts the new session in the redirect's fragment; this turns it into the app's session.
-// `type` is "recovery" when the user came from a password-reset email.
+// Only a one-time PKCE code is accepted, never tokens in the link: the exchange needs the verifier this
+// app stored when it started the sign-in or reset, so a link someone else made can't sign this phone in.
 export async function sessionFromRedirect(url: string) {
   const p = paramsOf(url);
   if (p.error) throw new Error(p.error_description || 'Sign-in failed. Try again.');
-  if (!p.access_token || !p.refresh_token) return null;
-  const { data, error } = await supabase.auth.setSession({ access_token: p.access_token, refresh_token: p.refresh_token });
-  if (error) throw error;
-  return { uid: data.user!.id, recovery: p.type === 'recovery' };
+  if (!p.code) return null;
+  const { data, error } = await supabase.auth.exchangeCodeForSession(p.code);
+  if (error) throw new Error('That sign-in link was not started on this phone, or it expired. Try again.');
+  return { uid: data.user!.id, recovery: (data as { redirectType?: string | null }).redirectType === 'recovery' };
 }
+
+// While GitHub sign-in is open, its return link belongs to that call; the app's deep-link handler skips it
+// (a PKCE code works only once).
+let githubInFlight = false;
+export const githubSignInOpen = () => githubInFlight;
 
 // Continue with GitHub: one browser sheet, new or returning users alike. Null if cancelled.
 export async function signInWithGithub() {
+  githubInFlight = true;
+  try {
+    return await githubSignIn();
+  } finally {
+    githubInFlight = false;
+  }
+}
+
+async function githubSignIn() {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'github',
     // The account picker lets you choose which GitHub account instead of reusing the last one.
@@ -181,5 +221,6 @@ export async function registerPush() {
 export async function signOut() {
   const token = await pushToken().catch(() => null);
   if (token) await connect('unregister_push', { token }).catch(() => {});
+  await forgetFixKey(); // it belongs to this account; the next one signing in enrolls their own
   await supabase.auth.signOut();
 }

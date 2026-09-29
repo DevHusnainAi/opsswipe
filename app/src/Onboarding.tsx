@@ -2,6 +2,7 @@
 // then the notification permission asked in context (AlertsPrimer), as Android recommends for
 // POST_NOTIFICATIONS: once the user knows why. Setup continues in the Services tab's checklist.
 import * as LocalAuthentication from 'expo-local-authentication';
+import { approve } from './api';
 import { Bell, CheckCircle, Crown, Fingerprint, LockKey, Sparkle } from 'phosphor-react-native';
 import { useEffect, useState } from 'react';
 import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -173,18 +174,17 @@ export function SecureStep({ onDone }: { onDone: () => void }) {
     check();
   }, []);
 
+  // The practice fingerprint also sets up this phone's fix key (right after sign-in, when the server
+  // allows it), so the first real fix at 3am is just the fingerprint.
   const practise = async () => {
-    const r = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Restart your-api?',
-      promptDescription: 'Practice run: nothing real is touched.',
-      cancelLabel: 'Cancel',
-    });
-    if (r.success) {
+    try {
+      await approve('Practice: restart your-api? Nothing real is touched.');
       setPassed(true);
       return 'done' as const;
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'That did not work. Try again.');
+      return 'failed' as const;
     }
-    setNote(r.error === 'user_cancel' ? 'Cancelled. Swipe again when you are ready.' : 'That did not work. Try again.');
-    return 'failed' as const;
   };
 
   return (
