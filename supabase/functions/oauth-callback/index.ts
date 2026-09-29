@@ -9,6 +9,11 @@ import { returnBase } from '../_shared/appLink.ts';
 import { installUrl } from '../_shared/githubApp.ts';
 import { exchange, newState, takeState } from '../_shared/oauthState.ts';
 
+const returnPage = () =>
+  `${
+    (Deno.env.get('STATUS_PAGE_URL') || 'https://devhusnainai.github.io/opsswipe-status/').replace(/\/?(\?.*)?$/, '/')
+  }return.html`;
+
 const ALLOWED = ['code', 'state', 'error', 'error_code'];
 
 Deno.serve(async (req) => {
@@ -28,6 +33,7 @@ Deno.serve(async (req) => {
 
   // A connect flow: the code is used here and never forwarded.
   const code = out.get('code');
+  let via: string | null = null;
   if (path === 'connect') {
     out.delete('code');
     const pending = code ? await takeState(state?.split('~')[0] ?? '') : null;
@@ -43,12 +49,20 @@ Deno.serve(async (req) => {
         }
         out.set('claim', r.claim);
         out.set('done', pending.kind);
+        via = pending.kind;
       } catch (e) {
         console.error('oauth exchange failed:', String(e));
         out.set('error', `${pending.kind}_failed`);
       }
     } else if (code) out.set('error', 'start_in_app'); // no state we issued: start from the app
   }
-  // A plain 302 keeps the user's tap, which Chrome requires before it opens an app link.
-  return new Response(null, { status: 302, headers: { Location: `${base}${path}?${out}` } });
+  const app = `${base}${path}?${out}`;
+  // A plain 302 keeps the user's tap, which Chrome requires before it opens an app link. Railway submits its
+  // consent screen from script, so there's no tap to keep and Chrome won't open the app: that redirect goes
+  // through a static page with an "Open OpsSwipe" button instead (status-page/return.html, on GitHub Pages;
+  // Supabase can't serve HTML). The app link travels in the fragment, which never reaches that server.
+  if (via === 'railway') {
+    return new Response(null, { status: 302, headers: { Location: `${returnPage()}#${encodeURIComponent(app)}` } });
+  }
+  return new Response(null, { status: 302, headers: { Location: app } });
 });
