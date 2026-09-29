@@ -95,67 +95,9 @@ small teams on Render, Railway, Google Cloud or any host that deploys from GitHu
 
 ## How it works
 
-```mermaid
-sequenceDiagram
-    participant App as Your app
-    participant OS as OpsSwipe
-    participant GH as GitHub
-    participant You as Your phone
-    App->>OS: reports its 500s the moment they happen
-    OS->>You: card: Roll back now, or Revert PR (with a reason)
-    You->>OS: swipe + fingerprint
-    OS->>GH: revert PR + the failing requests as a replay test
-    GH->>OS: CI: GET /api/price was 500, now 200, tests pass
-    OS->>You: Merge PR unlocked
-    You->>OS: swipe + fingerprint
-    OS->>GH: merge the exact commit CI proved
-    OS->>You: back up: /api/price answers again, down 1m 12s
-```
+<img src="docs/diagrams/loop.svg" alt="The loop in seven steps: production breaks and your app reports GET /api/price 500; your phone rings with one card; you swipe and use your fingerprint; a PR carries the failing requests; CI proves /api/price went from 500 to 200 with tests passing; you swipe to merge the exact proven commit; OpsSwipe re-checks /api/price in production and says back up." width="100%">
 
-```mermaid
-flowchart LR
-    subgraph signals["Signals"]
-        direction TB
-        app["Your app<br/>signed 5xx reports"]
-        sentry["Sentry<br/>issue alerts"]
-        inbox["Alert inbox<br/>Grafana, Alertmanager, JSON"]
-        health["Health check<br/>every minute"]
-        agents["AI agents<br/>Claude Code hook"]
-    end
-
-    subgraph backend["OpsSwipe backend (Supabase)"]
-        direction TB
-        engine["Incident engine<br/>one card per service<br/>rules pick the fix"]
-        execute["execute<br/>checks owner, fix key, plan"]
-        proof["proof<br/>grades the signed CI result"]
-        db[("Postgres + RLS<br/>Vault holds every key")]
-    end
-
-    subgraph you["You"]
-        direction TB
-        notify["Alarm push<br/>Slack, Discord"]
-        phone["Phone app<br/>swipe + fingerprint"]
-    end
-
-    subgraph outside["Acts on"]
-        direction TB
-        cloud["Your services<br/>GCP VM, Render, Railway"]
-        github["GitHub<br/>revert / AI fix PR, merge"]
-        ci["GitHub Actions<br/>replays failing requests"]
-        ai["AI models<br/>second opinion, fix + test"]
-        rc["RevenueCat<br/>plans, revenue at risk"]
-    end
-
-    signals --> engine
-    engine --> notify --> phone
-    engine --> ai
-    phone -- "incident id + fix + fix key" --> execute
-    execute -- "reboot, restart, roll back" --> cloud
-    execute -- "open PR, merge proven commit" --> github
-    execute -- "entitlement" --> rc
-    github --> ci -- "OIDC-signed results" --> proof
-    proof -- "Merge unlocked" --> engine
-```
+<img src="docs/diagrams/architecture.svg" alt="Architecture: five signals (your app, Sentry, alert inbox, health check, AI agents) feed the OpsSwipe backend on Supabase. The incident engine pages your phone; the phone sends the incident id, the fix and its fix key to execute, which reboots, restarts or rolls back your services, or opens and merges a GitHub PR. GitHub Actions replays the failing requests and sends OIDC-signed results to proof, which unlocks the merge." width="100%">
 
 Everything that holds a key runs on the server (Supabase Edge Functions); the phone only approves. The reasoning
 behind each design choice is in [docs/DECISIONS.md](docs/DECISIONS.md), and the code map in [CLAUDE.md](CLAUDE.md).
