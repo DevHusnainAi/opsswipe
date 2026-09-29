@@ -2,9 +2,9 @@
 // accounts it's connected to. Adding a service happens in the AddService sheet.
 import * as WebBrowser from 'expo-web-browser';
 import type { Icon } from 'phosphor-react-native';
-import { Bug, CheckCircle, CurrencyDollar, Cloud, GitBranch, GithubLogo, GoogleLogo, HardDrives, Key, Plus, ShieldCheck, Train, Trash } from 'phosphor-react-native';
+import { Bug, CheckCircle, CurrencyDollar, Cloud, GitBranch, GithubLogo, GoogleLogo, HardDrives, Key, Plus, ShieldCheck, Sparkle, Train, Trash } from 'phosphor-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { AddService, CopyRow, type StartAt } from './AddService';
 import { type ConnectStatus, type Service, connect, supabase } from './api';
 import { appBase, appLink } from './env';
@@ -253,6 +253,26 @@ export function Services({ active }: { active: boolean }) {
                             onPress={() => saveRepo(s)}
                           />
                         )}
+                      </View>
+                    )}
+                    {s.config.repo && (
+                      <View style={styles.repoRow}>
+                        <Sparkle size={16} color={s.config.autofix ? c.green : c.muted} weight="fill" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={type.label}>Fix ready before you wake up</Text>
+                          <Text style={type.caption}>Pro · When it breaks, AI writes the fix and CI proves it. You only swipe to merge.</Text>
+                        </View>
+                        <Switch
+                          value={!!s.config.autofix}
+                          disabled={busy === `auto-${s.id}`}
+                          onValueChange={(on) =>
+                            run(`auto-${s.id}`, async () => {
+                              await connect('set_autofix', { serviceId: s.id, on });
+                              await load();
+                            })}
+                          trackColor={{ true: c.green, false: c.borderStrong }}
+                          accessibilityLabel="Prepare fixes automatically"
+                        />
                       </View>
                     )}
                     <SentryLink service={s} onSaved={load} />

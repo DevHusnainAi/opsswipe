@@ -5,8 +5,18 @@ import { db, env } from './db.ts';
 import { accessToken } from './gcp.ts';
 import { type Deploy, listDeploys, pickRollback } from './render.ts';
 import { mergeSamples, type ReplaySample } from './replay.ts';
-import { connection, notify, platformSa, readSecret, renderKey, type Service, toTarget } from './services.ts';
-import { confirmsReport, selfHealed } from './flow.ts';
+import {
+  connection,
+  githubToken,
+  notify,
+  platformSa,
+  readSecret,
+  renderKey,
+  type Service,
+  toTarget,
+} from './services.ts';
+import { aiFixPr, badCommit, type Incident, isPro } from './codeFix.ts';
+import { afterFix, confirmsReport, selfHealed } from './flow.ts';
 import { money, type Revenue, revenuePerHour } from './revenue.ts';
 import { nvidiaLlm, openaiLlm, withFallback } from './llm.ts';
 import { llmPatcher, type Patcher, vertexPatcher } from './patch.ts';
@@ -132,6 +142,10 @@ export async function openIncident(
     }));
   }
 
+  // Opt-in (Pro): the AI fix is written, opened as a PR and proven by CI before anyone looks, so the
+  // page can say "a fix is ready". Nothing reaches production: merging still needs a swipe.
+  if (inc && actions.includes('fix_pr') && s.config.autofix) EdgeRuntime.waitUntil(prepareFix(s, inc.id));
+
   const ai = aiSuggester();
   if (inc && ai) {
     EdgeRuntime.waitUntil(
@@ -146,6 +160,37 @@ export async function openIncident(
     );
   }
   return { opened: !!inc };
+}
+
+// ponytail: if the engineer swipes a code fix while this runs, both PRs open; the second one waits unused.
+async function prepareFix(s: Service, id: string) {
+  try {
+    const patcher = aiPatcher();
+    if (!patcher || !(await isPro(s.owner))) return;
+    const { data: inc } = await db.from('incidents').select().eq('id', id).maybeSingle<Incident>();
+    if (!inc) return;
+    const token = await githubToken(s.owner);
+    const t = toTarget(s);
+    const { pr, detail } = await aiFixPr(t, await badCommit(s, t, inc, token), inc, token, patcher);
+    const { data: now } = await db.from('incidents').select().eq('id', id).maybeSingle<Incident>();
+    if (!now || now.status !== 'active' || now.context.pr) return; // the engineer got there first
+    const next = afterFix('fix_pr', now, { pr });
+    await db.from('incidents').update({
+      ...next.update,
+      reason: 'AI fix prepared automatically; CI is proving it against the failing requests.',
+      context: { ...(next.update.context as object), prepared: true },
+    }).eq('id', id).eq('status', 'active');
+    await db.from('audit_log').insert({
+      incident_id: id,
+      actor: s.owner,
+      action: 'fix_pr',
+      target: s.name,
+      outcome: 'executed',
+      detail: `${detail} (prepared automatically)`,
+    });
+  } catch (e) {
+    console.warn('automatic fix failed:', String(e)); // the card still offers every fix by hand
+  }
 }
 
 // Recovery proof: the first healthy check after a fix stamps recovered_at.

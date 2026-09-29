@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
         owner: string;
         target_server: string;
         actions: string[];
-        context: { pr?: PrRef; proof?: Proof; replay?: unknown[] };
+        context: { pr?: PrRef; proof?: Proof; replay?: unknown[]; prepared?: boolean };
       }
     >();
   if (!inc) return json(404, { error: 'no open incident for this PR' });
@@ -67,8 +67,11 @@ Deno.serve(async (req) => {
     inc.owner,
     result.proof.ok
       ? {
-        title: `Fix proven for ${inc.target_server}`,
-        body: `${passed}/${total} failing production requests now pass. Ready to merge.`,
+        // A prepared fix is the first thing a sleeping engineer reads: say it's done, not what to do.
+        title: inc.context.prepared
+          ? `${inc.target_server} is down. A fix is ready and proven`
+          : `Fix proven for ${inc.target_server}`,
+        body: `${passed}/${total} failing production requests now pass. Swipe to merge.`,
         data: { incidentId: inc.id },
       }
       : {

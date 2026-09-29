@@ -66,6 +66,7 @@ export type Service = {
     repo?: string;
     branch?: string;
     proofPr?: string;
+    autofix?: string; // 'on': AI fix prepared and proven as soon as an incident opens (Pro)
     serviceId?: string;
     project?: string;
     zone?: string;

@@ -477,6 +477,17 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       return { config };
     }
 
+    // Pro: when an incident opens, write the AI fix and let CI prove it before the engineer looks.
+    case 'set_autofix': {
+      const s = await getService(String(p.serviceId ?? ''));
+      need(s && s.owner === owner, 'Service not found.');
+      need(!p.on || s!.config.repo, 'Link the repo first: the fix is a pull request on it.');
+      const { autofix: _a, ...rest } = s!.config;
+      const config = p.on ? { ...rest, autofix: 'on' } : rest;
+      await db.from('services').update({ config }).eq('id', s!.id);
+      return { config };
+    }
+
     case 'remove_service': {
       const s = await getService(String(p.serviceId ?? ''));
       need(s && s.owner === owner, 'Service not found.');

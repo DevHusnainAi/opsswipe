@@ -1,24 +1,14 @@
 // Swipe → authorize → remediate. The phone sends an incident id and which offered fix to run.
 // Who is asking comes from the verified JWT and must own the incident; what can run comes from
 // the service's validated config AND the fixes stored on the incident. Nothing else is trusted.
-import { db, env, json } from '../_shared/db.ts';
-import { isActive, proFromRow } from '../_shared/entitlement.ts';
+import { aiFixPr, badCommit, type Incident, isPro, type Outcome, revertPr } from '../_shared/codeFix.ts';
+import { db, json } from '../_shared/db.ts';
 import { resetInstance } from '../_shared/gcp.ts';
-import {
-  branchHead,
-  commitFiles,
-  commitMessage,
-  mergePr,
-  openFilesPr,
-  openRevertPr,
-  testExample,
-} from '../_shared/github.ts';
+import { mergePr } from '../_shared/github.ts';
 import { afterFix } from '../_shared/flow.ts';
 import { aiPatcher } from '../_shared/incidents.ts';
-import { checkPatch, regressionTestPath } from '../_shared/patch.ts';
-import { canMerge, type Proof, type PrRef } from '../_shared/proof.ts';
-import type { ReplaySample } from '../_shared/replay.ts';
-import { type Deploy, listDeploys, pickRollback, restartService, rollbackToPrevious } from '../_shared/render.ts';
+import { canMerge } from '../_shared/proof.ts';
+import { restartService, rollbackToPrevious } from '../_shared/render.ts';
 import { restartRailway, rollbackRailway } from '../_shared/railway.ts';
 import {
   getService,
@@ -29,107 +19,9 @@ import {
   type Service,
   toTarget,
 } from '../_shared/services.ts';
-import { type Action, actionsFor, type Target } from '../_shared/targets.ts';
+import { type Action, actionsFor } from '../_shared/targets.ts';
 
-const ENTITLEMENT = 'pro';
 const FREE_RUNS = 1; // free outages (every fix of that incident is included)
-
-type Incident = {
-  id: string;
-  title: string;
-  target_server: string;
-  metric: string;
-  actions: string[];
-  action: string;
-  reason: string | null;
-  suggested_by: string | null;
-  service_id: string;
-  owner: string;
-  context: { replay?: ReplaySample[]; pr?: PrRef; proof?: Proof; live?: Deploy | null; [k: string]: unknown };
-};
-
-// What a fix did, and how the incident should change afterwards.
-type Outcome = { detail: string; pr?: PrRef };
-
-// RevenueCat is the source of truth. If its API is down, the copy its webhooks keep decides: a pager
-// that can't fix production because billing is unreachable would fail exactly when it's needed.
-async function isPro(uid: string) {
-  try {
-    const res = await fetch(`https://api.revenuecat.com/v1/subscribers/${uid}`, {
-      headers: { Authorization: `Bearer ${env('REVENUECAT_SECRET_KEY')}` },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) throw new Error(`revenuecat ${res.status}`);
-    return isActive((await res.json()).subscriber.entitlements[ENTITLEMENT]);
-  } catch (e) {
-    console.warn('revenuecat unavailable, using the webhook copy:', String(e));
-    const { data } = await db.from('entitlements').select('pro_until').eq('owner', uid).maybeSingle();
-    return proFromRow(data);
-  }
-}
-
-// The commit that broke production: the release live when the incident opened (Render's deploy
-// history, or the `release` the app reported). A rollback since then changes what's live, but the
-// bad commit is still the one to fix. A VM with neither falls back to the branch head.
-async function badCommit(s: Service, t: Target, inc: Incident, token: string) {
-  if (inc.context.live?.commit?.id) return inc.context.live.commit.id;
-  if (t.provider === 'render') {
-    const live = pickRollback(await listDeploys(t.serviceId, await renderKey(s.owner))).live;
-    if (live?.commit?.id) return live.commit.id;
-  }
-  return await branchHead(t.repo!, t.branch ?? 'main', token);
-}
-
-// Claude writes the smallest fix to the files the bad commit touched; it ships as a PR with the
-// failing requests, so the merge still waits for CI to prove it.
-async function aiFixPr(t: Target, sha: string, inc: Incident, token: string): Promise<Outcome> {
-  const patcher = aiPatcher();
-  if (!patcher) throw new Error('AI fixes are not switched on for this server');
-  const branch = t.branch ?? 'main';
-  const commit = await commitMessage(t.repo!, sha, token);
-  const example = await testExample(t.repo!, branch, token);
-  const input = {
-    repo: t.repo!,
-    commit: { sha, message: commit },
-    symptom: inc.metric,
-    failing: inc.context.replay ?? [],
-    files: await commitFiles(t.repo!, sha, branch, token),
-    test: example ? { example, path: regressionTestPath(example.path, sha) } : null,
-  };
-  const patch = checkPatch(await patcher(input), input);
-  const test = patch.files.find((f) => f.path === input.test?.path);
-  const short = sha.slice(0, 7);
-  const pr = await openFilesPr({
-    repo: t.repo!,
-    branch,
-    branchName: `opsswipe/fix-${short}-${Date.now().toString(36)}`,
-    title: `Fix ${inc.title.toLowerCase()} after ${short}`,
-    body: [
-      'Written by Claude and opened by OpsSwipe after the on-call engineer approved it with biometrics.',
-      '',
-      `**Incident:** ${inc.title} on \`${inc.target_server}\``,
-      `**Symptom:** ${inc.metric}`,
-      `**Broke in:** \`${short}\` ${commit.split('\n')[0]}`,
-      `**Fix:** ${patch.summary}`,
-      '',
-      '### How this is proven',
-      test
-        ? `- Your test suite runs, including a new regression test for the failing requests: \`${test.path}\``
-        : '- Your test suite runs (no test file found to model a regression test on)',
-      `- CI starts this PR's build and replays the ${input.failing.length} production request(s) that failed`,
-      '',
-      'OpsSwipe only lets you merge once both pass. Review the change like any other PR.',
-    ].join('\n'),
-    files: [
-      ...patch.files,
-      {
-        path: `.opsswipe/replays/${short}.json`,
-        content: `${JSON.stringify({ fixes: sha, samples: input.failing }, null, 2)}\n`,
-      },
-    ],
-  }, token);
-  return { detail: pr.url, pr };
-}
 
 // Runs one fix. The detail goes to the audit log (e.g. the PR link).
 async function runAction(s: Service, action: Action, inc: Incident): Promise<Outcome> {
@@ -138,7 +30,7 @@ async function runAction(s: Service, action: Action, inc: Incident): Promise<Out
   if (action === 'revert_pr' || action === 'fix_pr') {
     const token = await githubToken(s.owner);
     const sha = await badCommit(s, t, inc, token);
-    return action === 'fix_pr' ? await aiFixPr(t, sha, inc, token) : await revertPr(t, sha, inc, token);
+    return action === 'fix_pr' ? await aiFixPr(t, sha, inc, token, aiPatcher()) : await revertPr(t, sha, inc, token);
   }
   if (t.provider === 'railway') {
     const token = await railwayToken(s.owner);
@@ -154,27 +46,6 @@ async function runAction(s: Service, action: Action, inc: Incident): Promise<Out
     return { detail: 'restart issued' };
   }
   return { detail: await rollbackToPrevious(t.serviceId, key) };
-}
-
-async function revertPr(t: Target, sha: string, inc: Incident, token: string): Promise<Outcome> {
-  const pr = await openRevertPr({
-    repo: t.repo!,
-    branch: t.branch ?? 'main',
-    commitSha: sha,
-    body: [
-      'Opened by OpsSwipe after the on-call engineer approved it with biometrics.',
-      '',
-      `**Incident:** ${inc.title} on \`${inc.target_server}\``,
-      `**Symptom:** ${inc.metric}`,
-      inc.reason ? `**Why this commit:** ${inc.reason} _(suggested by ${inc.suggested_by ?? 'rules'})_` : null,
-      '',
-      `Merging deploys the code from before \`${sha.slice(0, 7)}\`.`,
-      `CI replays the ${inc.context.replay?.length ?? 0} failing production request(s) against this PR;`,
-      'OpsSwipe only lets you merge once they all pass.',
-    ].filter((l) => l !== null).join('\n'),
-    replay: inc.context.replay ?? [],
-  }, token);
-  return { detail: pr.url, pr };
 }
 
 Deno.serve(async (req) => {
