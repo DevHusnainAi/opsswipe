@@ -46,8 +46,8 @@ async function reportConfig() {
 async function reportFailure(req, status) {
   const { url, secret } = await reportConfig();
   if (!url || !secret) return;
-  // release = the deployed commit (the demo VM sets GIT_SHA; Render sets RENDER_GIT_COMMIT).
-  const release = process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT;
+  // release = the deployed commit (the demo VM sets GIT_SHA; Render and Railway set their own).
+  const release = process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || process.env.RAILWAY_GIT_COMMIT_SHA;
   const body = JSON.stringify({ method: req.method, path: req.url, status, release });
   const signature = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
   fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-opsswipe-signature': signature }, body })
