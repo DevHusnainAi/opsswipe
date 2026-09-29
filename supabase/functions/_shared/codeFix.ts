@@ -11,8 +11,6 @@ import { type Deploy, listDeploys, pickRollback } from './render.ts';
 import { renderKey, type Service } from './services.ts';
 import type { Target } from './targets.ts';
 
-const ENTITLEMENT = 'pro';
-
 export type Incident = {
   id: string;
   title: string;
@@ -33,15 +31,21 @@ export type Outcome = { detail: string; pr?: PrRef };
 
 // RevenueCat is the source of truth. If its API is down, the copy its webhooks keep decides: a pager
 // that can't fix production because billing is unreachable would fail exactly when it's needed.
-export async function isPro(uid: string) {
+// Plans: Solo grants the `pro` entitlement; Team grants `pro` and `team` (set up in RevenueCat, so the
+// server never has to know product ids).
+export const isPro = (uid: string) => entitled(uid, 'pro');
+export const isTeam = (uid: string) => entitled(uid, 'team');
+
+async function entitled(uid: string, entitlement: 'pro' | 'team') {
   try {
     const res = await fetch(`https://api.revenuecat.com/v1/subscribers/${uid}`, {
       headers: { Authorization: `Bearer ${env('REVENUECAT_SECRET_KEY')}` },
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error(`revenuecat ${res.status}`);
-    return isActive((await res.json()).subscriber.entitlements[ENTITLEMENT]);
+    return isActive((await res.json()).subscriber.entitlements[entitlement]);
   } catch (e) {
+    // ponytail: the webhook copy only tracks Pro, so a RevenueCat outage treats any paid plan as Team.
     console.warn('revenuecat unavailable, using the webhook copy:', String(e));
     const { data } = await db.from('entitlements').select('pro_until').eq('owner', uid).maybeSingle();
     return proFromRow(data);

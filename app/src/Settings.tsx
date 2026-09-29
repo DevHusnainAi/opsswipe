@@ -38,6 +38,7 @@ const REPO = 'https://github.com/DevHusnainAi/opsswipe';
 type Props = {
   active: boolean;
   pro: boolean;
+  team: boolean;
   planBody: string;
   onDeleteAccount: () => Promise<void>;
   onSignOut: () => Promise<void>;
@@ -167,7 +168,7 @@ export function Settings(p: Props) {
           <Row
             icon={Crown}
             tint={p.pro ? c.green : undefined}
-            title={p.pro ? 'OpsSwipe Pro' : 'Free'}
+            title={p.team ? 'OpsSwipe Team' : p.pro ? 'OpsSwipe Solo' : 'Free'}
             body={p.planBody}
           />
           {!p.pro && (
@@ -294,7 +295,14 @@ export function Settings(p: Props) {
               onPress={() => run(`rm-${t.id}`, async () => void (await connect('team_remove', { id: t.id })))}
             />
           ))}
-          {invite ? (
+          {!p.team ? (
+            <Action
+              icon={UserPlus}
+              label="Invite a teammate (Team plan)"
+              primary
+              onPress={() => run('upgrade', p.onUpgrade)}
+            />
+          ) : invite ? (
             <Action
               icon={ShareNetwork}
               label={`Code ${invite}: share it`}

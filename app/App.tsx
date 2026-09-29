@@ -87,6 +87,7 @@ export default function App() {
   const [fixed, setFixed] = useState<Incident[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [pro, setPro] = useState(false);
+  const [team, setTeam] = useState(false); // Team plan: RevenueCat grants `team` on top of `pro`
   const [free, setFree] = useState<{ used: number; incident: string | null }>({ used: 0, incident: null });
   const [banner, setBanner] = useState<BannerState>(null);
   const [cardHeight, setCardHeight] = useState(420);
@@ -132,13 +133,18 @@ export default function App() {
   const enter = useCallback(async (uid: string) => {
     if (!purchasesReady.current) {
       Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_RC_KEY!, appUserID: uid });
-      Purchases.addCustomerInfoUpdateListener((info) => setPro(!!info.entitlements.active.pro));
+      Purchases.addCustomerInfoUpdateListener((info) => {
+        setPro(!!info.entitlements.active.pro);
+        setTeam(!!info.entitlements.active.team);
+      });
       purchasesReady.current = true;
     } else {
       await Purchases.logIn(uid).catch(() => {});
     }
     try {
-      setPro(!!(await Purchases.getCustomerInfo()).entitlements.active.pro);
+      const info = await Purchases.getCustomerInfo();
+      setPro(!!info.entitlements.active.pro);
+      setTeam(!!info.entitlements.active.team);
     } catch {
       // offline: the server still enforces the plan on every fix
     }
@@ -266,6 +272,7 @@ export default function App() {
     setAudit([]);
     setServiceCount(null);
     setPro(false);
+    setTeam(false);
     setBanner(null);
     setTab('incidents');
     setAuthMode('signin');
@@ -585,6 +592,7 @@ export default function App() {
                   <Settings
                     active={tab === 'settings'}
                     pro={pro}
+                    team={team}
                     planBody={planBody}
                     onDeleteAccount={deleteAccount}
                     onSignOut={signOut}

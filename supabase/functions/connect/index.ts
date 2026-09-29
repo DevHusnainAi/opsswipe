@@ -4,7 +4,7 @@
 import { hashToken, newToken } from '../_shared/agents.ts';
 import { alertKind, chatAuthorizeUrl } from '../_shared/alerts.ts';
 import { withReturn } from '../_shared/appLink.ts';
-import { isPro } from '../_shared/codeFix.ts';
+import { isTeam } from '../_shared/codeFix.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
 import { consentUrl, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
@@ -501,7 +501,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     }
 
     case 'team_invite': {
-      need(await isPro(owner), 'Teams are part of Pro. Upgrade in Settings → Plan.');
+      need(await isTeam(owner), 'Teammates come with the Team plan. Upgrade in Settings → Plan.');
       await db.from('team_invites').delete().eq('owner', owner);
       const code = Array.from(
         crypto.getRandomValues(new Uint8Array(8)),
