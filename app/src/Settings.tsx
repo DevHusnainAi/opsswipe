@@ -171,11 +171,11 @@ export function Settings(p: Props) {
           <Row
             icon={Crown}
             tint={p.pro ? c.green : undefined}
-            title={p.team ? 'OpsSwipe Team' : p.pro ? 'OpsSwipe Solo' : 'Free'}
+            title={p.team ? 'OpsSwipe Team' : p.pro ? 'OpsSwipe Pro' : 'Free'}
             body={p.planBody}
           />
           {!p.pro && (
-            <Action icon={Crown} label="Upgrade to Pro" primary onPress={() => run('upgrade', p.onUpgrade)} />
+            <Action icon={Crown} label="Try Pro free" primary onPress={() => run('upgrade', p.onUpgrade)} />
           )}
           {inExpoGo && (
             <Text style={[type.caption, { paddingBottom: space.md }]}>
@@ -263,8 +263,8 @@ export function Settings(p: Props) {
             tint={alertInbox ? c.green : undefined}
             title="Alerts from your other tools"
             body={alertInbox
-              ? 'Paste this URL as a webhook in Alertmanager, Grafana or any tool. 50 alerts about one service make one card; the rest wait quietly for your weekly report.'
-              : 'Point Grafana, Alertmanager or any monitor at OpsSwipe. You only get woken when there is something to fix.'}
+              ? 'Add this URL as a webhook in Grafana, Alertmanager or any monitor. Alerts about one service become one card.'
+              : 'Send alerts from Grafana, Alertmanager or any monitor. You only get woken when there is something to fix.'}
           />
           {alertInbox ? (
             <>

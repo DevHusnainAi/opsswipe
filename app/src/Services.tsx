@@ -266,7 +266,7 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
                         <Sparkle size={16} color={s.config.autofix ? c.green : c.muted} weight="fill" />
                         <View style={{ flex: 1 }}>
                           <Text style={type.label}>Fix ready before you wake up</Text>
-                          <Text style={type.caption}>Pro · When it breaks, AI writes the fix and CI proves it. You only swipe to merge.</Text>
+                          <Text style={type.caption}>Pro. When it breaks, AI writes the fix and CI proves it. You only swipe to merge.</Text>
                         </View>
                         <Switch
                           value={!!s.config.autofix}

@@ -411,7 +411,7 @@ export default function App() {
   };
   // The free tier is one whole outage: every fix of that incident is on us.
   const freeNow = !!free.incident && incidents.some((i) => i.id === free.incident);
-  const planChip = pro ? 'Pro' : free.used === 0 ? 'Free · 1 outage' : freeNow ? 'Free · this outage' : 'Free';
+  const planChip = team ? 'Team' : pro ? 'Pro' : free.used === 0 ? 'Free · 1 outage' : freeNow ? 'Free · this outage' : 'Free';
   const planBody = pro
     ? 'Unlimited fixes on every outage.'
     : free.used === 0

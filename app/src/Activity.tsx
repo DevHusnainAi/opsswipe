@@ -128,7 +128,7 @@ export function Activity(
 function Stats({ incidents, median, proven }: { incidents: number; median: number | null; proven: number }) {
   const tiles = [
     ['Incidents this week', String(incidents)],
-    ['Median time to recover', median === null ? '–' : formatDuration(median)],
+    ['Median time to recover', median === null ? 'None yet' : formatDuration(median)],
     ['Fixes proven in CI', String(proven)],
   ];
   return (

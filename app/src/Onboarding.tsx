@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { Incident } from './api';
 import { SwipeCard } from './SwipeCard';
-import { c, space, type } from './theme';
+import { c, radius, space, type } from './theme';
 import { Button } from './ui';
 
 const SLIDES = [
@@ -269,7 +269,7 @@ export function TrialStep({ onStart, onSkip }: { onStart: () => Promise<unknown>
       </View>
       <View style={styles.actions}>
         <Button
-          label={busy ? 'Opening…' : 'Start free trial'}
+          label={busy ? 'Opening…' : 'Try Pro free'}
           icon={Crown}
           onPress={async () => {
             setBusy(true);
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
   badge: {
     width: 112,
     height: 112,
-    borderRadius: 32,
+    borderRadius: radius.badge,
     backgroundColor: c.greenTint,
     alignItems: 'center',
     justifyContent: 'center',
