@@ -5,6 +5,8 @@
 #                              don't cover); CI deploys it in ~1 min, then a few visits make it report its 500s
 #                              (revert or AI fix PR, proven in CI, then merge). DEMO_URL defaults to the demo VM.
 #   ./infra/chaos.sh heal      pushes a good release again, to reset between rehearsals
+#   ./infra/chaos.sh noise     fires 50 Alertmanager alerts at your alert inbox (INBOX_URL from Settings):
+#                              the ones about the demo VM fold into one card, the rest stay quiet
 #   ./infra/chaos.sh render    wedges a Render deploy of the demo (a restart brings it back)
 set -euo pipefail
 release() {
@@ -31,9 +33,16 @@ case "${1:-}" in
   heal)
     release false true "Restore homepage"
     echo "good release pushed" ;;
+  noise)
+    : "${INBOX_URL:?set INBOX_URL to the webhook URL from Settings -> Alerts from your other tools}"
+    for i in $(seq 50); do
+      if [ $((i % 5)) -eq 0 ]; then target=cache-7; name=HighMemory; else target="${VM_HOST:-34.135.145.87}:9100"; name=HighErrorRate; fi
+      curl -fsS -o /dev/null -H 'content-type: application/json' -d "{\"status\":\"firing\",\"alerts\":[{\"status\":\"firing\",\"labels\":{\"alertname\":\"$name\",\"instance\":\"$target\"},\"annotations\":{\"summary\":\"5xx rate above 5% for 5 minutes\"}}]}" "$INBOX_URL"
+    done
+    echo "50 alerts sent: 40 about the demo VM (one card), 10 about cache-7 (quiet)" ;;
   render)
     : "${RENDER_URL:?set RENDER_URL, e.g. https://opsswipe-demo-web.onrender.com}"
     : "${CHAOS_KEY:?set CHAOS_KEY (Render dashboard -> Environment)}"
     curl -fsS -X POST -H "X-Chaos-Key: $CHAOS_KEY" "$RENDER_URL/chaos" ;;
-  *) echo "usage: $0 gcp|release|heal|render" >&2; exit 1 ;;
+  *) echo "usage: $0 gcp|release|heal|noise|render" >&2; exit 1 ;;
 esac
