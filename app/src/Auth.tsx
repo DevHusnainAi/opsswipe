@@ -9,6 +9,7 @@ import { c, radius, space, TARGET, type } from './theme';
 import { Button } from './ui';
 
 const PRIVACY = 'https://github.com/DevHusnainAi/opsswipe/blob/main/PRIVACY.md';
+const TERMS = 'https://github.com/DevHusnainAi/opsswipe/blob/main/TERMS.md';
 
 export type AuthMode = 'signup' | 'signin';
 type Step = AuthMode | 'forgot' | 'sent' | 'confirm';
@@ -205,6 +206,10 @@ export function Auth({ mode, onBack, onSignedIn }: Props) {
               proves them.{' '}
               <Text style={{ color: c.text }} onPress={() => Linking.openURL(PRIVACY)} accessibilityRole="link">
                 Privacy
+              </Text>
+              <Text style={{ color: c.muted }}>{' · '}</Text>
+              <Text style={{ color: c.text }} onPress={() => Linking.openURL(TERMS)} accessibilityRole="link">
+                Terms
               </Text>
             </Text>
           </View>

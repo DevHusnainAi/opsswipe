@@ -417,6 +417,7 @@ export function Settings(p: Props) {
           <Action icon={GithubLogo} label="Source code on GitHub" onPress={() => Linking.openURL(REPO)} />
           <Action icon={ArrowSquareOut} label="How OpsSwipe keeps your servers safe" onPress={() => Linking.openURL(`${REPO}#security-model`)} />
           <Action icon={ShieldCheck} label="Privacy policy" onPress={() => Linking.openURL(`${REPO}/blob/main/PRIVACY.md`)} />
+          <Action icon={ArrowSquareOut} label="Terms of use" onPress={() => Linking.openURL(`${REPO}/blob/main/TERMS.md`)} />
         </View>
       </Section>
     </ScrollView>
