@@ -46,6 +46,14 @@ export function IncidentDetail(
     if (!prNumber) return;
     connect<{ files: PrFile[] }>('pr_diff', { incidentId: i.id }).then((r) => setDiff(r.files), (e) => setDiff(String(e.message ?? e)));
   }, [i.id, prNumber]);
+  // Written once by the server after the incident resolves, then kept on the incident.
+  const [pm, setPm] = useState<{ why: string; prevent: string[] } | string | null>(null);
+  const resolved = i.status === 'resolved' && !ctx.self_healed;
+  useEffect(() => {
+    if (!resolved) return;
+    connect<{ postmortem: { why: string; prevent: string[] } }>('postmortem', { incidentId: i.id })
+      .then((r) => setPm(r.postmortem), (e) => setPm(String(e.message ?? e)));
+  }, [i.id, resolved]);
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -145,6 +153,22 @@ export function IncidentDetail(
                   </ScrollView>
                 </View>
               ))}
+            </Block>
+          )}
+
+          {resolved && (
+            <Block title="Why it happened">
+              {pm === null && <Text style={type.caption}>Writing the postmortem…</Text>}
+              {typeof pm === 'string' && <Text style={type.caption}>{pm}</Text>}
+              {pm && typeof pm === 'object' && (
+                <>
+                  <Text style={type.body}>{pm.why}</Text>
+                  <Text style={[type.label, { color: c.muted, marginTop: space.sm }]}>Prevent it next time</Text>
+                  {pm.prevent.map((step, n) => (
+                    <Text key={n} style={type.body}>{n + 1}. {step}</Text>
+                  ))}
+                </>
+              )}
             </Block>
           )}
 

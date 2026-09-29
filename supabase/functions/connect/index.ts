@@ -7,7 +7,9 @@ import { withReturn } from '../_shared/appLink.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
 import { consentUrl, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
-import { openFilesPr, prFiles } from '../_shared/github.ts';
+import { commitFiles, openFilesPr, prFiles } from '../_shared/github.ts';
+import { aiLlm } from '../_shared/incidents.ts';
+import { writePostmortem } from '../_shared/postmortem.ts';
 import type { PrRef } from '../_shared/proof.ts';
 import { authorizeUrl, installUrl, listRepos } from '../_shared/githubApp.ts';
 import { completeGithub, completeGoogle, newState } from '../_shared/oauthState.ts';
@@ -358,6 +360,49 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       const pr = (data?.context as { pr?: PrRef } | undefined)?.pr;
       need(pr, 'This incident has no pull request.');
       return { files: await prFiles(pr!, await githubToken(owner)) };
+    }
+
+    // Why it happened and how to prevent it, written once after the incident resolves, then kept.
+    case 'postmortem': {
+      const { data: inc } = await db.from('incidents').select().eq('id', String(p.incidentId ?? ''))
+        .eq('owner', owner).maybeSingle();
+      need(inc, 'No such incident.');
+      const ctx = inc!.context ?? {};
+      if (ctx.postmortem) return { postmortem: ctx.postmortem };
+      need(inc!.status === 'resolved', 'The postmortem is written once the incident is resolved.');
+      const llm = aiLlm();
+      need(llm, 'AI is switched off on this server, so there is no postmortem.');
+      const service = inc!.service_id ? await getService(inc!.service_id) : null;
+      const repo = service?.config.repo;
+      const sha: string | undefined = ctx.live?.commit?.id;
+      const token = repo ? await githubToken(owner).catch(() => null) : null;
+      const diff = repo && sha && token
+        ? (await commitFiles(repo, sha, service!.config.branch ?? 'main', token).catch(() => []))
+          .map((f) => `--- ${f.path}\n${f.patch}`).join('\n').slice(0, 12_000)
+        : undefined;
+      const test = ctx.pr && token
+        ? (await prFiles(ctx.pr, token).catch(() => [])).find((f) => /opsswipe-[0-9a-f]{7}\.test\./.test(f.file))
+        : undefined;
+      const { data: audit } = await db.from('audit_log').select('action, outcome, detail').eq('incident_id', inc!.id)
+        .order('created_at');
+      const end = inc!.recovered_at ?? inc!.resolved_at;
+      const secs = end ? Math.round((Date.parse(end) - Date.parse(inc!.created_at)) / 1000) : null;
+      const postmortem = await writePostmortem(llm!, {
+        title: inc!.title,
+        service: inc!.target_server,
+        symptom: inc!.metric,
+        downFor: secs === null ? null : `${Math.floor(secs / 60)}m ${secs % 60}s`,
+        failing: (ctx.replay ?? []).map((r: { method: string; path: string; status: number }) => ({
+          method: r.method,
+          path: r.path,
+          status: r.status,
+        })),
+        badCommit: sha ? { sha, message: ctx.live?.commit?.message, diff } : null,
+        fixes: audit ?? [],
+        regressionTest: test?.file ?? null,
+      });
+      await db.from('incidents').update({ context: { ...ctx, postmortem } }).eq('id', inc!.id);
+      return { postmortem };
     }
 
     // Sign-out: this phone stops receiving this account's alerts.

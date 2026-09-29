@@ -25,15 +25,35 @@ OPSSWIPE_REPORT_URL=$(meta opsswipe-report-url)
 REPORT_SECRET=$(meta report-secret)
 ENV
 
+# Security patches install themselves every night (Debian's unattended-upgrades; on by default on GCE).
+dpkg -s unattended-upgrades >/dev/null 2>&1 || apt-get install -y unattended-upgrades
+systemctl enable --now unattended-upgrades
+
 # GIT_SHA is the deployed commit: reports carry it as `release`, so a revert targets the right one.
+# The app never runs as root: a throwaway user (DynamicUser) that may only bind port 80, can't gain
+# privileges, and sees the filesystem read-only. A hole in the app can't take over the VM.
 cat > /etc/systemd/system/opsswipe-demo.service <<'UNIT'
 [Unit]
 Description=OpsSwipe demo web
 After=network-online.target
 [Service]
 EnvironmentFile=/etc/opsswipe-demo.env
-ExecStart=/bin/sh -c 'GIT_SHA=$(git -C /opt/demo rev-parse HEAD) exec node /opt/demo/server.js'
+ExecStart=/bin/sh -c 'GIT_SHA=$(git -c safe.directory=/opt/demo -C /opt/demo rev-parse HEAD) exec node /opt/demo/server.js'
 Restart=on-failure
+DynamicUser=yes
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
 [Install]
 WantedBy=multi-user.target
 UNIT

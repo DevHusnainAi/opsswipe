@@ -43,6 +43,9 @@ function aiSuggester() {
   return sa.project_id ? vertexSuggester(sa.project_id, () => accessToken(sa)) : undefined;
 }
 
+// Plain JSON answers (postmortems). ponytail: NVIDIA mode only; Vertex would need its own adapter.
+export const aiLlm = () => (aiEnabled() && env('AI_SUGGESTIONS') === 'nvidia' ? nvidia(2048) : undefined);
+
 export function aiPatcher(): Patcher | undefined {
   if (!aiEnabled()) return undefined;
   if (env('AI_SUGGESTIONS') === 'nvidia') return llmPatcher(nvidia(16_384));
