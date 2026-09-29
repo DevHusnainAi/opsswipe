@@ -18,17 +18,17 @@ export async function sendMail(to: string, subject: string, text: string, html: 
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// The invite: a link that opens the app on the join step, and the code, for when the link can't open the app.
-export function inviteMail(from: string, code: string, link: string) {
+// The invite: a link that opens the app and joins the team (after signing up, for someone new).
+export function inviteMail(from: string, link: string) {
   const subject = `${from} invited you to their on-call team on OpsSwipe`;
   const text = [
     `${from} added you to their on-call team on OpsSwipe: you'll see and can fix their production incidents,`,
     `and you're paged when nobody answers in 5 minutes.`,
     '',
     `Join: ${link}`,
-    `Or in the app: Settings → Team → Join, code ${code}`,
     '',
-    `New to OpsSwipe? Install it, sign up, then open the link again. The invite works for 7 days.`,
+    `Open the link on your phone. New to OpsSwipe? Install it and sign up, then open the link again.`,
+    `The invite works for 7 days.`,
   ].join('\n');
   const html = `<div style="font-family:system-ui,sans-serif;max-width:480px;line-height:1.5">
 <p><b>${esc(from)}</b> added you to their on-call team on OpsSwipe: you'll see and can fix their production
@@ -36,8 +36,7 @@ incidents, and you're paged when nobody answers in 5 minutes.</p>
 <p><a href="${
     esc(link)
   }" style="display:inline-block;background:#10B981;color:#0A0A0A;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600">Join the team</a></p>
-<p>Or in the app: Settings → Team → Join, code <b style="font-family:monospace">${esc(code)}</b></p>
-<p style="color:#666">New to OpsSwipe? Install it, sign up, then open the link again. The invite works for 7 days.</p>
+<p style="color:#666">Open the link on your phone. New to OpsSwipe? Install it and sign up, then open the link again. The invite works for 7 days.</p>
 </div>`;
   return { subject, text, html };
 }

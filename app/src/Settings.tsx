@@ -61,8 +61,6 @@ export function Settings(p: Props) {
   const [alertInbox, setAlertInbox] = useState<string | null>(null);
   type Mate = { id: string; email: string };
   const [team, setTeam] = useState<{ members: Mate[]; teams: Mate[] }>({ members: [], teams: [] });
-  const [invite, setInvite] = useState<string | null>(null);
-  const [joinCode, setJoinCode] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
 
   const load = useCallback(async () => {
@@ -323,28 +321,13 @@ export function Settings(p: Props) {
               primary
               onPress={() => run('upgrade', p.onUpgrade)}
             />
-          ) : invite ? (
-            <Action
-              icon={ShareNetwork}
-              label={`Code ${invite}: share it`}
-              primary
-              onPress={() => void Share.share({ message: `Join my on-call team on OpsSwipe: Settings → Team → Join, code ${invite}` })}
-            />
           ) : (
-            <Action
-              icon={UserPlus}
-              label={busy === 'invite' ? 'Creating a code…' : 'Invite a teammate'}
-              primary
-              onPress={() => run('invite', async () => setInvite((await connect<{ code: string }>('team_invite')).code))}
-            />
-          )}
-          {p.team && (
-            // Or by email: a join link and the code, for someone with an account or not yet.
-            <View style={styles.inlineRow}>
+            // An email with a join link: it opens OpsSwipe and joins; someone new signs up first and is joined.
+            <View style={styles.inviteRow}>
               <TextInput
                 value={inviteEmail}
                 onChangeText={setInviteEmail}
-                placeholder="Invite by email"
+                placeholder="Teammate's email"
                 placeholderTextColor={c.muted}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -359,40 +342,15 @@ export function Settings(p: Props) {
                     setInviteEmail('');
                     return `Invite sent to ${r.sent}. It works for 7 days.`;
                   })}
-                disabled={!inviteEmail.includes('@')}
+                disabled={!inviteEmail.includes('@') || busy === 'mail'}
                 accessibilityRole="button"
-                style={[styles.joinBtn, !inviteEmail.includes('@') && { opacity: 0.4 }]}
+                accessibilityLabel="Send invite"
+                style={[styles.sendBtn, !inviteEmail.includes('@') && { opacity: 0.4 }]}
               >
-                <Text style={[type.label, { color: c.bg }]}>{busy === 'mail' ? 'Sending…' : 'Send'}</Text>
+                <Text style={[type.label, { color: c.bg }]}>{busy === 'mail' ? 'Sending…' : 'Invite'}</Text>
               </Pressable>
             </View>
           )}
-          <View style={[styles.inlineRow, { paddingBottom: space.md }]}>
-            <TextInput
-              value={joinCode}
-              onChangeText={setJoinCode}
-              placeholder="Join with a code"
-              placeholderTextColor={c.muted}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              maxLength={8}
-              style={styles.input}
-              accessibilityLabel="Team invite code"
-            />
-            <Pressable
-              onPress={() =>
-                run('join', async () => {
-                  await connect('team_join', { code: joinCode });
-                  setJoinCode('');
-                  return 'You joined the team. Their incidents now show up in Incidents.';
-                })}
-              disabled={joinCode.trim().length < 8}
-              accessibilityRole="button"
-              style={[styles.joinBtn, joinCode.trim().length < 8 && { opacity: 0.4 }]}
-            >
-              <Text style={[type.label, { color: c.bg }]}>{busy === 'join' ? 'Joining…' : 'Join'}</Text>
-            </Pressable>
-          </View>
         </View>
       </Section>
 
@@ -491,12 +449,13 @@ const styles = StyleSheet.create({
     backgroundColor: c.surface2,
     color: c.text,
     paddingHorizontal: space.md,
-    fontFamily: 'GeistMono',
-    letterSpacing: 2,
+    fontFamily: 'Geist',
+    fontSize: 16,
   },
-  inlineRow: { flexDirection: 'row', gap: space.sm },
-  joinBtn: {
+  inviteRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.md },
+  sendBtn: {
     minHeight: TARGET,
+    minWidth: 96,
     paddingHorizontal: space.lg,
     borderRadius: radius.control,
     backgroundColor: c.green,

@@ -31,7 +31,7 @@ OpsSwipe has no ads, no analytics SDK and no tracking. It does not sell or share
 - **RevenueCat** and the app stores handle purchases.
 - **Expo** delivers push notifications.
 - **GitHub, Google Cloud, Render, Railway** receive the calls needed for fixes you approve.
-- **Resend** delivers team invite emails: the invitee's address, your account email as the inviter, and the invite code.
+- **Resend** delivers team invite emails: the invitee's address, your account email as the inviter, and the join link.
 - **The AI provider**, when AI is switched on (currently NVIDIA's hosted models, with Groq as a backup; Claude on Google
   Cloud Vertex AI is supported too): the failing requests, the changed files of the commit that broke production, an
   example test from your repo, and the fixes that ran are sent to suggest a fix, write one, or write the postmortem.

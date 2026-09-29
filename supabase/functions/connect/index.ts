@@ -617,7 +617,6 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       await db.from('team_invites').insert({ code, owner, email });
       const mail = inviteMail(
         me?.user?.email ?? 'A teammate',
-        code,
         `${functionUrl('oauth-callback')}?to=team&code=${code}`,
       );
       await sendMail(email, mail.subject, mail.text, mail.html).catch((e) => {

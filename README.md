@@ -86,7 +86,7 @@ small teams on Render, Railway, Google Cloud or any host that deploys from GitHu
 
 **Team and agents**
 
-- Invite teammates by email or code. They can fix your incidents but never see your keys.
+- Invite teammates by email: a link that joins them, after signing up if they are new. They can fix your incidents but never see your keys.
 - An approval API for AI agents, with a ready-made Claude Code hook that fails closed.
 
 **Learn**

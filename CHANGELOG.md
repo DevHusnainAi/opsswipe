@@ -15,7 +15,7 @@ First public release, built for the RevenueCat Shipaton 2026.
 
 - **Alarm-style paging**: outages ring on an "Outages (alarm)" channel at alarm volume, repeat every 2 minutes until
   someone opens or acts on them, and escalate to the team after 5 minutes.
-- **Team invites by email** (Resend): a join link and code; people without an account sign up and are joined.
+- **Team invites by email** (Resend): a join link; people without an account sign up and are joined. Joining by a typed code is gone.
 - **Connect Railway** with OAuth: choose projects on Railway's consent screen, then pick the service from a list.
 - **Report status**: each service shows when its last failure report arrived; re-issue the report secret; a test
   report checks the setup without opening an incident. A connected VM receives its report URL and secret
