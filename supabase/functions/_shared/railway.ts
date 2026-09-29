@@ -124,31 +124,35 @@ export type RailwayService = {
   environments: { id: string; name: string }[];
 };
 
-// The projects the user shared on the consent screen, as project/service pairs with their environments.
+// The projects the user shared on the consent screen, as project/service pairs with their environments. Railway's
+// documented path: externalWorkspaces lists the shared projects (id, name); each project's services and environments
+// come from project(id).
 export async function listRailwayServices(token: string): Promise<RailwayService[]> {
-  const d = await gql<{
-    externalWorkspaces: {
-      projects: {
-        id: string;
-        name: string;
-        services: { edges: { node: { id: string; name: string } }[] };
-        environments: { edges: { node: { id: string; name: string } }[] };
-      }[];
-    }[];
-  }>(
+  const w = await gql<{ externalWorkspaces: { projects: { id: string; name: string }[] }[] }>(
     token,
-    `query { externalWorkspaces { projects { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } }`,
+    `query { externalWorkspaces { projects { id name } } }`,
     {},
   );
-  return d.externalWorkspaces.flatMap((w) =>
-    w.projects.flatMap((p) =>
-      p.services.edges.map(({ node: s }) => ({
-        projectId: p.id,
-        project: p.name,
-        serviceId: s.id,
-        service: s.name,
-        environments: p.environments.edges.map((e) => e.node),
-      }))
+  const projects = w.externalWorkspaces.flatMap((x) => x.projects).slice(0, 20);
+  const details = await Promise.all(projects.map((p) =>
+    gql<{
+      project: {
+        services: { edges: { node: { id: string; name: string } }[] };
+        environments: { edges: { node: { id: string; name: string } }[] };
+      };
+    }>(
+      token,
+      `query($id: String!) { project(id: $id) { services { edges { node { id name } } } environments { edges { node { id name } } } } }`,
+      { id: p.id },
     )
+  ));
+  return projects.flatMap((p, i) =>
+    details[i].project.services.edges.map(({ node: s }) => ({
+      projectId: p.id,
+      project: p.name,
+      serviceId: s.id,
+      service: s.name,
+      environments: details[i].project.environments.edges.map((e) => e.node),
+    }))
   );
 }

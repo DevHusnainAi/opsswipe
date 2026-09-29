@@ -40,18 +40,19 @@ Deno.test('a Railway grant is reused while fresh; an expired one refreshes and h
 });
 
 Deno.test('the shared projects become project/service choices with their environments', async () => {
-  const f = mockFetch(() => ({
-    data: {
-      externalWorkspaces: [{
-        projects: [{
-          id: 'p1',
-          name: 'shop',
-          services: { edges: [{ node: { id: 's1', name: 'api' } }] },
-          environments: { edges: [{ node: { id: 'e1', name: 'production' } }] },
-        }],
-      }],
-    },
-  }));
+  const f = mockFetch((_u, init) => {
+    const q = JSON.parse(String(init?.body)).query as string;
+    return q.includes('externalWorkspaces')
+      ? { data: { externalWorkspaces: [{ projects: [{ id: 'p1', name: 'shop' }] }] } }
+      : {
+        data: {
+          project: {
+            services: { edges: [{ node: { id: 's1', name: 'api' } }] },
+            environments: { edges: [{ node: { id: 'e1', name: 'production' } }] },
+          },
+        },
+      };
+  });
   try {
     assertEquals(await listRailwayServices('tok'), [
       {
@@ -65,4 +66,5 @@ Deno.test('the shared projects become project/service choices with their environ
   } finally {
     f.restore();
   }
+  assertEquals(f.calls.length, 2, 'the shared projects, then each project for its services');
 });

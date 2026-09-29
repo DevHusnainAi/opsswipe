@@ -146,9 +146,9 @@ export async function connect<T>(action: string, params: Record<string, unknown>
 
 const AUTH_REDIRECT = appLink('auth');
 
-export type Claimed = { kind: 'github' | 'google' | 'slack' | 'discord'; account: string | null; projects?: GcpProject[] };
+export type Claimed = { kind: 'github' | 'google' | 'slack' | 'discord' | 'railway'; account: string | null; projects?: GcpProject[] };
 const claims = new Map<string, Promise<Claimed>>();
-const NAMES: Record<string, string> = { github: 'GitHub', google: 'Google', slack: 'Slack', discord: 'Discord' };
+const NAMES: Record<string, string> = { github: 'GitHub', google: 'Google', slack: 'Slack', discord: 'Discord', railway: 'Railway' };
 
 // A Connect flow comes back to opsswipe://connect?claim=… on the phone that approved it; this account
 // claims it (the server checks it's the one that started it). The same link can arrive twice (the

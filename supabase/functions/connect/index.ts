@@ -288,7 +288,12 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
 
     // The services in the projects the user shared, to pick from instead of pasting a dashboard link.
     case 'railway_services':
-      return { services: await listRailwayServices(await railwayToken(owner)) };
+      return {
+        services: await listRailwayServices(await railwayToken(owner)).catch((e) => {
+          console.error('railway_services:', String(e));
+          throw new UserError(`Railway didn't list your services: ${String((e as Error).message).slice(0, 160)}`);
+        }),
+      };
 
     case 'add_railway': {
       const token = String(p.token ?? '').trim();
