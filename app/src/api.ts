@@ -170,7 +170,13 @@ export function claimFrom(url: string): Promise<Claimed | null> {
 // app stored when it started the sign-in or reset, so a link someone else made can't sign this phone in.
 export async function sessionFromRedirect(url: string) {
   const p = paramsOf(url);
-  if (p.error) throw new Error(p.error_description || 'Sign-in failed. Try again.');
+  if (p.error) {
+    const why = decodeURIComponent(p.error_description ?? '');
+    // The provider's one-time code couldn't be traded (used twice, or expired): starting again fixes it.
+    throw new Error(
+      /exchange external code/i.test(why) ? 'That sign-in didn\'t finish. Try again.' : why || 'Sign-in failed. Try again.',
+    );
+  }
   if (!p.code) return null;
   const { data, error } = await supabase.auth.exchangeCodeForSession(p.code);
   if (error) throw new Error('That sign-in link was not started on this phone, or it expired. Try again.');
@@ -179,23 +185,24 @@ export async function sessionFromRedirect(url: string) {
 
 // While GitHub sign-in is open, its return link belongs to that call; the app's deep-link handler skips it
 // (a PKCE code works only once).
-let githubInFlight = false;
-export const githubSignInOpen = () => githubInFlight;
+let oauthInFlight = false;
+export const githubSignInOpen = () => oauthInFlight;
 
-// Continue with GitHub: one browser sheet, new or returning users alike. Null if cancelled.
-export async function signInWithGithub() {
-  githubInFlight = true;
+// Continue with GitHub or Google: one browser sheet, new or returning users alike. Null if cancelled.
+export async function signInWith(provider: 'github' | 'google') {
+  oauthInFlight = true;
   try {
-    return await githubSignIn();
+    return await oauthSignIn(provider);
   } finally {
-    githubInFlight = false;
+    oauthInFlight = false;
   }
 }
+export const signInWithGithub = () => signInWith('github');
 
-async function githubSignIn() {
+async function oauthSignIn(provider: 'github' | 'google') {
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'github',
-    // The account picker lets you choose which GitHub account instead of reusing the last one.
+    provider,
+    // The account picker lets you choose which account instead of reusing the last one.
     options: { redirectTo: authRedirect, skipBrowserRedirect: true, queryParams: { prompt: 'select_account' } },
   });
   if (error) throw error;

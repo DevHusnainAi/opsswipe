@@ -5,14 +5,14 @@ import type { Icon } from 'phosphor-react-native';
 import { Bug, CheckCircle, CurrencyDollar, Cloud, GitBranch, GithubLogo, GoogleLogo, HardDrives, Key, Plus, ShieldCheck, Sparkle, Train, Trash } from 'phosphor-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { AddService, CopyRow, type StartAt } from './AddService';
+import { AddService, type StartAt } from './AddService';
 import { claimFrom, type ConnectStatus, type Service, connect, supabase } from './api';
 import { appBase, appLink } from './env';
 import { formatDuration } from './format';
 import { ReportSetup } from './ReportSetup';
 import { RepoPicker } from './RepoPicker';
 import { TARGET, c, radius, space, type } from './theme';
-import { Button, Chip, Section, useNow } from './ui';
+import { Button, Chip, CopyRow, Section, useNow } from './ui';
 
 // openAdd: bumped by the app to open the add sheet (the last onboarding step).
 // addOpen: onboarding's last step opens the add sheet. It's state the sheet starts from (not a counter

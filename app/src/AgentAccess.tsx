@@ -3,11 +3,10 @@
 import { Plus, Robot, Trash } from 'phosphor-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { CopyRow } from './AddService';
+import { Button, CopyRow, Section, useNow } from './ui';
 import { connect } from './api';
 import { timeAgo } from './format';
 import { c, radius, space, TARGET, type } from './theme';
-import { Button, Section, useNow } from './ui';
 
 type Token = { id: string; name: string; created_at: string; last_used_at: string | null };
 

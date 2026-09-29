@@ -2,13 +2,22 @@
 // AsyncStorage, so a backup or a rooted phone can't lift the session. The fix key is also released
 // only after the fingerprint, and the server checks it on every fix (execute + _shared/fixKeys.ts).
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getRandomValues } from 'expo-crypto';
+import { CryptoDigestAlgorithm, digest, getRandomValues } from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
-// Supabase's sign-in (PKCE) needs random values; React Native doesn't ship crypto.getRandomValues.
-const g = globalThis as { crypto?: { getRandomValues?: typeof getRandomValues } };
+// Supabase's sign-in (PKCE) needs random values and SHA-256; React Native ships neither
+// crypto.getRandomValues nor crypto.subtle. expo-crypto provides both natively, so PKCE uses the S256
+// method (a hashed challenge) instead of falling back to "plain".
+type Subtle = { digest: (algorithm: string, data: BufferSource) => Promise<ArrayBuffer> };
+const g = globalThis as { crypto?: { getRandomValues?: typeof getRandomValues; subtle?: Subtle } };
 g.crypto ??= {};
 g.crypto.getRandomValues ??= getRandomValues;
+g.crypto.subtle ??= {
+  digest: (algorithm, data) => {
+    if (algorithm !== 'SHA-256') return Promise.reject(new Error(`unsupported digest ${algorithm}`));
+    return digest(CryptoDigestAlgorithm.SHA256, data);
+  },
+};
 
 // Keys may only use letters, digits, ".", "-" and "_". Values are split: some devices reject big ones.
 const CHUNK = 1800;

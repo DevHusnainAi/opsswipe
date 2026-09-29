@@ -210,7 +210,7 @@ export default function App() {
         name: 'Outages (alarm)',
         description: 'A service is down and needs you now. Rings at alarm volume until someone answers.',
         importance: Notifications.AndroidImportance.MAX,
-        sound: 'default',
+        // No `sound`: that names a bundled file; left out, the channel uses the phone's default sound.
         audioAttributes: {
           usage: Notifications.AndroidAudioUsage.ALARM,
           contentType: Notifications.AndroidAudioContentType.SONIFICATION,

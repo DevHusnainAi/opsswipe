@@ -2,7 +2,7 @@
 // one-line test to run on the server, and for a Google Cloud VM the ready gcloud command to set them.
 // A report that never arrives (an app still holding an old secret) otherwise fails silently.
 import { StyleSheet, Text, View } from 'react-native';
-import { CopyRow } from './AddService';
+import { CopyRow } from './ui';
 import type { Service } from './api';
 import { c, radius, space, type } from './theme';
 

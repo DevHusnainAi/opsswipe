@@ -1,9 +1,9 @@
 // Create account / Sign in. GitHub is the primary way in (the users are developers); email and
 // password work too, with password reset. Every screen here has one job and one primary button.
-import { ArrowLeft, Envelope, Eye, EyeSlash, GithubLogo, ShieldCheck } from 'phosphor-react-native';
+import { ArrowLeft, Envelope, Eye, EyeSlash, GithubLogo, GoogleLogo, ShieldCheck } from 'phosphor-react-native';
 import { type ReactNode, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { sendPasswordReset, setNewPassword, signInWithEmail, signInWithGithub, signUpWithEmail } from './api';
+import { sendPasswordReset, setNewPassword, signInWith, signInWithEmail, signUpWithEmail } from './api';
 import { Logo } from './Onboarding';
 import { c, radius, space, TARGET, type } from './theme';
 import { Button } from './ui';
@@ -27,10 +27,10 @@ export function Auth({ mode, onBack, onSignedIn }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState<'github' | 'email' | null>(null);
+  const [busy, setBusy] = useState<'github' | 'google' | 'email' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const run = async (key: 'github' | 'email', fn: () => Promise<void>) => {
+  const run = async (key: 'github' | 'google' | 'email', fn: () => Promise<void>) => {
     setBusy(key);
     setError(null);
     try {
@@ -42,9 +42,9 @@ export function Auth({ mode, onBack, onSignedIn }: Props) {
     }
   };
 
-  const github = () =>
-    run('github', async () => {
-      const s = await signInWithGithub();
+  const oauth = (provider: 'github' | 'google') =>
+    run(provider, async () => {
+      const s = await signInWith(provider);
       if (s) onSignedIn(s.uid, view === 'signup');
     });
 
@@ -127,7 +127,7 @@ export function Auth({ mode, onBack, onSignedIn }: Props) {
         {view !== 'forgot' && (
           <>
             <Pressable
-              onPress={github}
+              onPress={() => oauth('github')}
               disabled={!!busy}
               accessibilityRole="button"
               style={({ pressed }) => [styles.github, pressed && { opacity: 0.85 }]}
@@ -135,6 +135,17 @@ export function Auth({ mode, onBack, onSignedIn }: Props) {
               <GithubLogo size={20} color={c.bg} weight="fill" />
               <Text style={[type.label, { color: c.bg, fontSize: 16 }]}>
                 {busy === 'github' ? 'Opening GitHub…' : 'Continue with GitHub'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => oauth('google')}
+              disabled={!!busy}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.google, pressed && { opacity: 0.85 }]}
+            >
+              <GoogleLogo size={20} color={c.text} weight="bold" />
+              <Text style={[type.label, { fontSize: 16 }]}>
+                {busy === 'google' ? 'Opening Google…' : 'Continue with Google'}
               </Text>
             </Pressable>
             <View style={styles.or}>
@@ -292,6 +303,17 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: radius.control,
     backgroundColor: c.text,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.sm,
+  },
+  google: {
+    minHeight: 52,
+    borderRadius: radius.control,
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.borderStrong,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

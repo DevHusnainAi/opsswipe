@@ -1,16 +1,13 @@
 // "Add a service" as one guided sheet: pick where it runs -> connect that provider if needed ->
 // pick the service (Render) or project then VM (Google Cloud) -> confirm -> copy the report secret.
 // Keys go straight to the server (Supabase Vault); the app never stores or shows them again.
-import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import {
   ArrowLeft,
   CaretDown,
   CaretRight,
-  Check,
   CheckCircle,
   Cloud,
-  Copy,
   GoogleLogo,
   HardDrives,
   Key,
@@ -22,12 +19,12 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, Text
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ReportSetup } from './ReportSetup';
 import { SearchList } from './SearchList';
+import { Button, Chip, CopyRow } from './ui';
 import { claimFrom, type ConnectStatus, type RailwayService, type GcpProject, type NewService, type RenderOption, type VmOption, connect } from './api';
 import { appBase, appLink } from './env';
 import { paramsOf } from './format';
 import { TARGET, c, radius, space, type } from './theme';
 import { RepoPicker } from './RepoPicker';
-import { Button, Chip } from './ui';
 
 export type StartAt = 'provider' | 'renderKey' | 'google' | 'railway';
 type Step = 'provider' | 'renderKey' | 'renderPick' | 'renderConfirm' | 'railway' | 'google' | 'project' | 'vm' | 'done';
@@ -621,29 +618,6 @@ function Loading({ text }: { text: string }) {
 const Empty = ({ text }: { text: string }) => <Text style={[type.body, { color: c.muted, paddingVertical: space.lg }]}>{text}</Text>;
 
 
-export function CopyRow({ label, value, lines = 4 }: { label: string; value: string; lines?: number }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <View style={styles.copy}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={type.caption}>{label}</Text>
-        <Text style={[type.mono, lines > 4 && { fontSize: 11, lineHeight: 15 }]} selectable numberOfLines={lines}>{value}</Text>
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Copy ${label}`}
-        onPress={async () => {
-          await Clipboard.setStringAsync(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-        style={styles.icon}
-      >
-        {copied ? <Check size={18} color={c.green} weight="bold" /> : <Copy size={18} color={c.text} weight="bold" />}
-      </Pressable>
-    </View>
-  );
-}
 
 function Field(f: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; secure?: boolean }) {
   return (
@@ -716,14 +690,6 @@ const styles = StyleSheet.create({
     color: c.text,
     fontFamily: 'GeistMono',
     fontSize: 14,
-  },
-  copy: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    backgroundColor: c.surface,
-    borderRadius: radius.control,
-    padding: space.md,
   },
   error: { color: c.red, backgroundColor: c.redTint, borderRadius: radius.control, padding: space.md },
   disclosure: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minHeight: TARGET },

@@ -1,6 +1,7 @@
 // Small shared primitives. Every pressable meets the 48dp touch target.
 import type { Icon } from 'phosphor-react-native';
-import { ArrowSquareOut, CheckCircle, WarningCircle, XCircle } from 'phosphor-react-native';
+import { ArrowSquareOut, Check, CheckCircle, Copy, WarningCircle, XCircle } from 'phosphor-react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { TARGET, c, radius, space, type } from './theme';
@@ -86,7 +87,42 @@ export function Skeleton({ height, style }: { height: number; style?: ViewStyle 
   return <View style={[{ height, borderRadius: radius.card, backgroundColor: c.surface }, style]} />;
 }
 
+// A value to copy (a URL, a secret, a command), with its label and a copy button.
+export function CopyRow({ label, value, lines = 4 }: { label: string; value: string; lines?: number }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <View style={styles.copyRow}>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={type.caption}>{label}</Text>
+        <Text style={[type.mono, lines > 4 && { fontSize: 11, lineHeight: 15 }]} selectable numberOfLines={lines}>{value}</Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Copy ${label}`}
+        onPress={async () => {
+          await Clipboard.setStringAsync(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+        style={styles.copyIcon}
+      >
+        {copied ? <Check size={18} color={c.green} weight="bold" /> : <Copy size={18} color={c.text} weight="bold" />}
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  copyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: c.surface,
+    borderRadius: radius.control,
+    padding: space.md,
+  },
+  copyIcon: { width: TARGET, height: TARGET, alignItems: 'center', justifyContent: 'center' },
+
   button: {
     minHeight: TARGET,
     borderRadius: radius.control,
