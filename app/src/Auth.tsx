@@ -1,12 +1,14 @@
 // Create account / Sign in. GitHub is the primary way in (the users are developers); email and
 // password work too, with password reset. Every screen here has one job and one primary button.
-import { ArrowLeft, Envelope, Eye, EyeSlash, GithubLogo } from 'phosphor-react-native';
+import { ArrowLeft, Envelope, Eye, EyeSlash, GithubLogo, ShieldCheck } from 'phosphor-react-native';
 import { type ReactNode, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { sendPasswordReset, setNewPassword, signInWithEmail, signInWithGithub, signUpWithEmail } from './api';
 import { Logo } from './Onboarding';
 import { c, radius, space, TARGET, type } from './theme';
 import { Button } from './ui';
+
+const PRIVACY = 'https://github.com/DevHusnainAi/opsswipe/blob/main/PRIVACY.md';
 
 export type AuthMode = 'signup' | 'signin';
 type Step = AuthMode | 'forgot' | 'sent' | 'confirm';
@@ -193,6 +195,20 @@ export function Auth({ mode, onBack, onSignedIn }: Props) {
             </Text>
           </Pressable>
         )}
+
+        {/* The empty lower half answers the question people have before connecting production. */}
+        {view === 'signup' && (
+          <View style={styles.trust}>
+            <ShieldCheck size={18} color={c.green} weight="fill" />
+            <Text style={[type.caption, { flex: 1 }]}>
+              Nothing runs on your servers until you approve it with your fingerprint. Code fixes merge only after CI
+              proves them.{' '}
+              <Text style={{ color: c.text }} onPress={() => Linking.openURL(PRIVACY)} accessibilityRole="link">
+                Privacy
+              </Text>
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -264,6 +280,7 @@ function Field(f: {
 const styles = StyleSheet.create({
   root: { flex: 1, paddingVertical: space.lg, gap: space.lg },
   scroll: { flexGrow: 1, gap: space.xl, paddingBottom: space.xxl },
+  trust: { marginTop: 'auto', flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' },
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 56 },
   back: { width: TARGET, height: TARGET, justifyContent: 'center' },
   github: {
