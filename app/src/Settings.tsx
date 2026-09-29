@@ -19,8 +19,9 @@ import {
   UserCircle,
 } from 'phosphor-react-native';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { AgentAccess } from './AgentAccess';
+import { canSignInHere, SlackSignIn } from './SlackSignIn';
 import { type ConnectStatus, connect, supabase } from './api';
 import * as WebBrowser from 'expo-web-browser';
 import { appBase, appLink, inExpoGo, Notifications } from './env';
@@ -89,18 +90,19 @@ export function Settings(p: Props) {
   };
 
   // The server stores the channel when the provider calls back, so whatever the browser returns,
-  // looking again (run's load) shows the result.
+  // looking again (run's load) shows the result. Slack goes through SlackSignIn (see why there).
+  const [slackUrl, setSlackUrl] = useState<string | null>(null);
   const addChat = (kind: 'slack' | 'discord') =>
     run(kind, async () => {
       const { url } = await connect<{ url: string }>('alerts_start', { kind, returnTo: appBase });
+      if (kind === 'slack' && canSignInHere) return void setSlackUrl(url);
       const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
       const name = kind === 'slack' ? 'Slack' : 'Discord';
       if (r.type === 'success' && paramsOf(r.url).error) throw new Error(`${name} did not finish. Try again.`);
-      // Signing in on a phone often ends on the provider's "get the app" page and drops the request.
-      // The browser is signed in by then, so a second tap goes straight to the channel picker.
-      const now = (await connect<ConnectStatus>('status')).alerts;
-      if (!now.connected) {
-        return `Not connected yet. If ${name} asked you to sign in, you're signed in now: tap Add to ${name} again and pick a channel.`;
+      if (!(await connect<ConnectStatus>('status')).alerts.connected) {
+        return kind === 'slack'
+          ? 'Slack sign-in needs the latest app build on this phone (a phone browser can\'t sign in to Slack).'
+          : 'Not connected yet: pick a channel and tap Authorize.';
       }
     });
 
@@ -223,10 +225,33 @@ export function Settings(p: Props) {
             <>
               <Action icon={SlackLogo} label={busy === 'slack' ? 'Waiting for Slack…' : 'Add to Slack'} primary onPress={() => addChat('slack')} />
               <Action icon={DiscordLogo} label={busy === 'discord' ? 'Waiting for Discord…' : 'Add to Discord'} onPress={() => addChat('discord')} />
+              {/* Slack's pages send phone browsers to "get the app" and drop the request; the server finishes
+                  the connection whichever device opens the link, so a laptop works. The link expires in 15 min. */}
+              <Action
+                icon={ArrowSquareOut}
+                label="Add to Slack from a computer"
+                onPress={() =>
+                  run('slack-link', async () => {
+                    const { url } = await connect<{ url: string }>('alerts_start', { kind: 'slack' });
+                    await Share.share({ message: url });
+                    return 'Open the link on your computer within 15 minutes and pick a channel. Then come back here.';
+                  })}
+              />
             </>
           )}
         </View>
       </Section>
+
+      {slackUrl && (
+        <SlackSignIn
+          url={slackUrl}
+          onDone={() => {
+            setSlackUrl(null);
+            void run('slack', async () =>
+              (await connect<ConnectStatus>('status')).alerts.connected ? 'Slack connected. A test message was posted.' : undefined);
+          }}
+        />
+      )}
 
       <AgentAccess active={p.active} />
 
