@@ -16,3 +16,14 @@ select cron.schedule('opsswipe-healthcheck', '* * * * *', $$
     timeout_milliseconds := 8000
   );
 $$);
+
+-- The weekly report (uptime, time to fix, revenue at risk, fixes proven): Mondays 09:00 PKT.
+select cron.schedule('opsswipe-weekly', '0 4 * * 1', $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/weekly',
+    headers := jsonb_build_object(
+      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')
+    ),
+    timeout_milliseconds := 30000
+  );
+$$);
