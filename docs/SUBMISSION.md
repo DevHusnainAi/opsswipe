@@ -155,7 +155,7 @@ Put a short **"For the judges"** box at the very top, mapped to the four criteri
 > Team with monthly and yearly plans and a 7-day trial offered during onboarding, never mid-outage; entitlements checked
 > on the server, with a webhook-kept copy so a billing outage never blocks a fix.
 > **Care:** Least privilege (reboot-only role on one VM, 1-hour GitHub tokens, secrets in Vault), row-level security,
-> OIDC-signed proofs with the PR's code isolated in Docker, prompts that treat request data as data, 99 backend tests,
+> OIDC-signed proofs with the PR's code isolated in Docker, prompts that treat request data as data, 108 backend tests,
 > SQL tests on Postgres 17, a 14-case AI eval, CI and CD, decision records, privacy policy and terms.
 
 Then Devpost's standard sections:

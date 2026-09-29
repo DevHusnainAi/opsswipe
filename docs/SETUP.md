@@ -71,8 +71,8 @@ Then note the **App ID** and **Client ID**, generate a **client secret** and a *
 
 ### 4. RevenueCat
 
-New project (Test Store included) → products `opsswipe_pro_monthly` $4.99 and `opsswipe_pro_annual` $39.99 on the
-Test Store → entitlement `pro` with both → offering `default` → a Paywall. The Test Store public key goes in
+New project (Test Store included) → the products, entitlements and offering listed under
+[RevenueCat plans](#revenuecat-plans-operator-once) → a Paywall. The Test Store public key goes in
 `app/.env` as `EXPO_PUBLIC_RC_KEY`; keep the secret key for the next step.
 
 ### 5. Secrets and deploy
@@ -166,7 +166,9 @@ gh secret set DEPLOY_KNOWN_HOSTS --repo $R < ../opsswipe-private/demo-known-host
 gh secret set DEPLOY_HOST --repo $R --body <VM IP>
 ```
 
-Render works too (New → Web Service from the same repo, env `CHAOS_KEY`, health check `/livez`); the demo uses the VM.
+Render and Railway have their own demo repos, `opsswipe-demo-render` (with a `render.yaml`) and `opsswipe-demo-railway`:
+create a web service from the repo, set `CHAOS_KEY`, and after adding it in OpsSwipe set `OPSSWIPE_REPORT_URL` and
+`REPORT_SECRET` in the host's environment.
 
 ### 9. Connect everything from the app
 
@@ -177,10 +179,10 @@ then the **Services** tab's setup checklist.
 2. **Add → Google Cloud VM**: sign in with Google once (accept the unverified-app screen), pick the project, then
    `opsswipe-demo`, check the URL, link `opsswipe-demo-target` as the repo, **Add**. Google stays connected, so the
    next VM is just project → VM. (`gcp-setup.sh` already granted the demo VM; adding it again is harmless.)
-3. Give the VM the two values the app shows once, then reset it so the app reports its 5xx with the deployed commit:
-   `gcloud compute instances add-metadata opsswipe-demo --zone us-central1-a --metadata opsswipe-report-url=<URL>,report-secret=<SECRET>`
-   and `gcloud compute instances reset opsswipe-demo --zone us-central1-a`.
-4. **Setup checklist → Turn on proof.** Merge the PR it opens (check the install, test and start commands first).
+3. Nothing to copy for the VM: adding it (and **New secret** later) writes the report URL and secret onto the VM's
+   metadata, and the demo app reads them from there within a minute. The service then shows "Last failure report …"
+   after its first 5xx. (If Google refuses the write, the app shows the `gcloud add-metadata` command instead.)
+4. **Setup checklist → Turn on proof** (or **Add proof to repo** on the service). Merge the PR it opens (check the install, test and start commands first).
    From now on every PR runs the proof, authenticated by GitHub OIDC with no secrets.
 
 ### Fix with AI (optional)
@@ -227,7 +229,8 @@ curl -H "Authorization: Bearer ops_..." "https://<ref>.supabase.co/functions/v1/
 
 ### Connect Railway (operator, once)
 
-Railway → your workspace → Settings → OAuth Apps → New (workspace admins only). Redirect URI:
+Railway → your workspace → Settings → OAuth Apps → New (workspace admins only), type **Web Application** (the code
+exchange runs on the server and needs the client secret). Redirect URI:
 `https://<ref>.supabase.co/functions/v1/oauth-callback`. Then
 `npx supabase secrets set RAILWAY_CLIENT_ID=… RAILWAY_CLIENT_SECRET=…`. Users then tap **Connect Railway**, pick
 projects on Railway's consent screen (`project:member`), and choose the service from a list; without these secrets

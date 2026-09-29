@@ -11,6 +11,12 @@ labels: bug
 **Steps to reproduce**
 1.
 
-**Where:** app version, phone and OS, provider (Google Cloud, Render, Railway)
+**Environment**
+
+- App version:
+- Phone and Android version:
+- Provider (Google Cloud, Render, Railway):
+
+**Logs or screenshots**
 
 For a security problem, don't file an issue: see SECURITY.md.

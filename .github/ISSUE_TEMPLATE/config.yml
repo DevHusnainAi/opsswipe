@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/DevHusnainAi/opsswipe/security/advisories/new
+    about: Please report security problems privately, never in a public issue.
+  - name: Setup help
+    url: https://github.com/DevHusnainAi/opsswipe/blob/main/docs/SETUP.md
+    about: The step-by-step runbook for running OpsSwipe yourself.

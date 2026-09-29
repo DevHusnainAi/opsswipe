@@ -7,6 +7,7 @@
 - [ ] `deno task test` / `deno task check` / `deno task lint` / `deno fmt --check`
 - [ ] `cd app && npm run typecheck && npm run lint && npm test` (if the app changed)
 - [ ] A new or changed test fails without this change
+- [ ] Docs updated (README, docs/SETUP.md, CLAUDE.md) and a line added to CHANGELOG.md under *Unreleased*
 
 ## Safety
 
