@@ -20,6 +20,7 @@ what it stores, why, and how to delete it. The code that does all of this is in 
 | Teammates you invite, and teams you join | So a teammate can fix your incidents and be paged when nobody answers | Supabase Postgres. Teammates see your incidents only, never your services' keys or connections |
 | The email address you invite, with the invite | To send the invite and cap invites at 20 a day | Supabase Postgres, server only; the invite expires after 7 days. The address is used only for that one email |
 | Alerts sent to your alert inbox that match none of your services: alert name, summary, target | To count them in your weekly report instead of paging you | Supabase Postgres, visible only to you |
+| A shared incident's report link (a random id, made only when you share it) | So people you share it with can read what happened | Supabase Postgres. The page shows only the service name, the incident title, times and what fixed it: never errors, paths or keys |
 | Your status page link (a random id) | To publish your status page | Supabase Postgres. The page shows only service names, up/down, daily downtime and incident titles: never errors, paths or keys |
 | Your plan | To unlock Pro | RevenueCat, keyed by your OpsSwipe user id; a copy of the expiry date in Supabase |
 

@@ -431,6 +431,27 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       return { declined: true };
     }
 
+    // A public link to a resolved incident's report (status-page/incident.html): made once, then reused.
+    case 'share_incident': {
+      const { data: inc } = await db.from('incidents').select('id, share_slug, status')
+        .eq('id', String(p.incidentId ?? '')).in('owner', await ownersFor(owner)).maybeSingle();
+      need(inc, 'No such incident.');
+      need(inc!.status === 'resolved', 'Share the report once the incident is resolved.');
+      let slug = inc!.share_slug as string | null;
+      if (!slug) {
+        slug = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32])
+          .join('');
+        const { data: set } = await db.from('incidents').update({ share_slug: slug }).eq('id', inc!.id)
+          .is('share_slug', null).select('share_slug').maybeSingle();
+        if (!set) slug = (await db.from('incidents').select('share_slug').eq('id', inc!.id).single()).data!.share_slug;
+      }
+      const base = (env('STATUS_PAGE_URL') || 'https://devhusnainai.github.io/opsswipe-status/').replace(
+        /\/?(\?.*)?$/,
+        '/',
+      );
+      return { url: `${base}incident.html?r=${slug}` };
+    }
+
     // Someone on the team has seen it (opened from the notification or the card): the pager stops re-ringing.
     case 'ack': {
       await db.from('incidents').update({ context: { acked_at: new Date().toISOString(), acked_by: owner } })

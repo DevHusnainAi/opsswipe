@@ -93,3 +93,10 @@ export function lostLine(i: WithRevenue) {
   const lost = (r.perHour * (Date.parse(i.recovered_at) - Date.parse(i.created_at))) / 3_600_000;
   return `about ${money(lost, r.currency)} lost (estimate)`;
 }
+
+// The line shared with a report link: short enough for a post on X.
+export function shareLine(i: Recovered) {
+  const down = i.recovered_at ? ` was down ${formatDuration(Date.parse(i.recovered_at) - Date.parse(i.created_at))} and` : '';
+  const proven = i.context?.proof?.ok ? ', with the fix proven in CI against the requests that failed' : '';
+  return `${i.target_server}${down} is back up${proven}. Full report:`;
+}

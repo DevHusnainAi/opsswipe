@@ -22,6 +22,9 @@ First public release, built for the RevenueCat Shipaton 2026.
   automatically.
 - Searchable, fixed-height pickers for repos, projects, VMs and services.
 - The Discord connection shows the server's name.
+- **Shareable incident reports**: each resolved incident gets a public link (like the status page) with share
+  buttons for X and LinkedIn; only names, times and what fixed it are public.
+- **Connect Railway** finishes with an Open OpsSwipe button when the browser won't open the app by itself.
 
 ### Changed
 

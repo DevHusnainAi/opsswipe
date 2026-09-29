@@ -55,3 +55,32 @@ export function statusReport(services: StatusService[], incidents: StatusInciden
       })),
   };
 }
+
+// One resolved incident, for its public share page: the same rule as the status page (names, times and what fixed
+// it; never error text, paths, repos or keys).
+const FIXED_BY: Record<string, string> = {
+  reset: 'Rebooted the VM',
+  restart: 'Restarted the service',
+  rollback: 'Rolled back to the previous deploy',
+  revert_pr: 'Opened a revert PR',
+  fix_pr: 'Opened an AI-written fix with a regression test',
+  merge_pr: 'Merged the fix CI proved',
+};
+export type ShareIncident = StatusIncident & {
+  target_server: string;
+  context: { self_healed?: boolean; proof?: { ok: boolean; passed: number; total: number } } | null;
+};
+export function publicIncident(i: ShareIncident, fixes: { action: string; created_at: string }[]) {
+  const end = i.recovered_at ?? i.resolved_at;
+  const proof = i.context?.proof?.ok ? { passed: i.context.proof.passed, total: i.context.proof.total } : null;
+  return {
+    service: i.target_server,
+    title: i.title,
+    detected: i.created_at,
+    backUp: i.recovered_at,
+    downSeconds: end ? Math.max(0, Math.round((Date.parse(end) - Date.parse(i.created_at)) / 1000)) : null,
+    selfHealed: !!i.context?.self_healed,
+    steps: fixes.filter((f) => FIXED_BY[f.action]).map((f) => ({ what: FIXED_BY[f.action], at: f.created_at })),
+    proof,
+  };
+}

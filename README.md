@@ -91,7 +91,8 @@ small teams on Render, Railway, Google Cloud or any host that deploys from GitHu
 
 **Learn**
 
-- A postmortem after every real outage, the PR diff on your phone before you merge, and a shareable incident report.
+- A postmortem after every real outage, the PR diff on your phone before you merge, and a public report link per
+  resolved incident (what broke, what fixed it, how long) to share on X or LinkedIn.
 
 ## How it works
 

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incident report · OpsSwipe</title>
+<meta name="description" content="What broke, what fixed it and how long it took, reported by OpsSwipe.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Incident report · OpsSwipe">
+<meta property="og:description" content="What broke, what fixed it and how long it took. Code fixes merged only after CI proved them.">
+<meta property="og:image" content="https://devhusnainai.github.io/opsswipe-status/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Incident report · OpsSwipe">
+<meta name="twitter:image" content="https://devhusnainai.github.io/opsswipe-status/og.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* One static page for every shared incident: ?r=<share id> picks which. Data: /functions/v1/status?r=. */
+  :root {
+    --bg: #fafafa; --surface: #ffffff; --text: #0a0a0a; --muted: #6b6b73; --border: #e4e4e7;
+    --up: #10b981; --down: #ef4444; --tint: #ecfdf5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0a0a0a; --surface: #131315; --text: #ededed; --muted: #a1a1aa; --border: #27272a;
+      --up: #10b981; --down: #f87171; --tint: #0f2a21; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 Geist, system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 40px 16px 64px; }
+  .label { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--up); }
+  h1 { font-size: 26px; line-height: 1.25; font-weight: 700; margin: 8px 0 6px; letter-spacing: -0.01em; }
+  .svc { font-family: 'Geist Mono', monospace; color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-top: 20px; }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .stat b { display: block; font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+  .stat span { color: var(--muted); font-size: 13px; }
+  .proof { display: flex; gap: 10px; align-items: center; background: var(--tint); border: 1px solid color-mix(in srgb, var(--up) 45%, transparent);
+    border-radius: 12px; padding: 12px 14px; margin-top: 16px; font-weight: 500; }
+  .proof i { width: 10px; height: 10px; border-radius: 50%; background: var(--up); flex: none; }
+  ol { list-style: none; margin: 0; padding: 0; }
+  li { display: grid; grid-template-columns: 76px 1fr; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+  li:first-child { border-top: 0; }
+  li time { font-family: 'Geist Mono', monospace; font-size: 13px; color: var(--muted); padding-top: 1px; }
+  .share { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+  .share a, .share button { font: 600 14px Geist, system-ui, sans-serif; padding: 10px 14px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; }
+  .share .primary { background: var(--up); border-color: var(--up); color: #0a0a0a; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
+  footer a { color: inherit; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <div id="report" class="hide">
+    <div class="label">Incident report</div>
+    <h1 id="title"></h1>
+    <div class="svc" id="service"></div>
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><b id="down"></b><span>down in total</span></div>
+        <div class="stat"><b id="state"></b><span id="when"></span></div>
+      </div>
+      <div class="proof hide" id="proof"><i></i><span id="proofText"></span></div>
+    </div>
+    <div class="card"><ol id="timeline"></ol></div>
+    <div class="share" id="share">
+      <button class="primary hide" id="native" type="button">Share</button>
+      <a id="x" target="_blank" rel="noopener">Share on X</a>
+      <a id="linkedin" target="_blank" rel="noopener">Share on LinkedIn</a>
+      <button id="copy" type="button">Copy link</button>
+    </div>
+  </div>
+  <div id="message" class="card">Loading the report…</div>
+  <footer>Reported by <a href="https://github.com/DevHusnainAi/opsswipe">OpsSwipe</a>, the on-call pager that proves a fix
+    before it touches production.</footer>
+</main>
+<script>
+  const API = 'https://mwkwhfqcgxossweqwibt.supabase.co/functions/v1/status';
+  const $ = (id) => document.getElementById(id);
+  const dur = (s) => s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+  const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const day = (iso) => new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+
+  async function load() {
+    const id = new URLSearchParams(location.search).get('r') || '';
+    if (!/^[a-z0-9]{12}$/.test(id)) throw new Error('This link is incomplete.');
+    const res = await fetch(`${API}?r=${id}`);
+    if (!res.ok) throw new Error(res.status === 404 ? 'This report no longer exists.' : 'The report could not be loaded.');
+    const r = await res.json();
+
+    document.title = `${r.service}: ${r.title} · OpsSwipe`;
+    $('title').textContent = r.title;
+    $('service').textContent = r.service;
+    $('down').textContent = r.downSeconds == null ? 'n/a' : dur(r.downSeconds);
+    $('state').textContent = r.selfHealed ? 'Recovered' : 'Back up';
+    $('when').textContent = day(r.detected);
+    if (r.proof) {
+      $('proofText').textContent = `Fix proven in CI: ${r.proof.passed}/${r.proof.total} failing production requests now answer 2xx`;
+      $('proof').classList.remove('hide');
+    }
+    const steps = [{ at: r.detected, what: 'Detected and confirmed; the on-call phone was paged' }, ...r.steps];
+    if (r.backUp) steps.push({ at: r.backUp, what: r.selfHealed ? 'Recovered on its own' : 'Back up, verified by OpsSwipe' });
+    for (const s of steps) {
+      const li = document.createElement('li');
+      const t = document.createElement('time');
+      t.dateTime = s.at; t.textContent = clock(s.at);
+      const w = document.createElement('span');
+      w.textContent = s.what;
+      li.append(t, w);
+      $('timeline').append(li);
+    }
+
+    const url = location.href.split('#')[0];
+    const text = `${r.service} was down ${r.downSeconds == null ? '' : dur(r.downSeconds) + ' '}and is back up${r.proof ? ', with the fix proven in CI against the requests that failed' : ''}. Handled with OpsSwipe.`;
+    $('x').href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+    $('linkedin').href = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
+    $('copy').onclick = async () => {
+      await navigator.clipboard.writeText(url);
+      $('copy').textContent = 'Link copied';
+    };
+    if (navigator.share) {
+      $('native').classList.remove('hide');
+      $('native').onclick = () => navigator.share({ title: document.title, text, url }).catch(() => {});
+    }
+    $('message').classList.add('hide');
+    $('report').classList.remove('hide');
+  }
+  load().catch((e) => { $('message').textContent = e.message; });
+</script>
+</body>
+</html>

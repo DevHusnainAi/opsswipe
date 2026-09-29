@@ -1,16 +1,16 @@
 // One incident in full: what failed, the likely cause, the suggested fix and who decided it, what the
 // AI said (agreeing, disagreeing, or unavailable), the timeline, and the code fix with its proof.
 // Everything shown is what OpsSwipe recorded; nothing is re-asked or re-computed here.
-import { ArrowSquareOut, X } from 'phosphor-react-native';
+import { ArrowSquareOut, ShareNetwork, X } from 'phosphor-react-native';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { connect, type AuditEntry, type Incident } from './api';
+import { connect, shareReport, type AuditEntry, type Incident } from './api';
 import { fixFor } from './fixes';
 import { useEffect, useState, type ReactNode } from 'react';
-import { atRisk, formatDuration, lostLine, recoveryLine } from './format';
+import { atRisk, formatDuration, lostLine, recoveryLine, shareLine } from './format';
 import { PROVIDER } from './SwipeCard';
 import { TARGET, c, radius, space, type } from './theme';
-import { Chip } from './ui';
+import { Button, Chip } from './ui';
 
 type PrFile = { file: string; status: string; additions: number; deletions: number; patch: string };
 
@@ -39,6 +39,7 @@ export function IncidentDetail(
   const note = aiNote(ctx, i.action);
   const proof = ctx.proof && ctx.pr && ctx.proof.headSha === ctx.pr.headSha ? ctx.proof : null;
   const cost = atRisk(i);
+  const [sharing, setSharing] = useState(false);
   // The PR's diff, read here before swiping Merge (the swipe and fingerprint are the review).
   const [diff, setDiff] = useState<PrFile[] | string | null>(null);
   const prNumber = ctx.pr?.number;
@@ -196,6 +197,20 @@ export function IncidentDetail(
               </Text>
             )}
           </Block>
+
+          {/* A public report page (status-page/incident.html) to post on X or LinkedIn: times and what fixed it,
+              never error text or paths. */}
+          {i.status === 'resolved' && !ctx.dismissed && !ctx.declined && (
+            <Button
+              label={sharing ? 'Making the link…' : 'Share report'}
+              icon={ShareNetwork}
+              kind="secondary"
+              onPress={() => {
+                setSharing(true);
+                shareReport(i.id, shareLine(i)).catch(() => {}).finally(() => setSharing(false));
+              }}
+            />
+          )}
         </ScrollView>
       </SafeAreaView>
     </Modal>

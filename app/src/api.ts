@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
+import { Share } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { appLink, authRedirect, Notifications } from './env';
 import { paramsOf } from './format';
@@ -168,6 +169,12 @@ export function claimFrom(url: string): Promise<Claimed | null> {
 
 // Only a one-time PKCE code is accepted, never tokens in the link: the exchange needs the verifier this
 // app stored when it started the sign-in or reset, so a link someone else made can't sign this phone in.
+// A public link to a resolved incident's report (status-page/incident.html), shared with a one-line summary.
+export async function shareReport(incidentId: string, line: string) {
+  const { url } = await connect<{ url: string }>('share_incident', { incidentId });
+  await Share.share({ message: `${line} ${url}`, url });
+}
+
 export async function sessionFromRedirect(url: string) {
   const p = paramsOf(url);
   if (p.error) {

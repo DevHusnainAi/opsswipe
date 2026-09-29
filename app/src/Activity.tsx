@@ -1,9 +1,9 @@
 // The Activity tab: every fix attempt (the audit log), grouped by day, and how fast services came back.
 import { ArrowSquareOut, ClockCounterClockwise, ShareNetwork } from 'phosphor-react-native';
 import { Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
-import type { AuditEntry, Incident } from './api';
+import { type AuditEntry, type Incident, shareReport } from './api';
 import { fixFor } from './fixes';
-import { formatDuration, incidentReport, recoveryLine, timeAgo, weekStats } from './format';
+import { formatDuration, incidentReport, recoveryLine, shareLine, timeAgo, weekStats } from './format';
 import { c, radius, space, type } from './theme';
 import { Chip, Section } from './ui';
 
@@ -64,10 +64,11 @@ export function Activity(
                     {dismissed(f.id) ? 'Dismissed as a false alarm' : [fixUsed(f.id), recoveryLine(f)].filter(Boolean).join(' · ')}
                   </Text>
                 </Pressable>
-                {/* Telling users what happened, in one tap: post it to a status page, X or Discord. */}
+                {/* Telling users what happened, in one tap: a public report link for X, LinkedIn or Discord (the plain-text
+                    report if the link can't be made). */}
                 {f.recovered_at && !dismissed(f.id) && (
                   <Pressable
-                    onPress={() => Share.share({ message: incidentReport(f, fixUsed(f.id)) })}
+                    onPress={() => shareReport(f.id, shareLine(f)).catch(() => Share.share({ message: incidentReport(f, fixUsed(f.id)) }))}
                     hitSlop={12}
                     accessibilityRole="button"
                     accessibilityLabel={`Share what happened to ${f.target_server}`}

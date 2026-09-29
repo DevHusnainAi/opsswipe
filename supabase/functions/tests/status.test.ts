@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { DAYS, statusReport } from '../_shared/status.ts';
+import { DAYS, publicIncident, statusReport } from '../_shared/status.ts';
 
 const now = Date.parse('2026-09-29T12:00:00Z');
 const api = { id: 's1', name: 'api' }, web = { id: 's2', name: 'web' };
@@ -40,4 +40,27 @@ Deno.test('nothing leaves the server but names, times and titles', () => {
   const r = statusReport([api], [], now);
   assertEquals(Object.keys(r.services[0]).sort(), ['days', 'name', 'up', 'uptime']);
   assertEquals(r.services[0].uptime, 100);
+});
+
+Deno.test('a shared incident report shows what happened and what fixed it, never paths or errors', () => {
+  const r = publicIncident({
+    service_id: 's',
+    title: 'Requests are failing',
+    target_server: 'checkout-api',
+    created_at: '2026-09-30T03:00:00Z',
+    resolved_at: '2026-09-30T03:04:00Z',
+    recovered_at: '2026-09-30T03:05:30Z',
+    status: 'resolved',
+    context: { proof: { ok: true, passed: 3, total: 3 } },
+    // deno-lint-ignore no-explicit-any
+    ...({ metric: 'GET /api/price?token=x → 500', replay: [{ path: '/api/price' }] } as any),
+  }, [
+    { action: 'revert_pr', created_at: '2026-09-30T03:01:00Z' },
+    { action: 'merge_pr', created_at: '2026-09-30T03:04:00Z' },
+    { action: 'approve', created_at: '2026-09-30T03:04:30Z' }, // an agent's own command: not a fix step
+  ]);
+  assertEquals(r.downSeconds, 330);
+  assertEquals(r.steps.map((s) => s.what), ['Opened a revert PR', 'Merged the fix CI proved']);
+  assertEquals(r.proof, { passed: 3, total: 3 });
+  assertEquals(JSON.stringify(r).includes('/api/price'), false, 'no paths, metrics or samples leave the server');
 });
