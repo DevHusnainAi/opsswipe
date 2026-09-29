@@ -12,7 +12,7 @@ function statuses(...codes: number[]) {
 Deno.test('one failed probe is a blip: the retry decides, so a 3am network hiccup pages nobody', async () => {
   const f = statuses(503, 200);
   try {
-    assertEquals((await confirmedProbe('http://x/', 0)).status, '200');
+    assertEquals((await confirmedProbe('http://34.1.2.3/', 0)).status, '200');
     assertEquals(f.calls(), 2);
   } finally {
     f.restore();
@@ -22,13 +22,13 @@ Deno.test('one failed probe is a blip: the retry decides, so a 3am network hiccu
 Deno.test('a failure confirmed twice is an outage; a healthy first probe is not retried', async () => {
   let f = statuses(503, 502);
   try {
-    assertEquals((await confirmedProbe('http://x/', 0)).status, '502');
+    assertEquals((await confirmedProbe('http://34.1.2.3/', 0)).status, '502');
   } finally {
     f.restore();
   }
   f = statuses(200);
   try {
-    assertEquals((await confirmedProbe('http://x/', 0)).status, '200');
+    assertEquals((await confirmedProbe('http://34.1.2.3/', 0)).status, '200');
     assertEquals(f.calls(), 1);
   } finally {
     f.restore();

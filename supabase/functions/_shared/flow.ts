@@ -25,7 +25,7 @@ export function afterFix(action: string, inc: Inc, extra: { pr?: PrRef } = {}, n
         action: mitigate ?? actions[0] ?? 'merge_pr',
         reason: `${what} opened; CI is proving it.${mitigate ? ' Roll back to restore service meanwhile.' : ''}`,
         suggested_by: 'rules',
-        context: { ...inc.context, pr: extra.pr && { ...extra.pr, kind: action } },
+        context: { pr: extra.pr && { ...extra.pr, kind: action } }, // a patch: the database merges it
       },
     };
   }
@@ -41,7 +41,7 @@ export function afterFix(action: string, inc: Inc, extra: { pr?: PrRef } = {}, n
         action: 'merge_pr',
         reason: 'Service restored. Merge the PR once CI proves it.',
         suggested_by: 'rules',
-        context: { ...inc.context, mitigated_at: now.toISOString(), mitigated_by: action },
+        context: { mitigated_at: now.toISOString(), mitigated_by: action },
       },
     };
   }

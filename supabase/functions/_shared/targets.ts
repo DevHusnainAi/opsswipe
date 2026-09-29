@@ -2,6 +2,8 @@
 // (table `services`); this module validates their config and maps them to targets.
 // Any service can be linked to the GitHub repo it deploys from ("owner/name" + branch). That
 // enables the code fixes: revert PR, AI fix PR, and merging a PR once CI proves it.
+import { isPublicUrl } from './netguard.ts';
+
 type Linked = { repo?: string; branch?: string };
 export type GcpTarget = { provider: 'gcp'; project: string; zone: string; instance: string; url: string } & Linked;
 export type RenderTarget = { provider: 'render'; serviceId: string; url: string } & Linked;
@@ -11,7 +13,6 @@ export type RailwayTarget =
 export type Target = GcpTarget | RenderTarget | RailwayTarget;
 // 'approve': an AI agent's own command, approved by the human; OpsSwipe runs nothing.
 export type Action = 'reset' | 'restart' | 'rollback' | 'revert_pr' | 'fix_pr' | 'merge_pr' | 'approve';
-
 export const CODE_FIXES: Action[] = ['revert_pr', 'fix_pr'];
 
 export function actionsFor(t: Target): Action[] {
@@ -33,7 +34,8 @@ const FORMAT: Record<string, RegExp> = {
   serviceId: /^srv-[a-z0-9]+$/,
   url: /^https?:\/\/[^\s]+$/,
   repo: /^[\w.-]+\/[\w.-]+$/,
-  branch: /^[\w./-]{1,100}$/,
+  // Git's rules for branch names, the parts that matter in a URL: no "..", no leading "-" or "/", no ".lock".
+  branch: /^(?![-/.])(?!.*(\.\.|\/\/|@\{|\.lock$|\/$|\.$))[\w./-]{1,100}$/,
   projectId: UUID,
   environmentId: UUID,
   'railway.serviceId': UUID, // Railway ids are UUIDs; Render's serviceId is srv-…
@@ -49,5 +51,6 @@ export function validateTarget(provider: string, config: Record<string, unknown>
     const f = FORMAT[`${provider}.${k}`] ?? FORMAT[k];
     if (v !== undefined && f && !f.test(String(v))) throw new Error(`invalid ${k}`);
   }
+  if (!isPublicUrl(String(config.url))) throw new Error('invalid url: it must be a public web address');
   return { provider, ...config } as Target;
 }

@@ -39,13 +39,16 @@ Deno.test('validateTarget accepts both providers and maps the fixes each allows'
   const web = validateTarget('render', { serviceId: 'srv-abc123', url: 'https://x.onrender.com/' });
   assertEquals(actionsFor(vm), ['reset']);
   assertEquals(actionsFor(web), ['restart', 'rollback']);
-  assertEquals(actionsFor(validateTarget('render', { serviceId: 'srv-abc123', url: 'https://x/', repo: 'me/app' })), [
-    'restart',
-    'rollback',
-    'revert_pr',
-    'fix_pr',
-    'merge_pr',
-  ]);
+  assertEquals(
+    actionsFor(validateTarget('render', { serviceId: 'srv-abc123', url: 'https://x.onrender.com/', repo: 'me/app' })),
+    [
+      'restart',
+      'rollback',
+      'revert_pr',
+      'fix_pr',
+      'merge_pr',
+    ],
+  );
   // A VM linked to its repo gets the same code fixes; the reset stays the instant one.
   const linkedVm = validateTarget('gcp', {
     project: 'my-proj-1',
@@ -60,14 +63,14 @@ Deno.test('validateTarget accepts both providers and maps the fixes each allows'
 
 Deno.test('validateTarget rejects anything that could reach the wrong resource', () => {
   assertThrows(() => validateTarget('aws', { url: 'u' }), Error, 'unknown provider');
-  assertThrows(() => validateTarget('render', { url: 'https://x/' }), Error, 'missing serviceId');
+  assertThrows(() => validateTarget('render', { url: 'https://x.onrender.com/' }), Error, 'missing serviceId');
   assertThrows(
-    () => validateTarget('render', { serviceId: 'srv-1/../x', url: 'https://x/' }),
+    () => validateTarget('render', { serviceId: 'srv-1/../x', url: 'https://x.onrender.com/' }),
     Error,
     'invalid serviceId',
   );
   assertThrows(
-    () => validateTarget('render', { serviceId: 'srv-1', url: 'https://x/', repo: 'nope' }),
+    () => validateTarget('render', { serviceId: 'srv-1', url: 'https://x.onrender.com/', repo: 'nope' }),
     Error,
     'invalid repo',
   );

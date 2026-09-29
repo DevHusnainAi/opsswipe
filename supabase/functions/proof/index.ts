@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
   await db.from('incidents').update({
     ...next,
     ...(next.action ? { suggested_by: 'rules' } : {}),
-    context: { ...inc.context, proof: result.proof },
+    context: { proof: result.proof }, // merged into the stored context (a trigger)
   }).eq('id', inc.id);
   const { passed, total } = result.proof;
   await notify(

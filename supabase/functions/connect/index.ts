@@ -9,7 +9,7 @@ import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
 import { freshSignIn, registerFixKey, validKey } from '../_shared/fixKeys.ts';
 import { consentUrl, GoogleError, grantReset, listProjects, listVms, revokeReset } from '../_shared/google.ts';
-import { commitFiles, fileText, openFilesPr, prFiles } from '../_shared/github.ts';
+import { branchExists, commitFiles, fileText, openFilesPr, prFiles } from '../_shared/github.ts';
 import { aiLlm } from '../_shared/incidents.ts';
 import { writePostmortem } from '../_shared/postmortem.ts';
 import type { PrRef } from '../_shared/proof.ts';
@@ -122,7 +122,15 @@ async function chosenRepo(
   need(c?.installation_id, 'Connect GitHub first to link a repo.');
   const found = (await listRepos(c!.installation_id!)).find((r) => r.name === String(p.repo));
   need(found, 'OpsSwipe cannot see that repo. Add it to the OpsSwipe GitHub App installation.');
-  return { repo: found!.name, branch: typeof p.branch === 'string' && p.branch ? p.branch : found!.branch };
+  const branch = typeof p.branch === 'string' && p.branch ? p.branch : found!.branch;
+  // A chosen branch must be a real one: a typo fails now, not at 3am when a fix opens its PR.
+  if (branch !== found!.branch) {
+    need(
+      await branchExists(found!.name, branch, await githubToken(owner)),
+      `There is no branch "${branch}" in ${found!.name}.`,
+    );
+  }
+  return { repo: found!.name, branch };
 }
 
 async function handle(owner: string, action: string, p: Record<string, unknown>) {
@@ -368,7 +376,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       await db.from('incidents').update({
         status: 'resolved',
         resolved_at: new Date().toISOString(),
-        context: { ...data!.context, declined: true },
+        context: { declined: true },
       }).eq('id', data!.id);
       return { declined: true };
     }
@@ -379,7 +387,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       const { data } = await db.from('incidents').update({ status: 'resolved', resolved_at: now, recovered_at: now })
         .eq('id', String(p.incidentId ?? '')).in('owner', await ownersFor(owner)).eq('status', 'active')
         .select('id, target_server, context').maybeSingle();
-      if (data) await db.from('incidents').update({ context: { ...data.context, dismissed: true } }).eq('id', data.id);
+      if (data) await db.from('incidents').update({ context: { dismissed: true } }).eq('id', data.id);
       need(data, 'That incident is no longer open.');
       await db.from('audit_log').insert({
         incident_id: data!.id,
@@ -442,7 +450,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         fixes: audit ?? [],
         regressionTest: test?.file ?? null,
       });
-      await db.from('incidents').update({ context: { ...ctx, postmortem } }).eq('id', inc!.id);
+      await db.from('incidents').update({ context: { postmortem } }).eq('id', inc!.id);
       return { postmortem };
     }
 
@@ -550,10 +558,15 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         .gt('created_at', new Date(Date.now() - 7 * 86_400_000).toISOString()).select('owner').maybeSingle();
       need(invite, 'That code is not valid any more. Ask for a new one.');
       need(invite!.owner !== owner, 'That is your own invite code.');
-      const { count } = await db.from('team_members').select('member', { count: 'exact', head: true })
-        .eq('owner', invite!.owner);
-      need((count ?? 0) < 10, 'That team is full (10 people). Ask the owner to make room.');
-      await db.from('team_members').upsert({ owner: invite!.owner, member: owner });
+      // The 10-person cap is enforced by the database (team_cap), so two joins at once can't pass it.
+      const { error } = await db.from('team_members').upsert({ owner: invite!.owner, member: owner });
+      if (error) {
+        throw new UserError(
+          error.message.includes('team is full')
+            ? 'That team is full (10 people). Ask the owner to make room.'
+            : 'Could not join the team. Try again.',
+        );
+      }
       return { joined: true };
     }
 

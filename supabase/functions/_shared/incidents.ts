@@ -82,7 +82,7 @@ export async function openIncidentFor(serviceId: string) {
 
 // Add failing requests to an open incident (dedup by method+path, capped).
 export async function addSamples(id: string, context: { replay?: ReplaySample[] }, samples: ReplaySample[]) {
-  await db.from('incidents').update({ context: { ...context, replay: mergeSamples(context.replay ?? [], samples) } })
+  await db.from('incidents').update({ context: { replay: mergeSamples(context.replay ?? [], samples) } })
     .eq('id', id);
 }
 
@@ -154,10 +154,9 @@ export async function openIncident(
     EdgeRuntime.waitUntil(
       // The model's second opinion is recorded either way; its words replace the rules' only if it agreed.
       suggest(input, ai).then(async (r) => {
-        const { data } = await db.from('incidents').select('context').eq('id', inc.id).maybeSingle();
         await db.from('incidents').update({
           ...(r.source === 'ai' ? { action: r.action, reason: r.reason, suggested_by: 'ai' } : {}),
-          context: { ...(data?.context ?? {}), ai: { ...r.second, at: new Date().toISOString() } },
+          context: { ai: { ...r.second, at: new Date().toISOString() } },
         }).eq('id', inc.id).eq('status', 'active');
       }),
     );
@@ -255,7 +254,7 @@ export async function closeSelfHealed(serviceId: string) {
       status: 'resolved',
       resolved_at: now,
       recovered_at: now,
-      context: { ...i.context, self_healed: true },
+      context: { self_healed: true },
     }).eq('id', i.id).eq('status', 'active').select('id').maybeSingle();
     if (!closed) continue; // a fix was claimed meanwhile
     await notify(i.owner, {
@@ -294,9 +293,13 @@ export async function escalate(now = Date.now()) {
   for (const inc of open ?? []) {
     const { count } = await db.from('audit_log').select('id', { count: 'exact', head: true }).eq('incident_id', inc.id);
     if (!needsEscalation(inc, count ?? 0, now)) continue;
-    // Marked first, so a slow push can't page the team twice.
-    await db.from('incidents').update({ context: { ...inc.context, escalated_at: new Date(now).toISOString() } })
-      .eq('id', inc.id);
+    // Marked first, and only if nobody else marked it meanwhile (an overlapping run), so the team is
+    // paged once.
+    const { data: marked } = await db.from('incidents').update({
+      context: { escalated_at: new Date(now).toISOString() },
+    })
+      .eq('id', inc.id).is('context->>escalated_at', null).select('id').maybeSingle();
+    if (!marked) continue;
     const { data: team } = await db.from('team_members').select('member').eq('owner', inc.owner);
     const mins = Math.round((now - Date.parse(inc.created_at)) / 60_000);
     for (const t of team ?? []) {

@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
       const open = await openIncidentFor(s.id);
       if (open) {
         const ctx = open.context as { alert_count?: number };
-        await db.from('incidents').update({ context: { ...ctx, alert_count: (ctx.alert_count ?? 0) + 1 } })
+        await db.from('incidents').update({ context: { alert_count: (ctx.alert_count ?? 0) + 1 } })
           .eq('id', open.id);
         paged++;
         continue;
