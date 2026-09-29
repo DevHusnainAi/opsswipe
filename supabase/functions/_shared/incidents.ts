@@ -308,13 +308,20 @@ export async function markRecovered(s: Service, now = Date.now()) {
     }
     if (!i.resolved_at || !stillFailing(i.resolved_at, !!i.context?.still_failing, now)) continue;
     const what = `${failing[0].method} ${new URL(failing[0].url).pathname} → ${failing[0].status}`;
-    const fixes = actionsFor(toTarget(s)).filter((a) => !(CODE_FIXES as string[]).includes(a) && a !== 'merge_pr');
+    // Merged but still failing: the code is fixed and the deploy didn't happen, so a reboot/restart (which
+    // deploys on the demo VM) or a redeploy is next. A reboot or restart that didn't help: it's the code, so a
+    // revert (or an AI fix) is offered first.
     const merged = !!i.context?.pr;
+    const all = actionsFor(toTarget(s)).filter((a) => a !== 'merge_pr');
+    const production = all.filter((a) => !(CODE_FIXES as string[]).includes(a));
+    const fixes = merged ? production : [...all.filter((a) => a === 'revert_pr' || a === 'fix_pr'), ...production];
     const reason = merged
       ? `Merged, but production still fails ${what}: the deploy may not have run. ${
         fixes.includes('reset') ? 'Reboot to load the new code, or deploy it.' : 'Deploy it, or restart.'
       }`
-      : `The fix ran, but production still fails ${what}.`;
+      : `The fix ran, but production still fails ${what}: it's in the code, not the machine.${
+        fixes.includes('revert_pr') ? ' Revert the release that broke it.' : ''
+      }`;
     // The card comes back unless another incident is already open for this service (one open per service).
     const { error } = await db.from('incidents').update({
       status: 'active',
