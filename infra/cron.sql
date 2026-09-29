@@ -1,4 +1,5 @@
--- Run once in the Supabase SQL editor after deploying the healthcheck function.
+-- Run once in the Supabase SQL editor for a new project: the two Vault secrets below. The schedules themselves are
+-- in migrations/20260930000000_cron.sql (db push restores them); they're repeated here for reference.
 -- Secrets live in Vault, not in the job definition.
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
