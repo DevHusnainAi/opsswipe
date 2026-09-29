@@ -28,3 +28,8 @@ Deno.test('outages add up to downtime, cost, and what was fixed and proven', () 
     '99.70% uptime across 1 service, 30 min down in total (~$20 of revenue at risk). 2 fixes approved from your phone, 1 proven in CI before merging, 1 written by AI before you looked.',
   );
 });
+
+Deno.test("alerts that didn't need anyone are counted, not paged", () => {
+  const r = weeklySummary(1, [], [], now, 47);
+  assertEquals(r.body.endsWith("47 alerts from your other tools didn't need you, so nobody was woken."), true);
+});

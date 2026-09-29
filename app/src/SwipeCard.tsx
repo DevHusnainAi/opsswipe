@@ -137,6 +137,7 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline, o
           <Chip label={incident.severity} color={critical ? c.red : c.amber} tint={critical ? c.redTint : c.amberTint} />
           {incident.provider && <Chip label={PROVIDER[incident.provider] ?? incident.provider} />}
           {atRisk(incident) && <Chip label={atRisk(incident)!} color={c.amber} tint={c.amberTint} />}
+          {(incident.context?.alert_count ?? 0) > 1 && <Chip label={`×${incident.context!.alert_count} alerts, one card`} />}
           <Text style={[type.monoCaption, styles.time]}>{timeAgo(incident.created_at, now)}</Text>
         </View>
 

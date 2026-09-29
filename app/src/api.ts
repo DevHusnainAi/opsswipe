@@ -23,6 +23,7 @@ export type Incident = {
   suggested_by: 'rules' | 'ai' | 'agent' | null;
   context: {
     agent?: { name: string };
+    alert_count?: number; // alerts from other tools folded into this card (alert inbox)
     self_healed?: boolean;
     // the model's second opinion: agreed or not (with its reason), or why it was unavailable
     ai?: { action: string; reason: string; agreed: boolean } | { error: string };
@@ -77,6 +78,7 @@ export type Service = {
 export type RenderOption = { id: string; name: string; url: string; repo?: string };
 export type ConnectStatus = {
   statusPage: string | null; // public status page link, when turned on
+  alertInbox: string | null; // webhook URL for alerts from other tools
   github: { connected: boolean; account: string | null; installUrl: string };
   render: { connected: boolean };
   railway: { connected: boolean };

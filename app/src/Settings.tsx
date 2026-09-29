@@ -18,6 +18,7 @@ import {
   SignOut,
   SlackLogo,
   Trash,
+  Tray,
   UserCircle,
   UserPlus,
   UsersThree,
@@ -58,6 +59,7 @@ export function Settings(p: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [channel, setChannel] = useState<ConnectStatus['alerts'] | null>(null);
   const [statusPage, setStatusPage] = useState<string | null>(null);
+  const [alertInbox, setAlertInbox] = useState<string | null>(null);
   type Mate = { id: string; email: string };
   const [team, setTeam] = useState<{ members: Mate[]; teams: Mate[] }>({ members: [], teams: [] });
   const [invite, setInvite] = useState<string | null>(null);
@@ -71,6 +73,7 @@ export function Settings(p: Props) {
     const st = await connect<ConnectStatus>('status');
     setChannel(st.alerts);
     setStatusPage(st.statusPage);
+    setAlertInbox(st.alertInbox);
     setTeam(await connect<{ members: Mate[]; teams: Mate[] }>('team'));
   }, []);
 
@@ -251,6 +254,35 @@ export function Settings(p: Props) {
                   })}
               />
             </>
+          )}
+        </View>
+        {/* The alert inbox: tools the team already runs send here; OpsSwipe pages only when there's a fix. */}
+        <View style={styles.group}>
+          <Row
+            icon={Tray}
+            tint={alertInbox ? c.green : undefined}
+            title="Alerts from your other tools"
+            body={alertInbox
+              ? 'Paste this URL as a webhook in Alertmanager, Grafana or any tool. 50 alerts about one service make one card; the rest wait quietly for your weekly report.'
+              : 'Point Grafana, Alertmanager or any monitor at OpsSwipe. You only get woken when there is something to fix.'}
+          />
+          {alertInbox ? (
+            <>
+              <Text style={[type.monoCaption, { paddingBottom: space.sm }]} selectable numberOfLines={2}>{alertInbox}</Text>
+              <Action icon={ShareNetwork} label="Share the webhook URL" primary onPress={() => void Share.share({ message: alertInbox })} />
+              <Action
+                icon={ArrowCounterClockwise}
+                label={busy === 'inbox' ? 'Replacing…' : 'Replace the URL (if it leaked)'}
+                onPress={() => run('inbox', async () => void (await connect('alert_inbox', { on: true, rotate: true })))}
+              />
+            </>
+          ) : (
+            <Action
+              icon={Tray}
+              label={busy === 'inbox' ? 'Creating…' : 'Create a webhook URL'}
+              primary
+              onPress={() => run('inbox', async () => void (await connect('alert_inbox', { on: true })))}
+            />
           )}
         </View>
       </Section>

@@ -22,12 +22,16 @@ export function weeklySummary(
   incidents: WeekIncident[],
   audits: WeekAudit[],
   now = Date.now(),
+  quiet = 0, // alerts from other tools that didn't need anyone (the alert inbox)
 ): Push {
+  const hush = quiet
+    ? ` ${quiet} alert${quiet === 1 ? '' : 's'} from your other tools didn't need you, so nobody was woken.`
+    : '';
   const scope = `${services} service${services === 1 ? '' : 's'}`;
   if (!incidents.length) {
     return {
       title: 'Quiet week: 100% up',
-      body: `No outages across ${scope}. OpsSwipe checked every minute so you didn't have to.`,
+      body: `No outages across ${scope}. OpsSwipe checked every minute so you didn't have to.${hush}`,
     };
   }
   const downs = incidents.map((i) =>
@@ -50,6 +54,7 @@ export function weeklySummary(
       proven ? `, ${proven} proven in CI before merging` : '',
       prepared ? `, ${prepared} written by AI before you looked` : '',
       '.',
+      hush,
     ].join(''),
   };
 }

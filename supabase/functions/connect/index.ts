@@ -35,6 +35,8 @@ import {
 } from '../_shared/services.ts';
 import { validateTarget } from '../_shared/targets.ts';
 
+const inboxUrl = (key: string) => `${env('SUPABASE_URL')}/functions/v1/alerts?k=${key}`;
+
 // The page is static HTML (status-page/index.html) hosted where HTML is allowed; it reads /status.
 const statusPageUrl = (slug: string) =>
   `${env('STATUS_PAGE_URL') || 'https://devhusnainai.github.io/opsswipe-status/'}?s=${slug}`;
@@ -107,6 +109,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         connection(owner, 'revenuecat'),
       ]);
       const { data: page } = await db.from('status_pages').select('slug').eq('owner', owner).maybeSingle();
+      const { data: inbox } = await db.from('alert_inboxes').select('key').eq('owner', owner).maybeSingle();
       // The install link with a one-time state comes from github_start; this is the plain one.
       return {
         github: {
@@ -115,6 +118,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
           installUrl: installUrl(),
         },
         statusPage: page ? statusPageUrl(page.slug) : null,
+        alertInbox: inbox ? inboxUrl(inbox.key) : null,
         render: { connected: !!rd?.secret_id },
         railway: { connected: !!rw?.secret_id },
         alerts: {
@@ -530,6 +534,21 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         `and(owner.eq.${owner},member.eq.${other}),and(owner.eq.${other},member.eq.${owner})`,
       );
       return { removed: true };
+    }
+
+    // The alert inbox: one private URL for the tools a team already runs. `rotate` replaces a leaked one.
+    case 'alert_inbox': {
+      if (!p.on) {
+        await db.from('alert_inboxes').delete().eq('owner', owner);
+        return { alertInbox: null };
+      }
+      const { data: had } = await db.from('alert_inboxes').select('key').eq('owner', owner).maybeSingle();
+      const key = had && !p.rotate
+        ? had.key
+        : Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32])
+          .join('');
+      if (!had || p.rotate) await db.from('alert_inboxes').upsert({ owner, key });
+      return { alertInbox: inboxUrl(key) };
     }
 
     // Public status page: an unguessable link that shows service names, up/down and uptime only.

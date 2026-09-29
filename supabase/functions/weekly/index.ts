@@ -22,7 +22,12 @@ Deno.serve(async (req) => {
     const { data: audits } = await db.from('audit_log').select('incident_id, action, outcome')
       .in('incident_id', (incidents ?? []).map((i) => i.id));
     const dismissed = new Set((audits ?? []).filter((a) => a.outcome === 'dismissed').map((a) => a.incident_id));
-    await notify(owner, weeklySummary(count, (incidents ?? []).filter((i) => !dismissed.has(i.id)), audits ?? []));
+    const { count: quiet } = await db.from('quiet_alerts').select('id', { count: 'exact', head: true })
+      .eq('owner', owner).gte('received_at', since);
+    await notify(
+      owner,
+      weeklySummary(count, (incidents ?? []).filter((i) => !dismissed.has(i.id)), audits ?? [], Date.now(), quiet ?? 0),
+    );
     sent++;
   }
   return json(200, { sent });

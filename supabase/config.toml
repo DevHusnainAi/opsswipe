@@ -30,6 +30,9 @@ verify_jwt = false
 [functions.weekly]
 verify_jwt = false
 
+[functions.alerts]
+verify_jwt = false
+
 # Authenticated by the Authorization value set in the RevenueCat dashboard, not a Supabase JWT.
 [functions.revenuecat-webhook]
 verify_jwt = false
