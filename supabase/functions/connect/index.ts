@@ -7,6 +7,7 @@ import { withReturn } from '../_shared/appLink.ts';
 import { isTeam } from '../_shared/codeFix.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { type GcpVm, getInstanceStatus } from '../_shared/gcp.ts';
+import { inviteMail, mailEnabled, sendMail } from '../_shared/mail.ts';
 import { freshSignIn, registerFixKey, validKey } from '../_shared/fixKeys.ts';
 import {
   consentUrl,
@@ -55,6 +56,8 @@ const functionUrl = (name: string) => `${env('SUPABASE_URL')}/functions/v1/${nam
 const randomSecret = () =>
   Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/;
+const inviteCode = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
 
 class UserError extends Error {}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -401,6 +404,14 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       return { declined: true };
     }
 
+    // Someone on the team has seen it (opened from the notification or the card): the pager stops re-ringing.
+    case 'ack': {
+      await db.from('incidents').update({ context: { acked_at: new Date().toISOString(), acked_by: owner } })
+        .eq('id', String(p.incidentId ?? '')).in('owner', await ownersFor(owner)).eq('status', 'active')
+        .is('context->>acked_at', null);
+      return { acked: true };
+    }
+
     // A false alarm: close the card without running anything. Logged, so Activity shows who closed it.
     case 'dismiss': {
       const now = new Date().toISOString(); // recovered_at too: no "back up" push for a false alarm
@@ -562,14 +573,36 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
 
     case 'team_invite': {
       need(await isTeam(owner), 'Teammates come with the Team plan. Upgrade in Settings → Plan.');
-      await db.from('team_invites').delete().eq('owner', owner);
-      const code = Array.from(
-        crypto.getRandomValues(new Uint8Array(8)),
-        (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32],
-      )
-        .join('');
+      await db.from('team_invites').delete().eq('owner', owner).is('email', null); // emailed invites stay valid
+      const code = inviteCode();
       await db.from('team_invites').insert({ code, owner });
       return { code };
+    }
+
+    // The same invite, emailed: a link that opens the app on the join step, plus the code. Whether the address
+    // already has an account is never looked up or revealed: signing up first and opening the link again works.
+    case 'team_invite_email': {
+      need(await isTeam(owner), 'Teammates come with the Team plan. Upgrade in Settings → Plan.');
+      need(mailEnabled(), 'Email invites are not set up on this OpsSwipe server. Share the code instead.');
+      const email = String(p.email ?? '').trim().toLowerCase();
+      need(/^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/.test(email), "That doesn't look like an email address.");
+      const { count } = await db.from('team_invites').select('code', { count: 'exact', head: true }).eq('owner', owner)
+        .not('email', 'is', null).gt('created_at', new Date(Date.now() - 86_400_000).toISOString());
+      need((count ?? 0) < 20, 'That is 20 invites today. Try again tomorrow, or share the code.');
+      const { data: me } = await db.auth.admin.getUserById(owner);
+      need(me?.user?.email !== email, 'That is your own address.');
+      const code = inviteCode();
+      await db.from('team_invites').insert({ code, owner, email });
+      const mail = inviteMail(
+        me?.user?.email ?? 'A teammate',
+        code,
+        `${functionUrl('oauth-callback')}?to=team&code=${code}`,
+      );
+      await sendMail(email, mail.subject, mail.text, mail.html).catch((e) => {
+        console.error('invite mail:', String(e));
+        throw new UserError('The email could not be sent. Try again, or share the code.');
+      });
+      return { sent: email };
     }
 
     case 'team_join': {

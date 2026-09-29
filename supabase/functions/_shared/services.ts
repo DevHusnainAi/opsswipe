@@ -96,7 +96,8 @@ export async function forgetConnection(owner: string, kind: ConnectionKind) {
 
 // Pages every phone the owner registered, and their Discord or Slack channel if they added one.
 // Never throws: a failed alert must not block an incident.
-export async function notify(owner: string, push: Push) {
+// chat: false for a repeat page, so the Discord/Slack channel gets each event once, not every 2 minutes.
+export async function notify(owner: string, push: Push, { chat = true } = {}) {
   try {
     const { data } = await db.from('push_tokens').select('token').eq('owner', owner);
     const dead = await sendPush((data ?? []).map((r) => r.token as string), push);
@@ -106,7 +107,7 @@ export async function notify(owner: string, push: Push) {
   }
   try {
     const c = await connection(owner, 'alerts');
-    const url = c?.secret_id ? await readSecret(c.secret_id) : null;
+    const url = chat && c?.secret_id ? await readSecret(c.secret_id) : null;
     if (url) await postAlert(url, push);
   } catch (e) {
     console.warn('alert webhook failed:', String(e));

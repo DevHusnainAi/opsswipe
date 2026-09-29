@@ -108,6 +108,9 @@ Deno.test('push: high priority on the incidents channel; dead tokens are reporte
     priority: 'high',
     sound: 'default',
   });
+  const page = pushMessages(['ExponentPushToken[a]'], { title: 't', body: 'b', page: true })[0];
+  assertEquals(page.channelId, 'pager', 'an outage rings on the pager channel');
+  assertEquals('page' in page, false, 'the flag itself is not sent to Expo');
   const f = mockFetch({
     'POST exp.host': [200, {
       data: [{ status: 'ok' }, { status: 'error', details: { error: 'DeviceNotRegistered' } }],

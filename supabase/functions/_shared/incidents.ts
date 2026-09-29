@@ -21,6 +21,7 @@ import {
   confirmsReport,
   ESCALATE_AFTER_MS,
   needsEscalation,
+  needsRepage,
   recoveryChecks,
   selfHealed,
   staleClaim,
@@ -149,6 +150,7 @@ export async function openIncident(
         revenue?.perHour ? `~${money(revenue.perHour, revenue.currency)}/h at risk. ` : ''
       }${metric}. ${rules.reason}`,
       data: { incidentId: inc.id },
+      page: true,
     }));
   }
 
@@ -324,7 +326,12 @@ export async function markRecovered(s: Service, now = Date.now()) {
       context: { still_failing: { what, at: new Date(now).toISOString() } },
     }).eq('id', i.id).eq('status', 'resolved');
     if (error) await db.from('incidents').update({ context: { still_failing: { what } } }).eq('id', i.id);
-    await notify(i.owner, { title: `${i.target_server} still failing`, body: reason, data: { incidentId: i.id } });
+    await notify(i.owner, {
+      title: `${i.target_server} still failing`,
+      body: reason,
+      data: { incidentId: i.id },
+      page: true,
+    });
   }
 }
 
@@ -356,6 +363,7 @@ export async function escalate(now = Date.now()) {
         title: `Escalated: ${inc.target_server} is down`,
         body: `No one has answered for ${mins} minutes. You're on the team, so it's yours.`,
         data: { incidentId: inc.id },
+        page: true,
       });
     }
   }
@@ -380,5 +388,34 @@ export async function sweepStaleClaims(now = Date.now()) {
       outcome: 'failed',
       detail: 'the fix did not finish in time; the card is back so you can try again',
     });
+  }
+}
+
+// The pager keeps ringing: an outage nobody has answered is paged again every 2 minutes (push only, at alarm
+// volume) until someone acts on it or opens it from the notification (connect `ack`), up to 5 pages in all.
+export async function repage(now = Date.now()) {
+  const { data: open } = await db.from('incidents').select(
+    'id, owner, target_server, metric, created_at, suggested_by, context',
+  )
+    .eq('status', 'active').is('context->>acked_at', null).neq('suggested_by', 'agent');
+  for (const inc of open ?? []) {
+    const { count } = await db.from('audit_log').select('id', { count: 'exact', head: true }).eq('incident_id', inc.id);
+    if (!needsRepage(inc, count ?? 0, now)) continue;
+    const pages = (inc.context?.pages ?? 1) + 1;
+    // Marked first, and only if no overlapping run got there: each page is sent once.
+    const q = db.from('incidents').update({ context: { pages, paged_at: new Date(now).toISOString() } }).eq(
+      'id',
+      inc.id,
+    );
+    const { data: marked } =
+      await (inc.context?.pages ? q.eq('context->>pages', String(inc.context.pages)) : q.is('context->>pages', null))
+        .select('id').maybeSingle();
+    if (!marked) continue;
+    await notify(inc.owner, {
+      title: `Still down: ${inc.target_server}`,
+      body: `${inc.metric}. Swipe to fix it, or open it to stop the alarm.`,
+      data: { incidentId: inc.id },
+      page: true,
+    }, { chat: false });
   }
 }

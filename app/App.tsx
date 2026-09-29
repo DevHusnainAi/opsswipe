@@ -40,6 +40,7 @@ import { Banner, type BannerState, Button, Skeleton, useNow } from './src/ui';
 
 const WELCOMED = 'opsswipe.welcomed'; // the value tour is shown once per phone
 const ALERTS_ASKED = 'opsswipe.alerts-asked'; // so is the notification primer
+const PENDING_TEAM = 'opsswipe.pending-team'; // an emailed invite's code, until someone is signed in
 const ONBOARDED = 'opsswipe.onboarded'; // fingerprint practice + trial, once, for new accounts
 
 // A practice card: the real swipe and fingerprint, with a simulated recovery. It lives only in this
@@ -100,6 +101,11 @@ export default function App() {
   const [sample, setSample] = useState<Incident | null>(null);
   const [recovered, setRecovered] = useState<Incident | null>(null);
   const [detail, setDetail] = useState<Incident | null>(null); // the incident opened in full
+  // Looking at an open incident counts as answering the page: the alarm stops repeating.
+  const openDetail = (i: Incident) => {
+    setDetail(i);
+    if (i.status === 'active') connect('ack', { incidentId: i.id }).catch(() => {});
+  };
   const seenRecovered = useRef<Set<string>>(null); // null until the first load, so old recoveries don't pop up
   const channel = useRef<ReturnType<typeof supabase.channel>>(undefined);
   const purchasesReady = useRef(false);
@@ -133,6 +139,21 @@ export default function App() {
 
   // Signed in: the plan follows the account (RevenueCat appUserID = Supabase user id), data loads,
   // and this phone starts receiving the account's alerts.
+  // An emailed team invite: its link hands the code to the app, which joins once someone is signed in (now, or
+  // right after they sign up). Kept on the phone until then, so installing and signing up first loses nothing.
+  const joinPending = useCallback(async () => {
+    const code = await AsyncStorage.getItem(PENDING_TEAM);
+    if (!code) return;
+    await AsyncStorage.removeItem(PENDING_TEAM);
+    try {
+      await connect('team_join', { code });
+      setBanner({ kind: 'ok', text: 'You joined the team. Their incidents now show up here, and you are paged if nobody answers.' });
+      await refresh();
+    } catch (e) {
+      setBanner({ kind: 'warn', text: e instanceof Error ? e.message : String(e) });
+    }
+  }, [refresh]);
+
   const enter = useCallback(async (uid: string) => {
     if (!purchasesReady.current) {
       Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_RC_KEY!, appUserID: uid });
@@ -153,6 +174,7 @@ export default function App() {
       // offline: the server still enforces the plan on every fix
     }
     const services = await refresh();
+    joinPending().catch(() => {});
     // Alerts come as server push (they reach a closed app); realtime only keeps the open app fresh.
     registerPush().catch(() => {});
     channel.current ??= supabase
@@ -164,7 +186,7 @@ export default function App() {
     const [asked, onboarded] = await Promise.all([AsyncStorage.getItem(ALERTS_ASKED), AsyncStorage.getItem(ONBOARDED)]);
     // New accounts (nothing connected yet) get the whole first run; everyone else goes straight in.
     setPhase(!asked && Notifications ? 'primer' : onboarded || services > 0 ? 'ready' : 'secure');
-  }, [refresh]);
+  }, [refresh, joinPending]);
 
   const boot = useCallback(async () => {
     try {
@@ -180,6 +202,23 @@ export default function App() {
         name: 'Incidents',
         description: 'A health check failed and a fix is waiting for you.',
         importance: Notifications.AndroidImportance.MAX,
+      });
+      // Outages ring like an alarm: alarm volume (heard with the ringer on silent), a long vibration, shown on the
+      // lock screen. A channel's sound can't change after it's made, hence its own channel. The server re-pages
+      // every 2 minutes until someone opens the incident or acts on it.
+      await Notifications?.setNotificationChannelAsync('pager', {
+        name: 'Outages (alarm)',
+        description: 'A service is down and needs you now. Rings at alarm volume until someone answers.',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'default',
+        audioAttributes: {
+          usage: Notifications.AndroidAudioUsage.ALARM,
+          contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+        },
+        vibrationPattern: [0, 1000, 500, 1000, 500, 1000, 500, 1000],
+        enableVibrate: true,
+        bypassDnd: true, // honoured only if the user lets OpsSwipe override Do Not Disturb
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
       const uid = await currentUserId();
       if (uid) return await enter(uid);
@@ -204,11 +243,21 @@ export default function App() {
   // Tapping an alert opens the incident cards, whether the app was running or cold-started by the tap.
   useEffect(() => {
     if (!Notifications) return;
+    // Opening the page stops the alarm repeating (the server's `ack`).
+    const ack = (r: { notification: { request: { content: { data?: Record<string, unknown> } } } } | null) => {
+      const id = r?.notification.request.content.data?.incidentId;
+      if (typeof id === 'string') connect('ack', { incidentId: id }).catch(() => {});
+    };
     // A cold start from a tap: one synchronous read, known only once mounted.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (Notifications.getLastNotificationResponse()) setTab('incidents');
-    const sub = Notifications.addNotificationResponseReceivedListener(() => {
+    const last = Notifications.getLastNotificationResponse();
+    if (last) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTab('incidents');
+      ack(last);
+    }
+    const sub = Notifications.addNotificationResponseReceivedListener((r) => {
+      setTab('incidents');
+      ack(r);
       refresh().catch(() => {});
     });
     return () => sub.remove();
@@ -219,6 +268,12 @@ export default function App() {
   useEffect(() => {
     const open = async (url: string | null) => {
       // A Connect flow whose browser sheet lost the link back: claim it here (claimFrom sends each once).
+      const team = url && /\/team\?(?:.*&)?code=([A-Z2-9]{8})/.exec(url);
+      if (team) {
+        await AsyncStorage.setItem(PENDING_TEAM, team[1]);
+        if (await currentUserId()) await joinPending();
+        return;
+      }
       if (url && /\/connect\?(.*&)?claim=/.test(url)) {
         claimFrom(url).then(() => refresh(), () => {});
         return;
@@ -236,7 +291,7 @@ export default function App() {
     Linking.getInitialURL().then(open);
     const sub = Linking.addEventListener('url', (e) => open(e.url));
     return () => sub.remove();
-  }, [enter, refresh]);
+  }, [enter, refresh, joinPending]);
 
   const startAuth = async (mode: AuthMode) => {
     await AsyncStorage.setItem(WELCOMED, '1');
@@ -575,7 +630,7 @@ export default function App() {
                             depth={i}
                             now={now}
                             onFix={onFix}
-                            onOpen={inc.id === SAMPLE_ID ? undefined : setDetail}
+                            onOpen={inc.id === SAMPLE_ID ? undefined : openDetail}
                             onDecline={decline}
                             onMeasure={setCardHeight}
                           />
@@ -593,7 +648,7 @@ export default function App() {
                   <Services active={tab === 'services'} addOpen={addService} onAddClosed={() => setAddService(false)} />
                 </View>
                 <View style={[styles.screen, tab !== 'activity' && styles.hidden]}>
-                  <Activity audit={audit} fixed={fixed} now={now} onOpen={setDetail} />
+                  <Activity audit={audit} fixed={fixed} now={now} onOpen={openDetail} />
                 </View>
                 <View style={[styles.screen, tab !== 'settings' && styles.hidden]}>
                   <Settings

@@ -10,6 +10,7 @@ import {
   HEALTH_TITLE,
   markRecovered,
   openIncident,
+  repage,
   sweepStaleClaims,
 } from '../_shared/incidents.ts';
 import { sweepStates } from '../_shared/oauthState.ts';
@@ -43,6 +44,7 @@ Deno.serve(async (req) => {
   const results = await Promise.allSettled([
     ...(await allServices()).map(check),
     escalate(),
+    repage(),
     sweepStaleClaims(),
     sweepStates(),
   ]);

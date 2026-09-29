@@ -22,7 +22,9 @@ Deno.serve(async (req) => {
   if (desc && /^[\w .,'()-]{1,300}$/.test(desc)) out.set('error_description', desc);
   const state = incoming.get('state');
   const base = returnBase(state);
-  const path = incoming.get('to') === 'auth' ? 'auth' : 'connect';
+  // to=team: an emailed team invite (connect team_invite_email) handing its code to the app's join step.
+  const to = incoming.get('to');
+  const path = to === 'auth' ? 'auth' : to === 'team' ? 'team' : 'connect';
 
   // A connect flow: the code is used here and never forwarded.
   const code = out.get('code');

@@ -132,3 +132,15 @@ export function recoveryChecks(replay: { method: string; path: string }[] | unde
 export const STILL_FAILING_MS = 10 * 60_000;
 export const stillFailing = (resolvedAt: string, warned: boolean, now = Date.now()) =>
   !warned && now - Date.parse(resolvedAt) >= STILL_FAILING_MS;
+
+// Re-page an unanswered outage every 2 minutes, 5 pages in all (the first when it opened). Anything done on it
+// (a fix tried, a dismissal) or opening it from the notification stops it.
+export const REPAGE_MS = 2 * 60_000;
+export const MAX_PAGES = 5;
+export const needsRepage = (
+  inc: { created_at: string; context: { pages?: number; paged_at?: string; acked_at?: string } | null },
+  actions: number,
+  now = Date.now(),
+) =>
+  !inc.context?.acked_at && actions === 0 && (inc.context?.pages ?? 1) < MAX_PAGES &&
+  now - Date.parse(inc.context?.paged_at ?? inc.created_at) >= REPAGE_MS;

@@ -63,6 +63,7 @@ export function Settings(p: Props) {
   const [team, setTeam] = useState<{ members: Mate[]; teams: Mate[] }>({ members: [], teams: [] });
   const [invite, setInvite] = useState<string | null>(null);
   const [joinCode, setJoinCode] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
 
   const load = useCallback(async () => {
     const user = (await supabase.auth.getUser()).data.user;
@@ -337,7 +338,36 @@ export function Settings(p: Props) {
               onPress={() => run('invite', async () => setInvite((await connect<{ code: string }>('team_invite')).code))}
             />
           )}
-          <View style={{ flexDirection: 'row', gap: space.sm, paddingBottom: space.md }}>
+          {p.team && (
+            // Or by email: a join link and the code, for someone with an account or not yet.
+            <View style={styles.inlineRow}>
+              <TextInput
+                value={inviteEmail}
+                onChangeText={setInviteEmail}
+                placeholder="Invite by email"
+                placeholderTextColor={c.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                style={styles.input}
+                accessibilityLabel="Teammate's email"
+              />
+              <Pressable
+                onPress={() =>
+                  run('mail', async () => {
+                    const r = await connect<{ sent: string }>('team_invite_email', { email: inviteEmail });
+                    setInviteEmail('');
+                    return `Invite sent to ${r.sent}. It works for 7 days.`;
+                  })}
+                disabled={!inviteEmail.includes('@')}
+                accessibilityRole="button"
+                style={[styles.joinBtn, !inviteEmail.includes('@') && { opacity: 0.4 }]}
+              >
+                <Text style={[type.label, { color: c.bg }]}>{busy === 'mail' ? 'Sending…' : 'Send'}</Text>
+              </Pressable>
+            </View>
+          )}
+          <View style={[styles.inlineRow, { paddingBottom: space.md }]}>
             <TextInput
               value={joinCode}
               onChangeText={setJoinCode}
@@ -464,6 +494,7 @@ const styles = StyleSheet.create({
     fontFamily: 'GeistMono',
     letterSpacing: 2,
   },
+  inlineRow: { flexDirection: 'row', gap: space.sm },
   joinBtn: {
     minHeight: TARGET,
     paddingHorizontal: space.lg,

@@ -4,6 +4,7 @@ import {
   afterProof,
   confirmsReport,
   needsEscalation,
+  needsRepage,
   recoveryChecks,
   selfHealed,
   staleClaim,
@@ -155,4 +156,20 @@ Deno.test('a fix still failing 10 minutes later brings the card back, once', () 
   assertEquals(stillFailing('2026-09-29T19:00:00Z', false, t0 + 9 * 60_000), false);
   assertEquals(stillFailing('2026-09-29T19:00:00Z', false, t0 + 10 * 60_000), true);
   assertEquals(stillFailing('2026-09-29T19:00:00Z', true, t0 + 30 * 60_000), false, 'only once');
+});
+
+Deno.test('an unanswered outage is paged again every 2 minutes, 5 pages in all, until someone acts or opens it', () => {
+  const t0 = Date.parse('2026-09-30T03:00:00Z');
+  const inc = (context: Record<string, unknown> = {}) => ({ created_at: '2026-09-30T03:00:00Z', context });
+  assertEquals(needsRepage(inc(), 0, t0 + 60_000), false, 'not before 2 minutes');
+  assertEquals(needsRepage(inc(), 0, t0 + 2 * 60_000), true, 'second page');
+  assertEquals(needsRepage(inc({ pages: 2, paged_at: '2026-09-30T03:02:00Z' }), 0, t0 + 3 * 60_000), false);
+  assertEquals(needsRepage(inc({ pages: 2, paged_at: '2026-09-30T03:02:00Z' }), 0, t0 + 4 * 60_000), true);
+  assertEquals(
+    needsRepage(inc({ pages: 5, paged_at: '2026-09-30T03:08:00Z' }), 0, t0 + 60 * 60_000),
+    false,
+    'stops at 5',
+  );
+  assertEquals(needsRepage(inc(), 1, t0 + 9 * 60_000), false, 'someone acted');
+  assertEquals(needsRepage(inc({ acked_at: 'x' }), 0, t0 + 9 * 60_000), false, 'someone opened it');
 });

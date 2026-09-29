@@ -225,6 +225,21 @@ curl -H "Authorization: Bearer ops_..." "https://<ref>.supabase.co/functions/v1/
   Every Connect flow (GitHub, Google, Slack, Discord) finishes on the phone that approved it: the redirect carries a
   one-time claim the same account presents, so a Connect link can't be finished on another device.
 
+### Email invites (operator, once)
+
+Settings → Team → **Invite by email** sends a join link and the code through Resend (free: 3,000 a month).
+Verify a domain in Resend (a few DNS records), create an API key, then:
+`npx supabase secrets set RESEND_API_KEY=re_… MAIL_FROM=invites@your-domain.com`. Without a verified domain Resend
+only delivers to your own address. The link opens the app and joins the team; someone without an account signs up
+first and is joined right after.
+
+### Paging
+
+Outages arrive on the app's **Outages (alarm)** channel: alarm volume (heard with the ringer on silent), a long
+vibration, on the lock screen. An unanswered outage is paged again every 2 minutes, 5 pages in all, until someone
+opens it or acts on it; the team is paged at 5 minutes as before. To ring through Do Not Disturb, allow it in
+Android's settings for OpsSwipe → Notifications → Outages (alarm).
+
 ### Claude Code gate
 
 `integrations/claude-code/README.md`: create an agent token in Settings → Agent access, export
