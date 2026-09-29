@@ -14,7 +14,7 @@ import { aiLlm } from '../_shared/incidents.ts';
 import { writePostmortem } from '../_shared/postmortem.ts';
 import type { PrRef } from '../_shared/proof.ts';
 import { authorizeUrl, installUrl, listRepos } from '../_shared/githubApp.ts';
-import { completeGithub, completeGoogle, newState, saveAlerts } from '../_shared/oauthState.ts';
+import { claim, ClaimError, newState, saveAlerts } from '../_shared/oauthState.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
 import { idsFromLink, listDeployments } from '../_shared/railway.ts';
 import { keyProject, RevenueError, revenuePerHour } from '../_shared/revenue.ts';
@@ -168,11 +168,12 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       return { url: authorizeUrl(state) };
     }
 
-    case 'github_complete': {
-      const code = String(p.code ?? '');
-      const installationId = Number(p.installationId);
-      need(code && Number.isInteger(installationId), 'GitHub did not send an installation.');
-      return { github: { connected: true, account: (await completeGithub(owner, code, installationId)).account } };
+    // Finishes a GitHub, Google, Slack or Discord connection on the phone the provider redirected back to.
+    case 'oauth_claim': {
+      const r = await claim(owner, String(p.claim ?? '')).catch((e) => {
+        throw e instanceof ClaimError ? new UserError(e.message) : e;
+      });
+      return r.kind === 'google' ? { ...r, projects: await listProjects(await googleToken(owner)) } : r;
     }
 
     case 'github_repos': {
@@ -298,13 +299,6 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       // The app checks it comes back unchanged; it also carries the Expo Go return address, if any.
       const state = withReturn(await newState(owner, 'google'), p.returnTo);
       return { url: consentUrl(state), state };
-    }
-
-    case 'gcp_complete': {
-      const code = String(p.code ?? '');
-      need(code, 'Google did not finish the sign-in.');
-      const g = await completeGoogle(owner, code);
-      return { google: { connected: true, account: g.email }, projects: await g.projects() };
     }
 
     case 'gcp_projects':

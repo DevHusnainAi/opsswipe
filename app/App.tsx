@@ -14,6 +14,7 @@ import {
   connect,
   currentUserId,
   approve,
+  claimFrom,
   execute,
   githubSignInOpen,
   Incident,
@@ -215,6 +216,11 @@ export default function App() {
   // code that only this phone can exchange (PKCE). GitHub sign-in is handled by its own call.
   useEffect(() => {
     const open = async (url: string | null) => {
+      // A Connect flow whose browser sheet lost the link back: claim it here (claimFrom sends each once).
+      if (url && /\/connect\?(.*&)?claim=/.test(url)) {
+        claimFrom(url).then(() => refresh(), () => {});
+        return;
+      }
       if (!url || !/\/auth\?(.*&)?code=/.test(url) || githubSignInOpen()) return;
       try {
         const s = await sessionFromRedirect(url);
@@ -228,7 +234,7 @@ export default function App() {
     Linking.getInitialURL().then(open);
     const sub = Linking.addEventListener('url', (e) => open(e.url));
     return () => sub.remove();
-  }, [enter]);
+  }, [enter, refresh]);
 
   const startAuth = async (mode: AuthMode) => {
     await AsyncStorage.setItem(WELCOMED, '1');

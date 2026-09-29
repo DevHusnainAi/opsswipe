@@ -6,9 +6,8 @@ import { Bug, CheckCircle, CurrencyDollar, Cloud, GitBranch, GithubLogo, GoogleL
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { AddService, CopyRow, type StartAt } from './AddService';
-import { type ConnectStatus, type Service, connect, supabase } from './api';
+import { claimFrom, type ConnectStatus, type Service, connect, supabase } from './api';
 import { appBase, appLink } from './env';
-import { paramsOf } from './format';
 import { RepoPicker } from './RepoPicker';
 import { TARGET, c, radius, space, type } from './theme';
 import { Button, Chip, Section } from './ui';
@@ -66,18 +65,14 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
     fn();
   };
 
-  // The server finishes the install when GitHub calls back, so whatever the browser returns (even
-  // nothing, when the phone doesn't pass the link back), looking again shows the result.
+  // GitHub comes back with a one-time claim that this account turns into the connection. If the phone
+  // drops the link, the app's own link handler claims it; otherwise tap Connect again.
   const connectGithub = () =>
     run('github', async () => {
       const { url } = await connect<{ url: string }>('github_start', { returnTo: appBase });
       const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
-      const q = r.type === 'success' ? paramsOf(r.url) : {};
-      if (q.code && q.installation_id) {
-        await connect('github_complete', { code: q.code, installationId: Number(q.installation_id) });
-      }
+      if (r.type === 'success') await claimFrom(r.url);
       await load();
-      if (q.error === 'github_failed') throw new Error('GitHub did not finish the install. Try again.');
     });
 
   const disconnect = (kind: 'github' | 'render' | 'google' | 'railway' | 'revenuecat') =>

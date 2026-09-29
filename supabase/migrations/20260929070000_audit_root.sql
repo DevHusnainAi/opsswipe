@@ -12,3 +12,10 @@ create table fix_keys (
   primary key (owner, key_hash)
 );
 alter table fix_keys enable row level security;
+
+-- P0-6: a connection finishes only on the phone the provider redirects back to. The callback keeps the
+-- result here under a one-time claim (its hash), and the same user's app claims it.
+alter table oauth_states
+  add column completed_at timestamptz,
+  add column claim_hash text unique,
+  add column result jsonb;

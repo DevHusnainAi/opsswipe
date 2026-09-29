@@ -20,7 +20,7 @@ import {
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { type ConnectStatus, type GcpProject, type NewService, type RenderOption, type VmOption, connect } from './api';
+import { claimFrom, type ConnectStatus, type GcpProject, type NewService, type RenderOption, type VmOption, connect } from './api';
 import { appBase, appLink } from './env';
 import { paramsOf } from './format';
 import { TARGET, c, radius, space, type } from './theme';
@@ -143,15 +143,14 @@ export function AddService({ start, status, existing, onClose }: Props) {
     run('google', async () => {
       const { url, state } = await connect<{ url: string; state: string }>('gcp_start', { returnTo: appBase });
       const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
-      const q = r.type === 'success' ? paramsOf(r.url) : {};
-      if (q.state && q.state !== state) throw new Error('That Google sign-in did not match this request. Try again.');
-      if (q.error === 'access_denied') throw new Error('Google access was not allowed.');
-      if (q.error) throw new Error('Google did not finish the sign-in. Try again.');
+      if (r.type === 'success' && paramsOf(r.url).state && paramsOf(r.url).state !== state) {
+        throw new Error('That Google sign-in did not match this request. Try again.');
+      }
+      const claimed = r.type === 'success' ? await claimFrom(r.url) : null;
       let list: GcpProject[];
-      if (q.code) {
-        list = (await connect<{ projects: GcpProject[] }>('gcp_complete', { code: q.code })).projects;
-      } else {
-        // The server usually finished the sign-in itself (done=google, or the link back got lost): look.
+      if (claimed?.projects) list = claimed.projects;
+      else {
+        // The link back got lost and the app's link handler claimed it, or it was closed early: look.
         try {
           list = (await connect<{ projects: GcpProject[] }>('gcp_projects')).projects;
         } catch {

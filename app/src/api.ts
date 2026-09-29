@@ -137,6 +137,26 @@ export async function connect<T>(action: string, params: Record<string, unknown>
 
 const AUTH_REDIRECT = appLink('auth');
 
+export type Claimed = { kind: 'github' | 'google' | 'slack' | 'discord'; account: string | null; projects?: GcpProject[] };
+const claims = new Map<string, Promise<Claimed>>();
+const NAMES: Record<string, string> = { github: 'GitHub', google: 'Google', slack: 'Slack', discord: 'Discord' };
+
+// A Connect flow comes back to opsswipe://connect?claim=… on the phone that approved it; this account
+// claims it (the server checks it's the one that started it). The same link can arrive twice (the
+// browser sheet and the app's link handler), so each claim is sent once. Null when there's nothing to claim.
+export function claimFrom(url: string): Promise<Claimed | null> {
+  const q = paramsOf(url);
+  if (q.error === 'access_denied') return Promise.reject(new Error('Access was not allowed.'));
+  if (q.error === 'start_in_app') return Promise.reject(new Error('Start connecting from the app, then try again.'));
+  if (q.error) {
+    const who = NAMES[q.error.replace(/_failed$/, '')] ?? 'The provider';
+    return Promise.reject(new Error(`${who} did not finish. Try again.`));
+  }
+  if (!q.claim) return Promise.resolve(null);
+  if (!claims.has(q.claim)) claims.set(q.claim, connect<Claimed>('oauth_claim', { claim: q.claim }));
+  return claims.get(q.claim)!;
+}
+
 // Only a one-time PKCE code is accepted, never tokens in the link: the exchange needs the verifier this
 // app stored when it started the sign-in or reset, so a link someone else made can't sign this phone in.
 export async function sessionFromRedirect(url: string) {
