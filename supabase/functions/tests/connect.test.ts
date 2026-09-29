@@ -87,8 +87,51 @@ Deno.test('proof kit: workflow asks for OIDC, points at our endpoint, and the sc
   assert(wf.includes('id-token: write'));
   assert(wf.includes('OPSSWIPE_PROOF_URL: https://ref.supabase.co/functions/v1/proof'));
   assert(wf.includes('${{ steps.tests.outputs.passed }}'), 'GitHub expression survives the template');
+  for (
+    const lock of ['persist-credentials: false', '--network none', '--internal', '--cap-drop ALL', 'no-new-privileges']
+  ) {
+    assert(wf.includes(lock), `PR code is locked down: ${lock}`);
+  }
+  assert(wf.includes('proof.mjs report'), 'the token is only used by the reporter step');
   const mod = await import(`data:text/javascript,${encodeURIComponent(PROOF_SCRIPT)}`);
-  assertEquals(typeof mod.replayAll, 'function');
+  assertEquals([
+    mod.fixed({ was: 500, now: 200 }),
+    mod.fixed({ was: 500, now: 404 }),
+    mod.fixed({ was: 500, now: 302 }),
+  ], [
+    true,
+    false,
+    false,
+  ]);
+});
+
+Deno.test('proof replay step reports what each saved failure returns now', async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.mkdir(`${dir}/replays`);
+  await Deno.writeTextFile(`${dir}/proof.mjs`, PROOF_SCRIPT);
+  await Deno.writeTextFile(
+    `${dir}/replays/abc.json`,
+    JSON.stringify({
+      samples: [{ method: 'GET', path: '/ok', status: 500 }, { method: 'GET', path: '/gone', status: 500 }],
+    }),
+  );
+  const server = Deno.serve(
+    { hostname: '127.0.0.1', port: 0, onListen: () => {} },
+    (r) => new Response('', { status: r.url.endsWith('/ok') ? 200 : 404 }),
+  );
+  try {
+    const out = await new Deno.Command('node', {
+      args: ['proof.mjs', 'replay', `http://127.0.0.1:${server.addr.port}`, 'replays'],
+      cwd: dir,
+    }).output();
+    assertEquals(JSON.parse(new TextDecoder().decode(out.stdout)), [
+      { method: 'GET', path: '/ok', was: 500, now: 200 },
+      { method: 'GET', path: '/gone', was: 500, now: 404 },
+    ]);
+  } finally {
+    await server.shutdown();
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 Deno.test('only the OpsSwipe proof workflow of that same repo can prove a fix', () => {

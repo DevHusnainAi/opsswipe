@@ -6,7 +6,9 @@ import { afterProof } from '../_shared/flow.ts';
 import { aiEnabled } from '../_shared/incidents.ts';
 import { fromWorkflow, prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
 import { PROOF_WORKFLOW_PATH } from '../_shared/proofKit.ts';
-import { notify } from '../_shared/services.ts';
+import { prHead } from '../_shared/github.ts';
+import type { ReplaySample } from '../_shared/replay.ts';
+import { githubToken, notify } from '../_shared/services.ts';
 import { canMerge, evaluateProof, parseProof, type Proof, type PrRef } from '../_shared/proof.ts';
 
 Deno.serve(async (req) => {
@@ -41,12 +43,15 @@ Deno.serve(async (req) => {
         owner: string;
         target_server: string;
         actions: string[];
-        context: { pr?: PrRef; proof?: Proof; replay?: unknown[]; prepared?: boolean };
+        context: { pr?: PrRef; proof?: Proof; replay?: ReplaySample[]; prepared?: boolean };
       }
     >();
   if (!inc) return json(404, { error: 'no open incident for this PR' });
 
-  const result = evaluateProof(inc.context.pr, { ...body, repo, pr: prNumber });
+  // The sha CI says it tested comes from the PR's own script; GitHub says what the PR points at now.
+  const head = await prHead(inc.context.pr!, await githubToken(inc.owner)).catch(() => null);
+  if (head !== inc.context.pr?.headSha) return json(409, { error: 'the PR changed after OpsSwipe opened it' });
+  const result = evaluateProof(inc.context.pr, { ...body, repo, pr: prNumber }, inc.context.replay ?? []);
   if (result.status !== 'accepted') {
     return result.status === 'stale'
       ? json(409, { error: 'proof is for a different commit than OpsSwipe opened' })

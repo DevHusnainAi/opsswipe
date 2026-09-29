@@ -33,7 +33,15 @@ export type Incident = {
     revenue?: { perHour: number; currency: string }; // estimate from the owner's RevenueCat, last 28 days
     replay?: { method: string; path: string; status: number }[];
     pr?: { number: number; url: string; headSha: string };
-    proof?: { ok: boolean; passed: number; total: number; tests: boolean; runUrl?: string; headSha: string };
+    proof?: {
+      ok: boolean;
+      passed: number;
+      total: number;
+      tests: boolean;
+      runUrl?: string;
+      headSha: string;
+      results?: { method: string; path: string; was: number; now: number }[]; // each saved failure, then and now
+    };
   } | null;
 };
 

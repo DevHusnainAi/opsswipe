@@ -127,10 +127,15 @@ export function IncidentDetail(
               <Text style={[type.label, { color: proof ? (proof.ok ? c.green : c.red) : c.muted }]}>
                 {proof
                   ? proof.ok
-                    ? `Proven: ${proof.passed}/${proof.total} failing production requests now pass, tests pass`
-                    : `Not proven: ${proof.passed}/${proof.total} pass${proof.tests ? '' : ', tests fail'}`
+                    ? `Proven: ${proof.passed}/${proof.total} failing production requests now answer 2xx, tests pass`
+                    : `Not proven: ${proof.passed}/${proof.total} answer 2xx${proof.tests ? '' : ', tests fail'}`
                   : 'CI is replaying the failing requests'}
               </Text>
+              {(proof?.results ?? []).map((r, n) => (
+                <Text key={n} style={type.monoCaption}>
+                  {r.method} {r.path}: {r.was} → <Text style={{ color: r.now >= 200 && r.now < 300 ? c.green : c.red }}>{r.now || 'no answer'}</Text>
+                </Text>
+              ))}
             </Block>
           )}
 
@@ -145,7 +150,7 @@ export function IncidentDetail(
                   </Text>
                   <ScrollView horizontal>
                     <Text style={type.monoCaption}>
-                      {f.patch.split('\n').map((line, n) => (
+                      {(f.patch || '(binary or too large to show here; open the PR)').split('\n').map((line, n) => (
                         <Text key={n} style={{ color: line.startsWith('+') ? c.green : line.startsWith('-') ? c.red : c.muted }}>
                           {line}{'\n'}
                         </Text>

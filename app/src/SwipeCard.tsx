@@ -258,8 +258,8 @@ function proofText(ctx: Incident['context']) {
   if (!st) return null;
   const { pr, proof, samples } = st;
   if (!proof) return `PR #${pr.number}: CI is replaying ${samples} failing production request${samples === 1 ? '' : 's'}`;
-  if (proof.ok) return `${proof.passed}/${proof.total} failing production requests now pass, tests pass`;
-  return `Proof failed: ${proof.passed}/${proof.total} pass${proof.tests ? '' : ', tests fail'}`;
+  if (proof.ok) return `${proof.passed}/${proof.total} failing production requests now answer 2xx, tests pass`;
+  return `Proof failed: ${proof.passed}/${proof.total} answer 2xx${proof.tests ? '' : ', tests fail'}`;
 }
 
 function ProofStrip({ context }: { context: Incident['context'] }) {

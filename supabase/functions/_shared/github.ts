@@ -9,6 +9,9 @@ const API = 'https://api.github.com';
 
 export type RevertInput = { repo: string; branch: string; commitSha: string; body: string; replay: ReplaySample[] };
 
+// A branch or ref inside a URL: encoded, keeping the slashes of names like "feature/x".
+const refPath = (r: string) => encodeURIComponent(r).replace(/%2F/g, '/');
+
 async function gh(path: string, token: string, init: RequestInit = {}) {
   const res = await fetch(`${API}/repos/${path}`, {
     ...init,
@@ -31,7 +34,7 @@ export async function openRevertPr(
   { repo, branch, commitSha, body, replay }: RevertInput,
   token: string,
 ): Promise<PrRef> {
-  const head = await gh(`${repo}/git/ref/heads/${branch}`, token);
+  const head = await gh(`${repo}/git/ref/heads/${refPath(branch)}`, token);
   if (head.object.sha !== commitSha) {
     throw new Error(`${commitSha.slice(0, 7)} is no longer the head of ${branch}; revert it by hand`);
   }
@@ -95,14 +98,17 @@ export async function commitMessage(repo: string, sha: string, token: string): P
 
 // The commit a branch points at now.
 export async function branchHead(repo: string, branch: string, token: string): Promise<string> {
-  return (await gh(`${repo}/git/ref/heads/${branch}`, token)).object.sha;
+  return (await gh(`${repo}/git/ref/heads/${refPath(branch)}`, token)).object.sha;
 }
 
 export type ChangedFile = { path: string; patch: string; content: string | null };
 
 // A file's text on a branch, or null when it's missing or bigger than `max` bytes.
-async function fileText(repo: string, path: string, ref: string, token: string, max = 40_000) {
-  const c = await gh(`${repo}/contents/${encodeURIComponent(path).replace(/%2F/g, '/')}?ref=${ref}`, token)
+export async function fileText(repo: string, path: string, ref: string, token: string, max = 40_000) {
+  const c = await gh(
+    `${repo}/contents/${encodeURIComponent(path).replace(/%2F/g, '/')}?ref=${encodeURIComponent(ref)}`,
+    token,
+  )
     .catch(() => null);
   if (!c?.content || c.size > max) return null;
   return new TextDecoder().decode(Uint8Array.from(atob(c.content.replace(/\n/g, '')), (ch) => ch.charCodeAt(0)));
@@ -124,11 +130,21 @@ export const TEST_FILE = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[cm]?[jt]sx?
 
 // One of the repo's own tests, so the AI's regression test follows the same style and runner.
 export async function testExample(repo: string, branch: string, token: string) {
-  const tree = await gh(`${repo}/git/trees/${branch}?recursive=1`, token).catch(() => null);
+  const tree = await gh(`${repo}/git/trees/${refPath(branch)}?recursive=1`, token).catch(() => null);
   const path = (tree?.tree ?? []).map((e: { path: string; type: string }) => e.type === 'blob' ? e.path : '')
     .find((p: string) => TEST_FILE.test(p) && !p.includes('node_modules/'));
   const content = path ? await fileText(repo, path, branch, token, 20_000) : null;
   return path && content ? { path, content } : null;
+}
+
+// The commit a PR's branch points at right now, from GitHub itself (not from what CI says it tested).
+export async function prHead(pr: PrRef, token: string): Promise<string> {
+  return (await gh(`${pr.repo}/pulls/${pr.number}`, token)).head.sha;
+}
+
+// Is this a real branch of the repo? Checked when a branch is linked, so a typo fails at setup.
+export async function branchExists(repo: string, branch: string, token: string) {
+  return await gh(`${repo}/branches/${refPath(branch)}`, token).then(() => true, () => false);
 }
 
 export type PrFile = { file: string; status: string; additions: number; deletions: number; patch: string };
@@ -148,14 +164,6 @@ export async function prFiles(pr: PrRef, token: string): Promise<PrFile[]> {
     budget -= patch.length;
     return { file: f.filename, status: f.status, additions: f.additions, deletions: f.deletions, patch };
   });
-}
-
-// Does the file already exist on that ref? Used to notice work that was already done (the proof
-// workflow merged, then the service re-linked) instead of opening a second PR for it.
-export async function fileExists(repo: string, path: string, ref: string, token: string) {
-  const c = await gh(`${repo}/contents/${encodeURIComponent(path).replace(/%2F/g, '/')}?ref=${ref}`, token)
-    .catch(() => null);
-  return c !== null;
 }
 
 // Point a branch at a commit: create the ref, or move the one an earlier attempt left behind
@@ -210,7 +218,7 @@ export async function openFilesPr(
   },
   token: string,
 ): Promise<PrRef> {
-  const head = await gh(`${repo}/git/ref/heads/${branch}`, token);
+  const head = await gh(`${repo}/git/ref/heads/${refPath(branch)}`, token);
   const base = await gh(`${repo}/git/commits/${head.object.sha}`, token);
   const tree = await gh(`${repo}/git/trees`, token, {
     method: 'POST',

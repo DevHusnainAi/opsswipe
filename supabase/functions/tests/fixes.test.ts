@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from 'jsr:@std/assert@1';
-import { fileExists, openFilesPr, openRevertPr } from '../_shared/github.ts';
+import { fileText, openFilesPr, openRevertPr } from '../_shared/github.ts';
 import { type Deploy, pickRollback, rollbackToPrevious } from '../_shared/render.ts';
 import { ruleSuggest, suggest, type SuggestInput, toSuggestInput } from '../_shared/suggest.ts';
 
@@ -205,14 +205,14 @@ Deno.test('toSuggestInput measures minutes from deploy finish to now', () => {
   assertEquals(i.previousDeploy?.commit, 'aaa');
 });
 
-Deno.test('fileExists: a file on a ref is found, a missing one is not an error', async () => {
+Deno.test('fileText: a file on a ref is read, a missing one is null, not an error', async () => {
   const f = mockStatus({
-    'GET /contents/.github/workflows/opsswipe-proof.yml': [200, { content: 'b24=' }],
+    'GET /contents/.github/workflows/opsswipe-proof.yml': [200, { content: 'b24=', size: 2 }],
     'GET /contents/.opsswipe/proof.mjs': [404, { message: 'Not Found' }],
   });
   try {
-    assertEquals(await fileExists('me/app', '.github/workflows/opsswipe-proof.yml', 'main', 't'), true);
-    assertEquals(await fileExists('me/app', '.opsswipe/proof.mjs', 'main', 't'), false);
+    assertEquals(await fileText('me/app', '.github/workflows/opsswipe-proof.yml', 'main', 't'), 'on');
+    assertEquals(await fileText('me/app', '.opsswipe/proof.mjs', 'main', 't'), null);
   } finally {
     f.restore();
   }
