@@ -8,7 +8,7 @@ import { isTeam } from '../_shared/codeFix.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
 import { consentUrl, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
-import { commitFiles, openFilesPr, prFiles } from '../_shared/github.ts';
+import { commitFiles, fileExists, openFilesPr, prFiles } from '../_shared/github.ts';
 import { aiLlm } from '../_shared/incidents.ts';
 import { writePostmortem } from '../_shared/postmortem.ts';
 import type { PrRef } from '../_shared/proof.ts';
@@ -455,9 +455,18 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       need(s && s.owner === owner, 'Service not found.');
       const t = toTarget(s!);
       need(t.repo, 'Link a GitHub repo to this service first.');
+      const token = await githubToken(owner);
+      const base = t.branch ?? 'main';
+      // Already there: the proof PR was merged (or the repo was re-linked after it). A second PR
+      // would have nothing to change, so just remember it and tick the checklist off.
+      if (await fileExists(t.repo!, PROOF_WORKFLOW_PATH, base, token)) {
+        const on = `https://github.com/${t.repo}/actions/workflows/${PROOF_WORKFLOW_PATH.split('/').pop()}`;
+        await db.from('services').update({ config: { ...s!.config, proofPr: on } }).eq('id', s!.id);
+        return { prUrl: on, installed: true };
+      }
       const { url } = await openFilesPr({
         repo: t.repo!,
-        branch: t.branch ?? 'main',
+        branch: base,
         branchName: 'opsswipe/add-proof',
         title: 'Add OpsSwipe proof: replay production failures on every PR',
         body: [
@@ -471,7 +480,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
           { path: PROOF_SCRIPT_PATH, content: PROOF_SCRIPT },
           { path: PROOF_WORKFLOW_PATH, content: proofWorkflow(functionUrl('proof')) },
         ],
-      }, await githubToken(owner));
+      }, token);
       // Remembered so the app's setup checklist can tick "proof" off.
       await db.from('services').update({ config: { ...s!.config, proofPr: url } }).eq('id', s!.id);
       return { prUrl: url };

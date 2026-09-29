@@ -64,14 +64,12 @@ export async function openRevertPr(
     }),
   });
   const branchName = `opsswipe/revert-${short}`;
-  await gh(`${repo}/git/refs`, token, {
-    method: 'POST',
-    body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: revert.sha }),
-  });
-  const pr = await gh(`${repo}/pulls`, token, {
-    method: 'POST',
-    body: JSON.stringify({ title: `Revert "${firstLine}"`, head: branchName, base: branch, body }),
-  });
+  await upsertRef(repo, branchName, revert.sha, token);
+  const pr = await openPull(
+    repo,
+    { title: `Revert "${firstLine}"`, head: branchName, base: branch, body },
+    token,
+  );
   return { repo, number: pr.number, headSha: revert.sha, url: pr.html_url, branch: branchName };
 }
 
@@ -152,6 +150,53 @@ export async function prFiles(pr: PrRef, token: string): Promise<PrFile[]> {
   });
 }
 
+// Does the file already exist on that ref? Used to notice work that was already done (the proof
+// workflow merged, then the service re-linked) instead of opening a second PR for it.
+export async function fileExists(repo: string, path: string, ref: string, token: string) {
+  const c = await gh(`${repo}/contents/${encodeURIComponent(path).replace(/%2F/g, '/')}?ref=${ref}`, token)
+    .catch(() => null);
+  return c !== null;
+}
+
+// Point a branch at a commit: create the ref, or move the one an earlier attempt left behind
+// (GitHub 422s "Reference already exists" on a second create).
+async function upsertRef(repo: string, branchName: string, sha: string, token: string) {
+  try {
+    await gh(`${repo}/git/refs`, token, {
+      method: 'POST',
+      body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha }),
+    });
+  } catch (e) {
+    if ((e as { status?: number }).status !== 422) throw e;
+    await gh(`${repo}/git/refs/heads/${branchName}`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ sha, force: true }),
+    });
+  }
+}
+
+// Open the PR, or hand back the one that head branch already has open (a retry after a failed run).
+async function openPull(
+  repo: string,
+  { title, head, base, body }: { title: string; head: string; base: string; body: string },
+  token: string,
+) {
+  try {
+    return await gh(`${repo}/pulls`, token, {
+      method: 'POST',
+      body: JSON.stringify({ title, head, base, body }),
+    }) as { number: number; html_url: string };
+  } catch (e) {
+    if ((e as { status?: number }).status !== 422) throw e;
+    const open = await gh(`${repo}/pulls?state=open&head=${repo.split('/')[0]}:${head}`, token) as {
+      number: number;
+      html_url: string;
+    }[];
+    if (open[0]) return open[0];
+    throw e;
+  }
+}
+
 // Open a PR that adds or changes files on top of the branch head (the proof workflow, an AI fix).
 // The user reviews and merges; with a replay file in it, merging is gated on CI proof.
 export async function openFilesPr(
@@ -178,13 +223,7 @@ export async function openFilesPr(
     method: 'POST',
     body: JSON.stringify({ message: title, tree: tree.sha, parents: [head.object.sha] }),
   });
-  await gh(`${repo}/git/refs`, token, {
-    method: 'POST',
-    body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: commit.sha }),
-  });
-  const pr = await gh(`${repo}/pulls`, token, {
-    method: 'POST',
-    body: JSON.stringify({ title, head: branchName, base: branch, body }),
-  });
+  await upsertRef(repo, branchName, commit.sha, token);
+  const pr = await openPull(repo, { title, head: branchName, base: branch, body }, token);
   return { repo, number: pr.number, headSha: commit.sha, url: pr.html_url, branch: branchName };
 }

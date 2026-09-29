@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from 'jsr:@std/assert@1';
-import { openRevertPr } from '../_shared/github.ts';
+import { fileExists, openFilesPr, openRevertPr } from '../_shared/github.ts';
 import { type Deploy, pickRollback, rollbackToPrevious } from '../_shared/render.ts';
 import { ruleSuggest, suggest, type SuggestInput, toSuggestInput } from '../_shared/suggest.ts';
 
@@ -18,6 +18,24 @@ function mockFetch(routes: Record<string, unknown>) {
     });
     if (!key) return Promise.resolve(new Response(`no route for ${method} ${url}`, { status: 404 }));
     return Promise.resolve(Response.json(routes[key], { status: method === 'POST' ? 201 : 200 }));
+  }) as typeof fetch;
+  return { calls, restore: () => (globalThis.fetch = real) };
+}
+
+// Same routing, but each route carries its own status, so GitHub's refusals (422) can be replayed.
+function mockStatus(routes: Record<string, [number, unknown]>) {
+  const calls: Call[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    calls.push({ url: String(url), method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    const key = Object.keys(routes).find((k) => {
+      const [m, frag] = k.split(' ');
+      return m === method && String(url).includes(frag);
+    });
+    if (!key) return Promise.resolve(new Response(`no route for ${method} ${url}`, { status: 404 }));
+    const [status, body] = routes[key];
+    return Promise.resolve(Response.json(body, { status }));
   }) as typeof fetch;
   return { calls, restore: () => (globalThis.fetch = real) };
 }
@@ -185,4 +203,64 @@ Deno.test('toSuggestInput measures minutes from deploy finish to now', () => {
   }, now);
   assertEquals(i.liveDeploy?.minutesBeforeFailure, 5);
   assertEquals(i.previousDeploy?.commit, 'aaa');
+});
+
+Deno.test('fileExists: a file on a ref is found, a missing one is not an error', async () => {
+  const f = mockStatus({
+    'GET /contents/.github/workflows/opsswipe-proof.yml': [200, { content: 'b24=' }],
+    'GET /contents/.opsswipe/proof.mjs': [404, { message: 'Not Found' }],
+  });
+  try {
+    assertEquals(await fileExists('me/app', '.github/workflows/opsswipe-proof.yml', 'main', 't'), true);
+    assertEquals(await fileExists('me/app', '.opsswipe/proof.mjs', 'main', 't'), false);
+  } finally {
+    f.restore();
+  }
+});
+
+// "Turn on proof" twice (or after the repo was re-linked) must not 502 on the branch left behind.
+Deno.test('openFilesPr moves the branch an earlier attempt left behind and reuses its PR', async () => {
+  const f = mockStatus({
+    'GET /git/ref/heads/main': [200, { object: { sha: 'base0000' } }],
+    'GET /git/commits/base0000': [200, { tree: { sha: 'tree-base' } }],
+    'POST /git/trees': [201, { sha: 'tree-proof' }],
+    'POST /git/commits': [201, { sha: 'commit-new' }],
+    'POST /git/refs': [422, { message: 'Reference already exists' }],
+    'PATCH /git/refs/heads/opsswipe/add-proof': [200, { object: { sha: 'commit-new' } }],
+    'POST /pulls': [422, { message: 'Validation Failed' }],
+    'GET /pulls?state=open&head=me:opsswipe/add-proof': [
+      200,
+      [{ number: 4, html_url: 'https://github.com/me/app/pull/4' }],
+    ],
+  });
+  let pr;
+  try {
+    pr = await openFilesPr(
+      {
+        repo: 'me/app',
+        branch: 'main',
+        branchName: 'opsswipe/add-proof',
+        title: 'Add OpsSwipe proof',
+        body: 'why',
+        files: [{ path: '.github/workflows/opsswipe-proof.yml', content: 'on: pull_request' }],
+      },
+      't',
+    );
+  } finally {
+    f.restore();
+  }
+  assertEquals(pr, {
+    repo: 'me/app',
+    number: 4,
+    headSha: 'commit-new',
+    url: 'https://github.com/me/app/pull/4',
+    branch: 'opsswipe/add-proof',
+  });
+  const patch = f.calls.find((c) => c.method === 'PATCH')!;
+  assertEquals(
+    patch.body as { sha: string; force: boolean },
+    { sha: 'commit-new', force: true },
+    'the stale branch is moved onto the new commit instead of failing the create',
+  );
+  assertEquals(f.calls.filter((c) => c.method === 'POST' && c.url.endsWith('/pulls')).length, 1, 'one PR attempt');
 });
