@@ -16,7 +16,7 @@ import {
   toTarget,
 } from './services.ts';
 import { aiFixPr, badCommit, type Incident, isPro } from './codeFix.ts';
-import { afterFix, confirmsReport, selfHealed } from './flow.ts';
+import { afterFix, confirmsReport, ESCALATE_AFTER_MS, needsEscalation, selfHealed } from './flow.ts';
 import { money, type Revenue, revenuePerHour } from './revenue.ts';
 import { nvidiaLlm, openaiLlm, withFallback } from './llm.ts';
 import { llmPatcher, type Patcher, vertexPatcher } from './patch.ts';
@@ -282,3 +282,25 @@ const formatDuration = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 };
+
+// Nobody answered in 5 minutes: page everyone on the owner's team (their phones and their Slack/Discord).
+export async function escalate(now = Date.now()) {
+  const { data: open } = await db.from('incidents').select('id, owner, target_server, created_at, status, context')
+    .eq('status', 'active').lt('created_at', new Date(now - ESCALATE_AFTER_MS).toISOString());
+  for (const inc of open ?? []) {
+    const { count } = await db.from('audit_log').select('id', { count: 'exact', head: true }).eq('incident_id', inc.id);
+    if (!needsEscalation(inc, count ?? 0, now)) continue;
+    // Marked first, so a slow push can't page the team twice.
+    await db.from('incidents').update({ context: { ...inc.context, escalated_at: new Date(now).toISOString() } })
+      .eq('id', inc.id);
+    const { data: team } = await db.from('team_members').select('member').eq('owner', inc.owner);
+    const mins = Math.round((now - Date.parse(inc.created_at)) / 60_000);
+    for (const t of team ?? []) {
+      await notify(t.member, {
+        title: `Escalated: ${inc.target_server} is down`,
+        body: `No one has answered for ${mins} minutes. You're on the team, so it's yours.`,
+        data: { incidentId: inc.id },
+      });
+    }
+  }
+}

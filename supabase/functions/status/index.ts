@@ -16,13 +16,14 @@ Deno.serve(async (req) => {
   if (!page) return out(404, { error: 'no such status page' });
 
   const since = new Date(Date.now() - DAYS * 86_400_000).toISOString();
-  const [{ data: services }, { data: incidents }, { data: dismissed }] = await Promise.all([
+  const [{ data: services }, { data: incidents }] = await Promise.all([
     db.from('services').select('id, name').eq('owner', page.owner).order('name'),
     db.from('incidents').select('id, service_id, title, created_at, recovered_at, resolved_at, status')
       .eq('owner', page.owner).not('service_id', 'is', null).gte('created_at', since),
-    db.from('audit_log').select('incident_id').eq('actor', page.owner).eq('outcome', 'dismissed')
-      .gte('created_at', since),
   ]);
+  // Whoever dismissed it (the owner or a teammate), a false alarm isn't downtime.
+  const { data: dismissed } = await db.from('audit_log').select('incident_id').eq('outcome', 'dismissed')
+    .in('incident_id', (incidents ?? []).map((i) => i.id));
   const skip = new Set((dismissed ?? []).map((d) => d.incident_id));
   return out(200, statusReport(services ?? [], (incidents ?? []).filter((i) => !skip.has(i.id))));
 });

@@ -19,9 +19,11 @@ import {
   SlackLogo,
   Trash,
   UserCircle,
+  UserPlus,
+  UsersThree,
 } from 'phosphor-react-native';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { AppState, Linking, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AgentAccess } from './AgentAccess';
 import { canSignInHere, SlackSignIn } from './SlackSignIn';
 import { type ConnectStatus, connect, supabase } from './api';
@@ -55,6 +57,10 @@ export function Settings(p: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [channel, setChannel] = useState<ConnectStatus['alerts'] | null>(null);
   const [statusPage, setStatusPage] = useState<string | null>(null);
+  type Mate = { id: string; email: string };
+  const [team, setTeam] = useState<{ members: Mate[]; teams: Mate[] }>({ members: [], teams: [] });
+  const [invite, setInvite] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState('');
 
   const load = useCallback(async () => {
     const user = (await supabase.auth.getUser()).data.user;
@@ -64,6 +70,7 @@ export function Settings(p: Props) {
     const st = await connect<ConnectStatus>('status');
     setChannel(st.alerts);
     setStatusPage(st.statusPage);
+    setTeam(await connect<{ members: Mate[]; teams: Mate[] }>('team'));
   }, []);
 
   useEffect(() => {
@@ -260,6 +267,77 @@ export function Settings(p: Props) {
 
       <AgentAccess active={p.active} />
 
+      {/* Pro: teammates see and fix your incidents (never your services or keys) and get paged when one
+          sits unanswered for 5 minutes. */}
+      <Section title="Team">
+        <View style={styles.group}>
+          <Row
+            icon={UsersThree}
+            tint={team.members.length ? c.green : undefined}
+            title={team.members.length ? `${team.members.length} teammate${team.members.length === 1 ? '' : 's'} on call with you` : 'On call together'}
+            body="If nobody answers for 5 minutes, OpsSwipe pages your teammates. They can fix your incidents, never see your keys."
+          />
+          {team.members.map((m) => (
+            <Action
+              key={m.id}
+              icon={Trash}
+              label={busy === `rm-${m.id}` ? 'Removing…' : `Remove ${m.email}`}
+              danger
+              onPress={() => run(`rm-${m.id}`, async () => void (await connect('team_remove', { id: m.id })))}
+            />
+          ))}
+          {team.teams.map((t) => (
+            <Action
+              key={t.id}
+              icon={SignOut}
+              label={busy === `rm-${t.id}` ? 'Leaving…' : `Leave ${t.email}'s team`}
+              onPress={() => run(`rm-${t.id}`, async () => void (await connect('team_remove', { id: t.id })))}
+            />
+          ))}
+          {invite ? (
+            <Action
+              icon={ShareNetwork}
+              label={`Code ${invite}: share it`}
+              primary
+              onPress={() => void Share.share({ message: `Join my on-call team on OpsSwipe: Settings → Team → Join, code ${invite}` })}
+            />
+          ) : (
+            <Action
+              icon={UserPlus}
+              label={busy === 'invite' ? 'Creating a code…' : 'Invite a teammate'}
+              primary
+              onPress={() => run('invite', async () => setInvite((await connect<{ code: string }>('team_invite')).code))}
+            />
+          )}
+          <View style={{ flexDirection: 'row', gap: space.sm, paddingBottom: space.md }}>
+            <TextInput
+              value={joinCode}
+              onChangeText={setJoinCode}
+              placeholder="Join with a code"
+              placeholderTextColor={c.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={8}
+              style={styles.input}
+              accessibilityLabel="Team invite code"
+            />
+            <Pressable
+              onPress={() =>
+                run('join', async () => {
+                  await connect('team_join', { code: joinCode });
+                  setJoinCode('');
+                  return 'You joined the team. Their incidents now show up in Incidents.';
+                })}
+              disabled={joinCode.trim().length < 8}
+              accessibilityRole="button"
+              style={[styles.joinBtn, joinCode.trim().length < 8 && { opacity: 0.4 }]}
+            >
+              <Text style={[type.label, { color: c.bg }]}>{busy === 'join' ? 'Joining…' : 'Join'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Section>
+
       {/* Free, with "Updated automatically by OpsSwipe" on the page: every customer's customers see it. */}
       <Section title="Status page">
         <View style={styles.group}>
@@ -345,4 +423,24 @@ const styles = StyleSheet.create({
   },
   note: { color: c.green, backgroundColor: c.greenTint, padding: space.md, borderRadius: radius.control },
   noteError: { color: c.red, backgroundColor: c.redTint },
+  input: {
+    flex: 1,
+    minHeight: TARGET,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: c.surface2,
+    color: c.text,
+    paddingHorizontal: space.md,
+    fontFamily: 'GeistMono',
+    letterSpacing: 2,
+  },
+  joinBtn: {
+    minHeight: TARGET,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.control,
+    backgroundColor: c.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

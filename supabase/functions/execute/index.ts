@@ -13,6 +13,7 @@ import { restartRailway, rollbackRailway } from '../_shared/railway.ts';
 import {
   getService,
   githubToken,
+  ownersFor,
   platformSa,
   railwayToken,
   renderKey,
@@ -57,10 +58,10 @@ Deno.serve(async (req) => {
   if (typeof incidentId !== 'string') return json(400, { error: 'incidentId required' });
   if (requested !== undefined && typeof requested !== 'string') return json(400, { error: 'action must be a string' });
 
-  // Claim the incident atomically: a double swipe can't run a fix twice, and only its owner can
-  // claim it at all (someone else's incident looks exactly like a missing one).
+  // Claim the incident atomically: a double swipe can't run a fix twice, and only its owner (or their
+  // team) can claim it at all (someone else's incident looks exactly like a missing one).
   const { data: inc } = await db.from('incidents').update({ status: 'resolving' })
-    .eq('id', incidentId).eq('owner', user.id).eq('status', 'active').select().maybeSingle<Incident>();
+    .eq('id', incidentId).in('owner', await ownersFor(user.id)).eq('status', 'active').select().maybeSingle<Incident>();
   if (!inc) return json(409, { error: 'incident is not active' });
 
   const action = (requested ?? inc.action) as Action;
@@ -95,8 +96,13 @@ Deno.serve(async (req) => {
   let usedFreeRun = false;
   let outcome: Outcome;
   try {
-    if (!(await isPro(user.id))) {
-      const { data: ok } = await db.rpc('consume_free_run', { uid: user.id, free_limit: FREE_RUNS, incident: inc.id });
+    // The account that owns the outage pays, whoever on the team swipes.
+    if (!(await isPro(inc.owner))) {
+      const { data: ok } = await db.rpc('consume_free_run', {
+        uid: inc.owner,
+        free_limit: FREE_RUNS,
+        incident: inc.id,
+      });
       if (!ok) {
         await release();
         await audit('paywalled');
@@ -107,7 +113,7 @@ Deno.serve(async (req) => {
     outcome = approval ? { detail: 'approved' } : await runAction(service!, action, inc);
   } catch (e) {
     await release();
-    if (usedFreeRun) await db.rpc('refund_free_run', { uid: user.id, incident: inc.id });
+    if (usedFreeRun) await db.rpc('refund_free_run', { uid: inc.owner, incident: inc.id });
     await audit('failed', String(e));
     return json(502, { error: 'remediation failed' });
   }

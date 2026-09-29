@@ -4,6 +4,7 @@
 import { hashToken, newToken } from '../_shared/agents.ts';
 import { alertKind, chatAuthorizeUrl } from '../_shared/alerts.ts';
 import { withReturn } from '../_shared/appLink.ts';
+import { isPro } from '../_shared/codeFix.ts';
 import { db, env, json } from '../_shared/db.ts';
 import { getInstanceStatus } from '../_shared/gcp.ts';
 import { consentUrl, GoogleError, grantReset, listProjects, listVms } from '../_shared/google.ts';
@@ -25,6 +26,7 @@ import {
   getService,
   githubToken,
   googleToken,
+  ownersFor,
   platformSa,
   railwayToken,
   renderKey,
@@ -334,7 +336,8 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     // The human says no to an agent's proposal; the agent sees "declined".
     case 'decline': {
       const { data } = await db.from('incidents').select('id, context')
-        .eq('id', String(p.incidentId ?? '')).eq('owner', owner).eq('status', 'active').maybeSingle();
+        .eq('id', String(p.incidentId ?? '')).in('owner', await ownersFor(owner)).eq('status', 'active')
+        .maybeSingle();
       need(data, 'That proposal is no longer open.');
       await db.from('incidents').update({
         status: 'resolved',
@@ -348,7 +351,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     case 'dismiss': {
       const now = new Date().toISOString(); // recovered_at too: no "back up" push for a false alarm
       const { data } = await db.from('incidents').update({ status: 'resolved', resolved_at: now, recovered_at: now })
-        .eq('id', String(p.incidentId ?? '')).eq('owner', owner).eq('status', 'active')
+        .eq('id', String(p.incidentId ?? '')).in('owner', await ownersFor(owner)).eq('status', 'active')
         .select('id, target_server').maybeSingle();
       need(data, 'That incident is no longer open.');
       await db.from('audit_log').insert({
@@ -364,17 +367,17 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
 
     // The incident's PR diff, to read on the phone before swiping Merge.
     case 'pr_diff': {
-      const { data } = await db.from('incidents').select('context').eq('id', String(p.incidentId ?? ''))
-        .eq('owner', owner).maybeSingle();
+      const { data } = await db.from('incidents').select('owner, context').eq('id', String(p.incidentId ?? ''))
+        .in('owner', await ownersFor(owner)).maybeSingle();
       const pr = (data?.context as { pr?: PrRef } | undefined)?.pr;
       need(pr, 'This incident has no pull request.');
-      return { files: await prFiles(pr!, await githubToken(owner)) };
+      return { files: await prFiles(pr!, await githubToken(data!.owner)) }; // the repo owner's GitHub
     }
 
     // Why it happened and how to prevent it, written once after the incident resolves, then kept.
     case 'postmortem': {
       const { data: inc } = await db.from('incidents').select().eq('id', String(p.incidentId ?? ''))
-        .eq('owner', owner).maybeSingle();
+        .in('owner', await ownersFor(owner)).maybeSingle();
       need(inc, 'No such incident.');
       const ctx = inc!.context ?? {};
       if (ctx.postmortem) return { postmortem: ctx.postmortem };
@@ -384,7 +387,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       const service = inc!.service_id ? await getService(inc!.service_id) : null;
       const repo = service?.config.repo;
       const sha: string | undefined = ctx.live?.commit?.id;
-      const token = repo ? await githubToken(owner).catch(() => null) : null;
+      const token = repo ? await githubToken(inc!.owner).catch(() => null) : null;
       const diff = repo && sha && token
         ? (await commitFiles(repo, sha, service!.config.branch ?? 'main', token).catch(() => []))
           .map((f) => `--- ${f.path}\n${f.patch}`).join('\n').slice(0, 12_000)
@@ -481,6 +484,52 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       }
       await db.from('services').update({ config }).eq('id', s!.id);
       return { config };
+    }
+
+    // Team (Pro): the owner shares a one-time code; whoever enters it can see and fix the owner's incidents
+    // and is paged when one sits unanswered for 5 minutes. They never see services, keys or connections.
+    case 'team': {
+      const [{ data: mine }, { data: joined }] = await Promise.all([
+        db.from('team_members').select('member').eq('owner', owner),
+        db.from('team_members').select('owner').eq('member', owner),
+      ]);
+      const email = async (id: string) => (await db.auth.admin.getUserById(id)).data.user?.email ?? 'a teammate';
+      return {
+        members: await Promise.all((mine ?? []).map(async (m) => ({ id: m.member, email: await email(m.member) }))),
+        teams: await Promise.all((joined ?? []).map(async (t) => ({ id: t.owner, email: await email(t.owner) }))),
+      };
+    }
+
+    case 'team_invite': {
+      need(await isPro(owner), 'Teams are part of Pro. Upgrade in Settings → Plan.');
+      await db.from('team_invites').delete().eq('owner', owner);
+      const code = Array.from(
+        crypto.getRandomValues(new Uint8Array(8)),
+        (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32],
+      )
+        .join('');
+      await db.from('team_invites').insert({ code, owner });
+      return { code };
+    }
+
+    case 'team_join': {
+      const code = String(p.code ?? '').trim().toUpperCase();
+      const { data: invite } = await db.from('team_invites').delete().eq('code', code)
+        .gt('created_at', new Date(Date.now() - 7 * 86_400_000).toISOString()).select('owner').maybeSingle();
+      need(invite, 'That code is not valid any more. Ask for a new one.');
+      need(invite!.owner !== owner, 'That is your own invite code.');
+      await db.from('team_members').upsert({ owner: invite!.owner, member: owner });
+      return { joined: true };
+    }
+
+    // The owner removes a teammate, or a teammate leaves.
+    case 'team_remove': {
+      const other = String(p.id ?? '');
+      need(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(other), 'No such teammate.'); // goes into a filter
+      await db.from('team_members').delete().or(
+        `and(owner.eq.${owner},member.eq.${other}),and(owner.eq.${other},member.eq.${owner})`,
+      );
+      return { removed: true };
     }
 
     // Public status page: an unguessable link that shows service names, up/down and uptime only.

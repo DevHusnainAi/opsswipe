@@ -15,11 +15,12 @@ Deno.serve(async (req) => {
 
   let sent = 0;
   for (const [owner, count] of perOwner) {
-    const [{ data: incidents }, { data: audits }] = await Promise.all([
-      db.from('incidents').select('id, created_at, recovered_at, resolved_at, context').eq('owner', owner)
-        .not('service_id', 'is', null).gte('created_at', since),
-      db.from('audit_log').select('incident_id, action, outcome').eq('actor', owner).gte('created_at', since),
-    ]);
+    const { data: incidents } = await db.from('incidents').select('id, created_at, recovered_at, resolved_at, context')
+      .eq('owner', owner)
+      .not('service_id', 'is', null).gte('created_at', since);
+    // Everything done on this account's outages, by the owner or a teammate.
+    const { data: audits } = await db.from('audit_log').select('incident_id, action, outcome')
+      .in('incident_id', (incidents ?? []).map((i) => i.id));
     const dismissed = new Set((audits ?? []).filter((a) => a.outcome === 'dismissed').map((a) => a.incident_id));
     await notify(owner, weeklySummary(count, (incidents ?? []).filter((i) => !dismissed.has(i.id)), audits ?? []));
     sent++;

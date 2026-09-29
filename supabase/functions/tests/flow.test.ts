@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { afterFix, afterProof, confirmsReport, selfHealed } from '../_shared/flow.ts';
+import { afterFix, afterProof, confirmsReport, needsEscalation, selfHealed } from '../_shared/flow.ts';
 import type { PrRef } from '../_shared/proof.ts';
 
 const now = new Date('2026-09-28T10:00:00Z');
@@ -110,4 +110,14 @@ Deno.test('no code fixes are re-offered when there is nothing to replay', () => 
     repo: false,
   });
   assertEquals(r.actions, []);
+});
+
+Deno.test('an untouched incident pages the team once, after 5 minutes', () => {
+  const t0 = Date.parse('2026-09-29T03:00:00Z');
+  const inc = { created_at: '2026-09-29T03:00:00Z', status: 'active', context: {} };
+  assertEquals(needsEscalation(inc, 0, t0 + 4 * 60_000), false, 'give the owner 5 minutes');
+  assertEquals(needsEscalation(inc, 0, t0 + 5 * 60_000), true);
+  assertEquals(needsEscalation(inc, 1, t0 + 9 * 60_000), false, 'someone is already on it');
+  assertEquals(needsEscalation({ ...inc, context: { escalated_at: 'x' } }, 0, t0 + 9 * 60_000), false, 'only once');
+  assertEquals(needsEscalation({ ...inc, status: 'resolved' }, 0, t0 + 9 * 60_000), false);
 });

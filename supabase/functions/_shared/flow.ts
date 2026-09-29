@@ -98,3 +98,13 @@ export function afterProof(
   if (next.includes('revert_pr')) return { actions: next, action: 'revert_pr', reason: `${failed} Try a revert.` };
   return { actions: next, reason: `${failed} Push a fix to the PR; CI runs the proof again.` };
 }
+
+// Escalation: an incident nobody has touched for 5 minutes pages the owner's team, once.
+export const ESCALATE_AFTER_MS = 5 * 60_000;
+export const needsEscalation = (
+  inc: { created_at: string; status: string; context: { escalated_at?: string } },
+  actions: number, // audit rows so far: a fix tried, a dismissal
+  now = Date.now(),
+) =>
+  inc.status === 'active' && !inc.context.escalated_at && actions === 0 &&
+  now - Date.parse(inc.created_at) >= ESCALATE_AFTER_MS;

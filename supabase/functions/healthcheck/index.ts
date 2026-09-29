@@ -1,8 +1,9 @@
 // Called by pg_cron every minute. A liveness check for every connected service (services too dead
 // to report their own failures), plus recovery proof: a healthy service stamps recovered_at on
-// its last fix. App-level failures arrive event-driven through /report instead.
+// its last fix. App-level failures arrive event-driven through /report instead. Also escalates
+// incidents nobody has answered to the owner's team.
 import { env, json } from '../_shared/db.ts';
-import { closeSelfHealed, HEALTH_TITLE, markRecovered, openIncident } from '../_shared/incidents.ts';
+import { closeSelfHealed, escalate, HEALTH_TITLE, markRecovered, openIncident } from '../_shared/incidents.ts';
 import { confirmedProbe, isUp } from '../_shared/probe.ts';
 import { scrubSample } from '../_shared/replay.ts';
 import { allServices, type Service } from '../_shared/services.ts';
@@ -28,6 +29,6 @@ async function check(s: Service) {
 
 Deno.serve(async (req) => {
   if (req.headers.get('x-cron-secret') !== env('CRON_SECRET')) return json(403, { error: 'forbidden' });
-  const results = await Promise.allSettled((await allServices()).map(check));
+  const results = await Promise.allSettled([...(await allServices()).map(check), escalate()]);
   return json(200, results.map((r) => (r.status === 'fulfilled' ? r.value : { error: String(r.reason) })));
 });

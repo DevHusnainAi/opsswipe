@@ -112,3 +112,9 @@ export async function notify(owner: string, push: Push) {
     console.warn('alert webhook failed:', String(e));
   }
 }
+
+// Whose incidents this user may see and fix: their own and those of every team they're on.
+export async function ownersFor(uid: string) {
+  const { data } = await db.from('team_members').select('owner').eq('member', uid);
+  return [uid, ...(data ?? []).map((t) => t.owner as string)];
+}
