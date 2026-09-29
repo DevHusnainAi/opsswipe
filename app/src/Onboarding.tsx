@@ -1,9 +1,10 @@
 // First-run screens, in the standard order: a short value tour (Welcome), then an account (Auth.tsx),
 // then the notification permission asked in context (AlertsPrimer), as Android recommends for
 // POST_NOTIFICATIONS: once the user knows why. Setup continues in the Services tab's checklist.
-import { Bell, Fingerprint, Sparkle } from 'phosphor-react-native';
-import { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as LocalAuthentication from 'expo-local-authentication';
+import { Bell, CheckCircle, Crown, Fingerprint, LockKey, Sparkle } from 'phosphor-react-native';
+import { useEffect, useState } from 'react';
+import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { Incident } from './api';
 import { SwipeCard } from './SwipeCard';
 import { c, space, type } from './theme';
@@ -141,6 +142,148 @@ export function AlertsPrimer({ onDecide }: { onDecide: (enable: boolean) => void
   );
 }
 
+// A practice card: the real swipe and the real fingerprint, nothing sent anywhere.
+const PRACTICE: Incident = {
+  ...HERO,
+  id: 'practice',
+  title: 'Practice: your API is down',
+  target_server: 'your-api',
+  metric: 'GET /health → 503',
+  action: 'restart',
+  actions: ['restart'],
+  provider: 'render',
+  reason: 'This is a practice run. Swipe, then confirm with your fingerprint. Nothing real is touched.',
+  suggested_by: 'rules',
+  context: { revenue: { perHour: 38, currency: 'USD' } },
+};
+
+type Lock = 'checking' | 'ready' | 'none';
+
+// Step: every fix needs the phone's fingerprint or screen lock. Found out now, not during a 3am outage,
+// and the swipe is learned on a card that touches nothing.
+export function SecureStep({ onDone }: { onDone: () => void }) {
+  const [lock, setLock] = useState<Lock>('checking');
+  const [passed, setPassed] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const check = async () =>
+    setLock((await LocalAuthentication.isEnrolledAsync()) || (await LocalAuthentication.getEnrolledLevelAsync()) > 0 ? 'ready' : 'none');
+  useEffect(() => {
+    // One async read of the phone's lock state once mounted; setState happens after the await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    check();
+  }, []);
+
+  const practise = async () => {
+    const r = await LocalAuthentication.authenticateAsync({
+      promptMessage: 'Restart your-api?',
+      promptDescription: 'Practice run: nothing real is touched.',
+      cancelLabel: 'Cancel',
+    });
+    if (r.success) {
+      setPassed(true);
+      return 'done' as const;
+    }
+    setNote(r.error === 'user_cancel' ? 'Cancelled. Swipe again when you are ready.' : 'That did not work. Try again.');
+    return 'failed' as const;
+  };
+
+  return (
+    <View style={styles.root}>
+      <Text style={styles.step}>Step 1 of 3</Text>
+      <View style={{ gap: space.sm }}>
+        <Text style={type.display} accessibilityRole="header">
+          {passed ? 'That is how you fix production' : 'Every fix needs your fingerprint'}
+        </Text>
+        <Text style={[type.body, { color: c.muted }]}>
+          {passed
+            ? 'A swipe picks the fix, your fingerprint approves it. A stolen phone can\'t restart your servers.'
+            : lock === 'none'
+            ? 'This phone has no fingerprint or screen lock, so it could not approve a fix. Set one up first.'
+            : 'Try it on a practice card: swipe right, then confirm. Nothing real is touched.'}
+        </Text>
+      </View>
+      <View style={styles.art}>
+        {passed ? (
+          <View style={styles.badge}>
+            <CheckCircle size={56} color={c.green} weight="fill" />
+          </View>
+        ) : lock === 'ready' ? (
+          <View style={{ width: '100%' }}>
+            <SwipeCard incident={PRACTICE} depth={0} now={HERO_NOW} onFix={practise} />
+          </View>
+        ) : lock === 'none' ? (
+          <View style={styles.badge}>
+            <LockKey size={56} color={c.amber} weight="duotone" />
+          </View>
+        ) : null}
+      </View>
+      {note && !passed && <Text style={[type.label, { color: c.amber, textAlign: 'center' }]}>{note}</Text>}
+      <View style={styles.actions}>
+        {passed ? (
+          <Button label="Continue" onPress={onDone} />
+        ) : lock === 'none' ? (
+          <>
+            <Button
+              label="Set up a screen lock"
+              icon={LockKey}
+              onPress={() =>
+                Platform.OS === 'android'
+                  ? Linking.sendIntent('android.settings.SECURITY_SETTINGS').catch(() => Linking.openSettings())
+                  : Linking.openSettings()}
+            />
+            <Button label="I've set it up" kind="secondary" onPress={check} />
+          </>
+        ) : null}
+        {!passed && <Button label="Skip for now" kind="secondary" onPress={onDone} />}
+      </View>
+    </View>
+  );
+}
+
+const PERKS = [
+  'A fix ready before you wake up: AI writes it, CI proves it',
+  'AI fixes with a regression test, merged only once proven',
+  'Unlimited services, and approval for your AI coding agents',
+];
+
+// Step: the trial, offered once people have seen what a fix looks like, never mid-outage.
+export function TrialStep({ onStart, onSkip }: { onStart: () => Promise<unknown>; onSkip: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <View style={styles.root}>
+      <Text style={styles.step}>Step 2 of 3</Text>
+      <View style={{ flex: 1, justifyContent: 'center', gap: space.lg }}>
+        <View style={styles.badge}>
+          <Crown size={56} color={c.green} weight="duotone" />
+        </View>
+        <Text style={type.display} accessibilityRole="header">Try Pro free for 7 days</Text>
+        <View style={{ gap: space.sm }}>
+          {PERKS.map((p) => (
+            <View key={p} style={{ flexDirection: 'row', gap: space.sm }}>
+              <CheckCircle size={20} color={c.green} weight="fill" />
+              <Text style={[type.body, { flex: 1 }]}>{p}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={type.caption}>Your first outage is free either way. Cancel the trial any time before it ends.</Text>
+      </View>
+      <View style={styles.actions}>
+        <Button
+          label={busy ? 'Opening…' : 'Start free trial'}
+          icon={Crown}
+          onPress={async () => {
+            setBusy(true);
+            await onStart().catch(() => {});
+            setBusy(false);
+            onSkip();
+          }}
+        />
+        <Button label="Not now" kind="secondary" onPress={onSkip} />
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, paddingVertical: space.lg, gap: space.lg },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 48 },
@@ -161,4 +304,5 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.borderStrong },
   dotOn: { width: 20, backgroundColor: c.green },
   actions: { gap: space.sm },
+  step: { ...type.label, color: c.muted },
 });

@@ -13,10 +13,16 @@ import { RepoPicker } from './RepoPicker';
 import { TARGET, c, radius, space, type } from './theme';
 import { Button, Chip, Section } from './ui';
 
-export function Services({ active }: { active: boolean }) {
+// openAdd: bumped by the app to open the add sheet (the last onboarding step).
+export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: number }) {
   const [status, setStatus] = useState<ConnectStatus | null>(null);
   const [services, setServices] = useState<Service[] | null>(null);
   const [sheet, setSheet] = useState<StartAt | null>(null);
+  const [addAsked, setAddAsked] = useState(openAdd);
+  if (openAdd !== addAsked) {
+    setAddAsked(openAdd);
+    setSheet('provider');
+  }
   const [confirm, setConfirm] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -27,7 +27,7 @@ import { Auth, type AuthMode, NewPassword } from './src/Auth';
 import { inExpoGo, Notifications } from './src/env';
 import { fixFor } from './src/fixes';
 import { atRisk, lostLine, recoveryLine } from './src/format';
-import { AlertsPrimer, Logo, Welcome } from './src/Onboarding';
+import { AlertsPrimer, Logo, SecureStep, TrialStep, Welcome } from './src/Onboarding';
 import { Services } from './src/Services';
 import { Settings } from './src/Settings';
 import { PROVIDER, SwipeCard } from './src/SwipeCard';
@@ -37,6 +37,7 @@ import { Banner, type BannerState, Button, Skeleton, useNow } from './src/ui';
 
 const WELCOMED = 'opsswipe.welcomed'; // the value tour is shown once per phone
 const ALERTS_ASKED = 'opsswipe.alerts-asked'; // so is the notification primer
+const ONBOARDED = 'opsswipe.onboarded'; // fingerprint practice + trial, once, for new accounts
 
 // A practice card: the real swipe and fingerprint, with a simulated recovery. It lives only in this
 // screen's state, never reaches the server, and never uses the free fix.
@@ -72,7 +73,7 @@ const sampleIncident = (): Incident => {
   };
 };
 
-type Phase = 'loading' | 'welcome' | 'auth' | 'recovery' | 'primer' | 'ready' | 'error';
+type Phase = 'loading' | 'welcome' | 'auth' | 'recovery' | 'primer' | 'secure' | 'trial' | 'ready' | 'error';
 
 Notifications?.setNotificationHandler({
   handleNotification: async () => ({ shouldPlaySound: true, shouldSetBadge: false, shouldShowBanner: true, shouldShowList: true }),
@@ -91,6 +92,7 @@ export default function App() {
   const [cardHeight, setCardHeight] = useState(420);
   const [serviceCount, setServiceCount] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('incidents');
+  const [addService, setAddService] = useState(0); // bumped to open Services' add sheet (onboarding step 3)
   const [sample, setSample] = useState<Incident | null>(null);
   const [recovered, setRecovered] = useState<Incident | null>(null);
   const [detail, setDetail] = useState<Incident | null>(null); // the incident opened in full
@@ -122,6 +124,7 @@ export default function App() {
     setAudit(a.data ?? []);
     setFree({ used: u.data?.free_used ?? 0, incident: u.data?.free_incident ?? null });
     setServiceCount(sv.count ?? 0);
+    return sv.count ?? 0;
   }, []);
 
   // Signed in: the plan follows the account (RevenueCat appUserID = Supabase user id), data loads,
@@ -139,15 +142,16 @@ export default function App() {
     } catch {
       // offline: the server still enforces the plan on every fix
     }
-    await refresh();
+    const services = await refresh();
     // Alerts come as server push (they reach a closed app); realtime only keeps the open app fresh.
     registerPush().catch(() => {});
     channel.current ??= supabase
       .channel('ops')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => refresh().catch(() => {}))
       .subscribe();
-    const asked = await AsyncStorage.getItem(ALERTS_ASKED);
-    setPhase(asked || !Notifications ? 'ready' : 'primer');
+    const [asked, onboarded] = await Promise.all([AsyncStorage.getItem(ALERTS_ASKED), AsyncStorage.getItem(ONBOARDED)]);
+    // New accounts (nothing connected yet) get the whole first run; everyone else goes straight in.
+    setPhase(!asked && Notifications ? 'primer' : onboarded || services > 0 ? 'ready' : 'secure');
   }, [refresh]);
 
   const boot = useCallback(async () => {
@@ -228,8 +232,15 @@ export default function App() {
     if (enable && Notifications && (await Notifications.requestPermissionsAsync()).granted) {
       await registerPush().catch(() => {});
     }
+    setPhase((await AsyncStorage.getItem(ONBOARDED)) || serviceCount ? 'ready' : 'secure');
+  };
+
+  // Last onboarding step: Services with the add sheet open. Remembered, so it never shows again.
+  const finishOnboarding = async () => {
+    await AsyncStorage.setItem(ONBOARDED, '1');
     setPhase('ready');
-    if (serviceCount === 0) setTab('services'); // first run: straight to the setup checklist
+    setTab('services');
+    setAddService((n) => n + 1);
   };
 
   // Android shows the permission dialog only while it's allowed to ask; after a "Don't allow" the
@@ -435,6 +446,8 @@ export default function App() {
             />
           )}
           {phase === 'primer' && <AlertsPrimer onDecide={decideAlerts} />}
+          {phase === 'secure' && <SecureStep onDone={() => (pro || inExpoGo ? finishOnboarding() : setPhase('trial'))} />}
+          {phase === 'trial' && <TrialStep onStart={paywall} onSkip={finishOnboarding} />}
 
           {(phase === 'loading' || phase === 'ready' || phase === 'error') && (
             <>
@@ -563,7 +576,7 @@ export default function App() {
 
                 {/* Every tab stays mounted, so a half-finished Connect keeps its state while you look around. */}
                 <View style={[styles.screen, tab !== 'services' && styles.hidden]}>
-                  <Services active={tab === 'services'} />
+                  <Services active={tab === 'services'} openAdd={addService} />
                 </View>
                 <View style={[styles.screen, tab !== 'activity' && styles.hidden]}>
                   <Activity audit={audit} fixed={fixed} now={now} onOpen={setDetail} />
