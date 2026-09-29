@@ -620,6 +620,19 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       return { config };
     }
 
+    // A new report secret for a service, without removing it or its repo link (a lost or leaked secret, or
+    // an app still sending an old one). Shown once; the old one stops working now.
+    case 'rotate_report_secret': {
+      const s = await getService(String(p.serviceId ?? ''));
+      need(s && s.owner === owner, 'Service not found.');
+      const secret = randomSecret();
+      const secretId = await storeSecret(secret);
+      await db.from('services').update({ report_secret_id: secretId, last_report_at: null, last_report_test: null })
+        .eq('id', s!.id);
+      await deleteSecret(s!.report_secret_id);
+      return { report: { url: `${functionUrl('report')}?service=${s!.id}`, secret } };
+    }
+
     case 'remove_service': {
       const s = await getService(String(p.serviceId ?? ''));
       need(s && s.owner === owner, 'Service not found.');

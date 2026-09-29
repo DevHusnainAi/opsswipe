@@ -119,17 +119,29 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline, o
         importantForAccessibility={top ? 'yes' : 'no-hide-descendants'}
         accessibilityLabel={`${incident.severity} incident. ${incident.title} on ${incident.target_server}. ${incident.metric}. ${proofText(incident.context) ?? ''}`}
         accessibilityHint={live ? `Suggested fix: ${fix.label}. ${incident.reason ?? ''} Double tap to run it, or pick another fix from the actions menu.` : undefined}
-        accessibilityActions={live
+        // The card is one node for screen readers, so everything its buttons do is also an action here:
+        // run a fix, open the details, open the proof, and close it (decline or dismiss).
+        accessibilityActions={top
           ? [
-            { name: 'activate', label: `${fix.verb} ${incident.target_server}` },
-            ...options.filter((a) => a !== choice).map((a) => ({ name: `fix_${a}`, label: `${fixFor(a).verb} ${incident.target_server}` })),
+            ...(live
+              ? [
+                { name: 'activate', label: `${fix.verb} ${incident.target_server}` },
+                ...options.filter((a) => a !== choice).map((a) => ({ name: `fix_${a}`, label: `${fixFor(a).verb} ${incident.target_server}` })),
+              ]
+              : []),
+            ...(onOpen ? [{ name: 'details', label: 'Details: cause, AI opinion, timeline' }] : []),
             ...(incident.context?.pr ? [{ name: 'open_proof', label: 'Open the PR and its proof' }] : []),
+            ...(incident.status === 'active' && onDecline
+              ? [{ name: 'close', label: incident.suggested_by === 'agent' ? 'Decline the proposal' : 'Dismiss as a false alarm' }]
+              : []),
           ]
           : []}
         onAccessibilityAction={(e) => {
           const name = e.nativeEvent.actionName;
           if (name === 'activate') tapFix();
           else if (name.startsWith('fix_')) tapFix(name.slice(4));
+          else if (name === 'details') onOpen?.(incident);
+          else if (name === 'close') onDecline?.(incident);
           else if (name === 'open_proof') Linking.openURL(incident.context?.proof?.runUrl ?? incident.context!.pr!.url);
         }}
       >

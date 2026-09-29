@@ -3,7 +3,8 @@
 // Only 5xx responses count; samples are scrubbed and kept so a PR can be proven against them.
 // Optional `release`: the commit the app is running (e.g. GIT_SHA set at deploy). On hosts with no
 // deploy history of their own (a VM), it tells a revert or AI fix which commit broke things.
-import { json } from '../_shared/db.ts';
+// `"test": true` checks the setup end to end without opening an incident.
+import { db, json } from '../_shared/db.ts';
 import { verify } from '../_shared/hmac.ts';
 import { reportFailure } from '../_shared/incidents.ts';
 import { scrubSample } from '../_shared/replay.ts';
@@ -31,6 +32,11 @@ Deno.serve(async (req) => {
   } catch {
     return json(400, { error: 'invalid JSON' });
   }
+  // Proof the app's URL and secret are right, shown per service in the app. A test report ("test": true,
+  // the command the app shows) stops here: it never opens an incident.
+  await db.from('services').update({ last_report_at: new Date().toISOString(), last_report_test: body.test === true })
+    .eq('id', service.id);
+  if (body.test === true) return json(200, { test: true, service: service.name });
   const sample = scrubSample(body);
   if (!sample) return json(202, { ignored: true }); // not a 5xx, or not replayable
 

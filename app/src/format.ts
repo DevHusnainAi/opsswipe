@@ -1,6 +1,8 @@
 export function formatDuration(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000));
-  const m = Math.floor(s / 60);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h) return `${h}h ${m}m`;
   return m ? `${m}m ${s % 60}s` : `${s}s`;
 }
 
@@ -77,7 +79,7 @@ export function weekStats(fixed: Recovered[], now = Date.now()) {
 
 // Revenue at risk, as the server estimates it (the owner's RevenueCat revenue, last 28 days, per hour).
 export const money = (v: number, currency = 'USD') =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: v < 10 ? 2 : 0 }).format(v);
+  new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: v < 10 ? 2 : 0, maximumFractionDigits: v < 10 ? 2 : 0 }).format(v);
 
 type WithRevenue = Timeline & { context?: { revenue?: { perHour: number; currency: string } } | null };
 

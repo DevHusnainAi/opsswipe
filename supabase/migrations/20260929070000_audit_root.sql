@@ -46,3 +46,7 @@ begin
   return new;
 end $$;
 create trigger team_cap before insert on team_members for each row execute function team_cap();
+
+-- OPS: when a signed report last arrived (a test one or a real failure), so a service whose app holds an
+-- old secret shows "no reports" instead of failing silently.
+alter table services add column last_report_at timestamptz, add column last_report_test boolean;

@@ -8,19 +8,26 @@ import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Switch, 
 import { AddService, CopyRow, type StartAt } from './AddService';
 import { claimFrom, type ConnectStatus, type Service, connect, supabase } from './api';
 import { appBase, appLink } from './env';
+import { formatDuration } from './format';
+import { ReportSetup } from './ReportSetup';
 import { RepoPicker } from './RepoPicker';
 import { TARGET, c, radius, space, type } from './theme';
-import { Button, Chip, Section } from './ui';
+import { Button, Chip, Section, useNow } from './ui';
 
 // openAdd: bumped by the app to open the add sheet (the last onboarding step).
-export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: number }) {
+// addOpen: onboarding's last step opens the add sheet. It's state the sheet starts from (not a counter
+// compared after mount, which missed when this screen mounted with it already set); onAddClosed resets it.
+export function Services(
+  { active, addOpen = false, onAddClosed }: { active: boolean; addOpen?: boolean; onAddClosed?: () => void },
+) {
+  const now = useNow(30_000);
   const [status, setStatus] = useState<ConnectStatus | null>(null);
   const [services, setServices] = useState<Service[] | null>(null);
-  const [sheet, setSheet] = useState<StartAt | null>(null);
-  const [addAsked, setAddAsked] = useState(openAdd);
-  if (openAdd !== addAsked) {
-    setAddAsked(openAdd);
-    setSheet('provider');
+  const [sheet, setSheet] = useState<StartAt | null>(addOpen ? 'provider' : null);
+  const [wasOpen, setWasOpen] = useState(addOpen);
+  if (addOpen !== wasOpen) {
+    setWasOpen(addOpen);
+    if (addOpen) setSheet('provider');
   }
   const [confirm, setConfirm] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -33,7 +40,8 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
   const load = useCallback(async () => {
     const [st, sv] = await Promise.all([
       connect<ConnectStatus>('status', { returnTo: appBase }),
-      supabase.from('services').select('id, name, provider, config, sentry_secret_id').order('created_at'),
+      supabase.from('services').select('id, name, provider, config, sentry_secret_id, last_report_at, last_report_test')
+        .order('created_at'),
     ]);
     setStatus(st);
     setServices(sv.data ?? []);
@@ -96,6 +104,16 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
         const r = await connect<{ cleanup?: string[] }>('remove_service', { serviceId: s.id });
         await load();
         leftovers(r.cleanup);
+      }));
+
+  // A new report secret without removing the service (a lost secret, or an app still sending an old one).
+  const [newReport, setNewReport] = useState<{ service: Service; report: { url: string; secret: string } } | null>(null);
+  const rotate = (s: Service) =>
+    armed(`rs-${s.id}`, () =>
+      run(`rs-${s.id}`, async () => {
+        const r = await connect<{ report: { url: string; secret: string } }>('rotate_report_secret', { serviceId: s.id });
+        setNewReport({ service: s, report: r.report });
+        await load();
       }));
 
   const saveRepo = (s: Service) =>
@@ -290,6 +308,24 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
                         />
                       </View>
                     )}
+                    <View style={styles.repoRow}>
+                      <Text style={[type.caption, { flex: 1 }]}>
+                        {s.last_report_at
+                          ? `Last failure report ${formatDuration(Math.max(0, now - Date.parse(s.last_report_at)))} ago${s.last_report_test ? ' (test)' : ''}`
+                          : 'No failure reports received yet (optional; needed for Revert and Fix with AI)'}
+                      </Text>
+                      <Pressable
+                        onPress={() => rotate(s)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        style={styles.textButton}
+                      >
+                        <Text style={[type.label, { color: confirm === `rs-${s.id}` ? c.amber : c.green }]}>
+                          {busy === `rs-${s.id}` ? 'Issuing…' : confirm === `rs-${s.id}` ? 'Tap: old one stops' : 'New secret'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                    {newReport?.service.id === s.id && <ReportSetup report={newReport.report} service={s} />}
                     <SentryLink service={s} onSaved={load} />
                     <View style={styles.actions}>
                       {s.config.repo && status.github.connected && (
@@ -302,7 +338,7 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
                               : 'Add proof to repo'
                           }
                           kind="secondary"
-                          onPress={() => (s.config.proofPr ? Linking.openURL(s.config.proofPr) : installProof(s))}
+                          onPress={() => installProof(s)} // opens it, or an update PR if the repo's copy is older
                           style={{ flex: 1 }}
                         />
                       )}
@@ -423,6 +459,7 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
         existing={existing}
           onClose={(changed) => {
             setSheet(null);
+            onAddClosed?.();
             if (changed) load().catch((e) => setError(e.message));
           }}
         />

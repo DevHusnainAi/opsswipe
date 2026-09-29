@@ -4,7 +4,8 @@ import { GitBranch } from 'phosphor-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { connect } from './api';
-import { c, radius, space, TARGET, type } from './theme';
+import { SearchList } from './SearchList';
+import { c, space, TARGET, type } from './theme';
 
 export type Repo = { name: string; branch: string };
 
@@ -27,40 +28,38 @@ export function RepoPicker(
     );
   }
 
-  const options: (Repo | null)[] = [null, ...(repos ?? [])];
+  const row = (r: Repo | null) => {
+    const on = (r?.name ?? null) === value;
+    return (
+      <Pressable
+        key={r?.name ?? 'none'}
+        onPress={() => onChange(r?.name ?? null)}
+        accessibilityRole="radio"
+        accessibilityState={{ selected: on }}
+        style={[styles.row, on && styles.rowOn]}
+      >
+        <View style={[styles.radio, on && styles.radioOn]} />
+        <View style={{ flex: 1 }}>
+          <Text style={r ? type.mono : type.body} numberOfLines={1}>{r?.name ?? 'No repo'}</Text>
+          {r
+            ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <GitBranch size={12} color={c.muted} />
+                <Text style={type.caption}>{r.branch}</Text>
+              </View>
+            )
+            : <Text style={type.caption}>Only restarts, rollbacks and reboots</Text>}
+        </View>
+      </Pressable>
+    );
+  };
   return (
     <View style={{ gap: space.sm }}>
       <Text style={type.label}>Linked repo</Text>
       {error && <Text style={[type.caption, { color: c.red }]}>{error}</Text>}
       {!repos && !error && <ActivityIndicator color={c.green} style={{ alignSelf: 'flex-start' }} />}
       {repos && (
-        <View style={styles.list}>
-          {options.map((r) => {
-            const on = (r?.name ?? null) === value;
-            return (
-              <Pressable
-                key={r?.name ?? 'none'}
-                onPress={() => onChange(r?.name ?? null)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: on }}
-                style={[styles.row, on && styles.rowOn]}
-              >
-                <View style={[styles.radio, on && styles.radioOn]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={r ? type.mono : type.body} numberOfLines={1}>{r?.name ?? 'No repo'}</Text>
-                  {r
-                    ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <GitBranch size={12} color={c.muted} />
-                        <Text style={type.caption}>{r.branch}</Text>
-                      </View>
-                    )
-                    : <Text style={type.caption}>Only restarts, rollbacks and reboots</Text>}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
+        <SearchList items={repos} text={(r) => r.name} render={row} pinned={row(null)} placeholder="Search repos" />
       )}
       {repos?.length === 0 && (
         <Text style={type.caption}>The OpsSwipe GitHub App can&apos;t see any repos yet. Add repos to its installation on GitHub.</Text>
@@ -70,7 +69,6 @@ export function RepoPicker(
 }
 
 const styles = StyleSheet.create({
-  list: { borderRadius: radius.control, borderWidth: 1, borderColor: c.border, overflow: 'hidden' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

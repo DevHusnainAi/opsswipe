@@ -2,13 +2,14 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { atRisk, formatDuration, incidentReport, lostLine, paramsOf, recoveryLine, timeAgo, weekStats } from './format.ts';
+import { atRisk, formatDuration, money, incidentReport, lostLine, paramsOf, recoveryLine, timeAgo, weekStats } from './format.ts';
 
 test('formatDuration', () => {
   assert.equal(formatDuration(0), '0s');
   assert.equal(formatDuration(41_400), '41s');
   assert.equal(formatDuration(192_000), '3m 12s');
   assert.equal(formatDuration(-5), '0s');
+  assert.equal(formatDuration(3_905_000), '1h 5m', 'rolls into hours, not "65m 5s"');
 });
 
 test('recoveryLine walks the incident timeline', () => {
@@ -103,4 +104,10 @@ test('revenue at risk reads per hour on the card and as money lost once back up'
   assert.equal(lostLine(i), 'about $0.08 lost (estimate)');
   assert.equal(atRisk({ ...i, context: null }), null, 'no RevenueCat connected: nothing shown');
   assert.equal(lostLine({ ...i, recovered_at: null }), null);
+});
+
+test('money: cents under $10, whole dollars above', () => {
+  assert.equal(money(4.2), '$4.20');
+  assert.equal(money(12.5), '$13');
+  assert.equal(money(1234), '$1,234');
 });

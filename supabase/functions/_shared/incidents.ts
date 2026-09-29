@@ -282,6 +282,7 @@ export async function markRecovered(serviceId: string) {
 
 const formatDuration = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
+  if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 };
 

@@ -20,6 +20,8 @@ import {
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ReportSetup } from './ReportSetup';
+import { SearchList } from './SearchList';
 import { claimFrom, type ConnectStatus, type GcpProject, type NewService, type RenderOption, type VmOption, connect } from './api';
 import { appBase, appLink } from './env';
 import { paramsOf } from './format';
@@ -284,27 +286,35 @@ export function AddService({ start, status, existing, onClose }: Props) {
             <>
               {busy === 'render' && <Loading text="Loading your Render services…" />}
               {renderOptions?.length === 0 && <Empty text="No web services on this Render account yet." />}
-              {renderOptions?.map((o) => {
-                const done = existing.has(o.id);
-                return (
-                  <Pressable
-                    key={o.id}
-                    disabled={done || !!busy}
-                    onPress={() => pickRender(o)}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [styles.option, pressed && styles.pressed, done && { opacity: 0.6 }]}
-                  >
-                    <Cloud size={22} color={c.text} />
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={type.monoStrong}>{o.name}</Text>
-                      <Text style={type.caption} numberOfLines={1}>{o.repo ?? o.url}</Text>
-                    </View>
-                    {done
-                      ? <Chip label="Added" color={c.green} tint={c.greenTint} />
-                      : <CaretRight size={18} color={c.muted} weight="bold" />}
-                  </Pressable>
-                );
-              })}
+              {!!renderOptions?.length && (
+                <SearchList
+                  items={renderOptions}
+                  text={(o) => `${o.name} ${o.repo ?? ''} ${o.url}`}
+                  placeholder="Search services"
+                  height={420}
+                  render={(o) => {
+                    const done = existing.has(o.id);
+                    return (
+                      <Pressable
+                        key={o.id}
+                        disabled={done || !!busy}
+                        onPress={() => pickRender(o)}
+                        accessibilityRole="button"
+                        style={({ pressed }) => [styles.option, styles.inList, pressed && styles.pressed, done && { opacity: 0.6 }]}
+                      >
+                        <Cloud size={22} color={c.text} />
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={type.monoStrong}>{o.name}</Text>
+                          <Text style={type.caption} numberOfLines={1}>{o.repo ?? o.url}</Text>
+                        </View>
+                        {done
+                          ? <Chip label="Added" color={c.green} tint={c.greenTint} />
+                          : <CaretRight size={18} color={c.muted} weight="bold" />}
+                      </Pressable>
+                    );
+                  }}
+                />
+              )}
             </>
           )}
 
@@ -361,50 +371,65 @@ export function AddService({ start, status, existing, onClose }: Props) {
               {status?.google.account && <Text style={type.caption}>Google Cloud · {status.google.account}</Text>}
               {busy === 'projects' && <Loading text="Loading your projects…" />}
               {projects?.length === 0 && <Empty text="No active projects on this Google account." />}
-              {projects?.map((p) => (
-                <Pressable
-                  key={p.id}
-                  disabled={!!busy}
-                  onPress={() => pickProject(p)}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [styles.option, pressed && styles.pressed]}
-                >
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={type.body}>{p.name}</Text>
-                    <Text style={type.monoCaption}>{p.id}</Text>
-                  </View>
-                  {busy === `p-${p.id}` ? <ActivityIndicator color={c.green} /> : <CaretRight size={18} color={c.muted} weight="bold" />}
-                </Pressable>
-              ))}
+              {!!projects?.length && (
+                <SearchList
+                  items={projects}
+                  text={(p) => `${p.name} ${p.id}`}
+                  placeholder="Search projects"
+                  height={420}
+                  render={(p) => (
+                    <Pressable
+                      key={p.id}
+                      disabled={!!busy}
+                      onPress={() => pickProject(p)}
+                      accessibilityRole="button"
+                      style={({ pressed }) => [styles.option, styles.inList, pressed && styles.pressed]}
+                    >
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={type.body}>{p.name}</Text>
+                        <Text style={type.monoCaption}>{p.id}</Text>
+                      </View>
+                      {busy === `p-${p.id}` ? <ActivityIndicator color={c.green} /> : <CaretRight size={18} color={c.muted} weight="bold" />}
+                    </Pressable>
+                  )}
+                />
+              )}
             </>
           )}
 
           {step === 'vm' && (
             <>
               {vms?.length === 0 && <Empty text="No VMs in this project. Pick another project." />}
-              {vms?.map((v) => {
-                const done = existing.has(`${project?.id}/${v.zone}/${v.name}`);
-                const on = vm?.name === v.name && vm.zone === v.zone;
-                return (
-                  <Pressable
-                    key={`${v.zone}/${v.name}`}
-                    disabled={done}
-                    onPress={() => pickVm(v)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: on, disabled: done }}
-                    style={[styles.option, on && styles.optionOn, done && { opacity: 0.6 }]}
-                  >
-                    <HardDrives size={22} color={on ? c.green : c.text} />
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={type.monoStrong}>{v.name}</Text>
-                      <Text style={type.caption}>{v.zone} · {v.ip ?? 'no public IP'}</Text>
-                    </View>
-                    {done
-                      ? <Chip label="Added" color={c.green} tint={c.greenTint} />
-                      : <Chip label={v.status} color={v.status === 'RUNNING' ? c.green : c.muted} tint={v.status === 'RUNNING' ? c.greenTint : c.surface2} />}
-                  </Pressable>
-                );
-              })}
+              {!!vms?.length && (
+                <SearchList
+                  items={vms}
+                  text={(v) => `${v.name} ${v.zone} ${v.ip ?? ''}`}
+                  placeholder="Search VMs"
+                  render={(v) => {
+                    const done = existing.has(`${project?.id}/${v.zone}/${v.name}`);
+                    const on = vm?.name === v.name && vm.zone === v.zone;
+                    return (
+                      <Pressable
+                        key={`${v.zone}/${v.name}`}
+                        disabled={done}
+                        onPress={() => pickVm(v)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: on, disabled: done }}
+                        style={[styles.option, styles.inList, on && styles.optionOn, done && { opacity: 0.6 }]}
+                      >
+                        <HardDrives size={22} color={on ? c.green : c.text} />
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={type.monoStrong}>{v.name}</Text>
+                          <Text style={type.caption}>{v.zone} · {v.ip ?? 'no public IP'}</Text>
+                        </View>
+                        {done
+                          ? <Chip label="Added" color={c.green} tint={c.greenTint} />
+                          : <Chip label={v.status} color={v.status === 'RUNNING' ? c.green : c.muted} tint={v.status === 'RUNNING' ? c.greenTint : c.surface2} />}
+                      </Pressable>
+                    );
+                  }}
+                />
+              )}
               {vm && (
                 <View style={styles.confirm}>
                   <Field label="URL to health-check" value={vmUrl} onChange={setVmUrl} placeholder="http://34.1.2.3/" />
@@ -425,17 +450,11 @@ export function AddService({ start, status, existing, onClose }: Props) {
                 <CheckCircle size={40} color={c.green} weight="fill" />
                 <Text style={type.title}>{created.service.name} is being watched</Text>
                 <Text style={[type.body, { color: c.muted, textAlign: 'center' }]}>
-                  A health check already runs every minute, so you&apos;re covered. Optional, for alerts within seconds: set
-                  these two values on your app and add the snippet. The secret is shown only once.
+                  A health check already runs every minute, so you&apos;re covered. Failure reports from your app are optional
+                  for alerts, and needed for Revert and Fix with AI (CI replays those requests).
                 </Text>
               </View>
-              <CopyRow label="OPSSWIPE_REPORT_URL" value={created.report.url} />
-              <CopyRow label="REPORT_SECRET" value={created.report.secret} />
-              <CopyRow label="Snippet (Express)" value={REPORT_SNIPPET} lines={14} />
-              <Text style={type.caption}>
-                Set GIT_SHA to the deployed commit so a revert or AI fix targets exactly the release that broke. Other
-                stacks: sign the JSON body with HMAC-SHA256 the same way (see Failure reports in the README).
-              </Text>
+              <ReportSetup report={created.report} service={created.service} />
               {created.vmStatus === 'pending' && (
                 <Text style={type.caption}>Google is still applying access; reboots work within a minute.</Text>
               )}
@@ -509,18 +528,6 @@ function Loading({ text }: { text: string }) {
 
 const Empty = ({ text }: { text: string }) => <Text style={[type.body, { color: c.muted, paddingVertical: space.lg }]}>{text}</Text>;
 
-const REPORT_SNIPPET = `// Express, Node 18+: report every 5xx to OpsSwipe (method, path, status only)
-const { createHmac } = require('node:crypto');
-app.use((req, res, next) => {
-  res.on('finish', () => {
-    const { OPSSWIPE_REPORT_URL: url, REPORT_SECRET: key, GIT_SHA } = process.env;
-    if (res.statusCode < 500 || !url || !key) return;
-    const body = JSON.stringify({ method: req.method, path: req.originalUrl, status: res.statusCode, release: GIT_SHA });
-    const sig = 'sha256=' + createHmac('sha256', key).update(body).digest('hex');
-    fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-opsswipe-signature': sig }, body }).catch(() => {});
-  });
-  next();
-});`;
 
 export function CopyRow({ label, value, lines = 4 }: { label: string; value: string; lines?: number }) {
   const [copied, setCopied] = useState(false);
@@ -602,6 +609,8 @@ const styles = StyleSheet.create({
     borderColor: c.border,
   },
   optionOn: { borderColor: c.green, backgroundColor: c.greenTint },
+  // Inside a SearchList the list has the border; rows are separated by a line.
+  inList: { borderRadius: 0, borderWidth: 0, borderBottomWidth: 1 },
   confirm: { gap: space.md, padding: space.lg, borderRadius: radius.card, backgroundColor: c.surface, marginTop: space.sm },
   success: { alignItems: 'center', gap: space.sm, paddingVertical: space.lg },
   loading: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.lg },

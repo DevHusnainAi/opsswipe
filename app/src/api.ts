@@ -98,6 +98,8 @@ export type Service = {
   name: string;
   provider: 'gcp' | 'render' | 'railway';
   sentry_secret_id?: string | null;
+  last_report_at?: string | null; // the last signed failure report (or test) that arrived
+  last_report_test?: boolean | null;
   config: {
     url: string;
     repo?: string;

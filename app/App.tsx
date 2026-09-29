@@ -96,7 +96,7 @@ export default function App() {
   const [cardHeight, setCardHeight] = useState(420);
   const [serviceCount, setServiceCount] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('incidents');
-  const [addService, setAddService] = useState(0); // bumped to open Services' add sheet (onboarding step 3)
+  const [addService, setAddService] = useState(false); // Services opens its add sheet (onboarding step 3)
   const [sample, setSample] = useState<Incident | null>(null);
   const [recovered, setRecovered] = useState<Incident | null>(null);
   const [detail, setDetail] = useState<Incident | null>(null); // the incident opened in full
@@ -157,7 +157,9 @@ export default function App() {
     registerPush().catch(() => {});
     channel.current ??= supabase
       .channel('ops')
-      .on('postgres_changes', { event: '*', schema: 'public' }, () => refresh().catch(() => {}))
+      // Only the tables the incident screens show; RLS still decides which rows reach this phone.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, () => refresh().catch(() => {}))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_log' }, () => refresh().catch(() => {}))
       .subscribe();
     const [asked, onboarded] = await Promise.all([AsyncStorage.getItem(ALERTS_ASKED), AsyncStorage.getItem(ONBOARDED)]);
     // New accounts (nothing connected yet) get the whole first run; everyone else goes straight in.
@@ -255,7 +257,7 @@ export default function App() {
     await AsyncStorage.setItem(ONBOARDED, '1');
     setPhase('ready');
     setTab('services');
-    setAddService((n) => n + 1);
+    setAddService(true);
   };
 
   // Android shows the permission dialog only while it's allowed to ask; after a "Don't allow" the
@@ -587,7 +589,7 @@ export default function App() {
 
                 {/* Every tab stays mounted, so a half-finished Connect keeps its state while you look around. */}
                 <View style={[styles.screen, tab !== 'services' && styles.hidden]}>
-                  <Services active={tab === 'services'} openAdd={addService} />
+                  <Services active={tab === 'services'} addOpen={addService} onAddClosed={() => setAddService(false)} />
                 </View>
                 <View style={[styles.screen, tab !== 'activity' && styles.hidden]}>
                   <Activity audit={audit} fixed={fixed} now={now} onOpen={setDetail} />

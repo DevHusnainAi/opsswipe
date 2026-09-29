@@ -11,7 +11,12 @@ export type Revenue = { perHour: number; currency: string };
 export const perHour = (value: number, days = WINDOW_DAYS) => (value > 0 ? value / (days * 24) : 0);
 export const lostSoFar = (hourly: number, ms: number) => (hourly * Math.max(0, ms)) / 3_600_000;
 export const money = (v: number, currency = 'USD') =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: v < 10 ? 2 : 0 }).format(v);
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: v < 10 ? 2 : 0,
+    maximumFractionDigits: v < 10 ? 2 : 0,
+  }).format(v);
 
 export async function revenuePerHour(key: string, projectId: string, now = new Date()): Promise<Revenue> {
   const day = (d: Date) => d.toISOString().slice(0, 10);
