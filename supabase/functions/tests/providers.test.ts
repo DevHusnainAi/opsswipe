@@ -155,6 +155,10 @@ Deno.test('RevenueCat webhook events become a plan row; anonymous ids and other 
   );
   assertEquals(planFromEvent({ app_user_id: '$RCAnonymousID:abc', entitlement_ids: ['pro'] }), null);
   assertEquals(planFromEvent({ app_user_id: uid, entitlement_ids: ['other'] }), null);
+  assertEquals(
+    planFromEvent({ app_user_id: uid, entitlement_ids: ['team'], expiration_at_ms: null })?.pro_until,
+    'infinity',
+  );
   assertEquals(planFromEvent({ type: 'TEST' }), null);
 });
 

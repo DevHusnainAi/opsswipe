@@ -169,3 +169,44 @@ permissions, no keys) is the right way and needs OpsSwipe registered as an OAuth
 this entry uses a read-only v2 key, detects the project from it when the key may read project configuration, and keeps
 the whole feature optional: nothing in setup depends on it. Source:
 [RevenueCat OAuth](https://www.revenuecat.com/docs/projects/oauth-overview).
+
+## 26. The AI writes a regression test, at a path we choose
+A fix that passes the replay proves this outage is over; a test keeps it over. So Fix with AI also writes one regression
+test, modelled on a test already in the repo. It may only create a file at a path OpsSwipe picks (`opsswipe-<sha>.test.*`
+next to the repo's tests): it can't rewrite or weaken an existing test, and a test with no code change is rejected.
+
+## 27. The proof runs the PR's code in containers
+The proof workflow must run the PR's code (install scripts, tests, the app) and must also sign its result with an OIDC
+token. In one job, the PR's code could mint that token and sign a fake "3/3 passed". Now install, tests and the app run
+in Docker on copies of the repo: they can't see the runner's memory, environment or token, and can't touch the
+reporter, which runs from the untouched checkout. Verified on a throwaway PR in the demo repo.
+
+## 28. Prompts as specifications, input as escaped data
+The three prompts (triage, fix, postmortem) follow one structure: role, what happens to the answer, input, rules, output,
+what to do when unsure. Input arrives as `<tag>JSON</tag>` with `<` escaped, so a request path or commit message can't
+close the tag and pose as instructions, and every prompt says request data is data. Code still checks every answer.
+With the new triage prompt, Nemotron answered 10 of 10 eval cases correctly (was 93%).
+
+## 29. Fix ready before you wake up, only for code bugs
+Writing and proving the fix before anyone looks is the moment people remember, and it only opens a pull request; merging
+still needs a swipe. It runs only when a known release broke the service: a stopped VM or a network blip isn't a code
+bug, and an AI PR for it would be noise. It's opt-in per service and part of Pro.
+
+## 30. Teams through row-level security, never through shared keys
+A teammate needs to see and fix the owner's incidents, not the owner's cloud. Incident and audit policies allow the
+owner's team; services, connections and keys stay owner-only, and `execute` bills the owner's plan whoever swipes. A SQL
+test proves a teammate sees the incident and nothing else. Escalation pages the team once, after 5 unanswered minutes.
+
+## 31. Flat plans, because stores can't sell seats
+Per-seat pricing is the norm for pagers, and users hate it. App-store subscriptions can't be priced per seat anyway, so
+Pro is one price and Team is one price for up to 10 people, monthly or yearly, each with a 7-day trial. The trial is
+offered once in onboarding after a practice fix; the paywall otherwise appears only when the free outage is used.
+
+## 32. An alert inbox instead of more integrations
+Teams already run Grafana, Alertmanager and uptime monitors, and a real outage fires dozens of alerts. One private
+webhook URL takes them all: an alert about a watched service joins that service's one card; everything else stays
+quiet and is counted in the weekly report. That turns "only 2 to 5% of pages need a human" into the product.
+
+## 33. The status page lives on GitHub Pages
+Supabase serves HTML as plain text without a custom domain, so the status data is a public JSON function and the page
+is one static HTML file on GitHub Pages. It shows service names, up or down and daily downtime, never errors or paths.

@@ -236,6 +236,26 @@ curl -H "Authorization: Bearer ops_..." "https://<ref>.supabase.co/functions/v1/
   Override the link base with the `STATUS_PAGE_URL` secret.
 - The weekly report is a second pg_cron job (`infra/cron.sql`, `opsswipe-weekly`, Mondays 04:00 UTC).
 
+### RevenueCat plans (operator, once)
+
+- Test Store products: `opsswipe_pro_monthly` ($14.99), `opsswipe_pro_yearly` ($119.99), `opsswipe_team_monthly`
+  ($39.99), `opsswipe_team_yearly` ($359.99), each with a 7-day free trial.
+- Entitlements: `pro` on the Pro products, `team` on the Team products (the server treats Team as including Pro).
+- Offering `default`: packages `$rc_monthly`, `$rc_annual`, `team_monthly`, `team_annual`, with a Pro / Team paywall.
+- Webhook "OpsSwipe plan sync" to `/functions/v1/revenuecat-webhook` with the `RC_WEBHOOK_AUTH` value.
+
+### Testing teams with one phone
+
+1. Account A: Settings → Plan → buy Team (Test Store, nothing is charged). Settings → Team → Invite a teammate.
+2. Sign out, create account B, Settings → Team → join with the code. Stay signed in as B.
+3. `./infra/chaos.sh gcp` breaks A's demo VM. B sees the incident at once; after 5 unanswered minutes B's phone gets
+   "Escalated: …"; B can fix it with B's own fingerprint; B's Services tab stays empty.
+
+### CD
+
+`.github/workflows/deploy.yml` applies migrations and deploys every function when CI passes on `main`. Add repo secrets
+`SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD`. Function secrets stay in Supabase (`supabase secrets set`).
+
 ## 10. Break things
 
 ```bash

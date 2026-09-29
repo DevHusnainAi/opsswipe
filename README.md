@@ -1,15 +1,17 @@
 # OpsSwipe
 
+[![ci](https://github.com/DevHusnainAi/opsswipe/actions/workflows/ci.yml/badge.svg)](https://github.com/DevHusnainAi/opsswipe/actions/workflows/ci.yml)
+
 **AI writes your code now. OpsSwipe makes sure its fixes are proven before they touch production, and shows what every
 minute of downtime costs, from your lock screen.**
 
 OpsSwipe is a pager for indie developers and small teams, built on three ideas:
 
 1. **Who checks the fix AI writes at 3am?** When production breaks, OpsSwipe suggests one fix. Code fixes (yours, a
-   revert, or one Claude wrote) can't merge until CI passes **the exact requests that failed in production**, and
+   revert, or one the AI wrote with a regression test) can't merge until CI passes **the exact requests that failed in production**, and
    nothing runs without your swipe and fingerprint. OpsSwipe then confirms production actually recovered.
-2. **Every AI agent that touches production asks your phone first.** Agents propose fixes through the Approval API;
-   you approve or decline with biometrics, and every answer is logged.
+2. **Every AI agent that touches production asks your phone first.** Agents propose fixes or ask to run a risky
+   command; you approve or decline with your fingerprint, and every answer is logged. A Claude Code hook is included.
 3. **You see what the outage costs.** Connect your RevenueCat and every incident shows *~$4.20/h at risk*; the recovery
    shows *about $0.08 lost*.
 
@@ -19,17 +21,22 @@ Built for the RevenueCat Shipaton 2026 (Next Gen Award), with Claude Code.
 
 > Demo video: _link_
 
-> **For the judges**
-> - **Idea:** solo developers have no on-call partner. OpsSwipe confirms an outage before paging, suggests one fix, runs it
->   after a swipe and a fingerprint, and proves code fixes against the real failing traffic before they can merge.
-> - **Working core:** real fixes on a real cloud: a Google Cloud VM reboot, a revert or AI fix PR replayed in GitHub
->   Actions, and a merge pinned to the proven commit. [The loop](#the-verified-fix-loop).
-> - **RevenueCat, thoughtfully:** RevenueCat is part of the product, not just the paywall: your own RevenueCat revenue
->   turns every incident into *$ per hour at risk*. Your first *outage* is free, start to finish; the paywall appears at
->   the moment of need with the outage's cost next to $4.99/month; Pro is checked on the server, with a webhook-kept
->   copy so a billing outage never blocks a fix. [Monetization](#monetization-revenuecat).
-> - **Technical care:** least-privilege cloud access, OIDC-signed proofs, row-level security, 64 backend tests, a
->   100%-safety eval, SQL tests on Postgres 17, CI on every push. [Security model](#security-model), [Quality](#quality).
+> **For the judges** (Next Gen)
+> - **Idea:** a student's app makes money while they sleep, until the backend breaks. OpsSwipe turns the outage into one
+>   card with a fix attached, has the AI fix *and a regression test* ready before you wake, and lets it merge only after
+>   CI replays **the exact requests that failed in production**. It also makes AI agents ask your phone before they touch
+>   production. We read all 1,964 Shipaton write-ups: none describes proving a fix against real failing traffic.
+> - **Progress:** a working loop on real infrastructure: a Google Cloud VM reboot, a revert or AI fix PR proven in GitHub
+>   Actions and merged pinned to the proven commit, push and Discord alerts, status page, teams with escalation, alert
+>   inbox, onboarding with a fingerprint practice run. [The loop](#the-verified-fix-loop), [architecture](#architecture).
+> - **RevenueCat, thoughtfully:** part of the product, not just the paywall. Your own RevenueCat revenue turns every
+>   incident into *$ per hour at risk*; the first outage is free start to finish; Free / Pro / Team with monthly and
+>   yearly plans and a 7-day trial offered once, never mid-outage; entitlements checked on the server, with a
+>   webhook-kept copy so a billing outage never blocks a fix. [Monetization](#monetization-revenuecat).
+> - **Care:** least-privilege cloud access, row-level security, OIDC-signed proofs with the PR's code isolated in
+>   Docker, prompts that treat request data as data, 86 backend tests, SQL tenancy tests on Postgres 17, a 100%-safety
+>   eval, CI and CD on every push, privacy policy and terms. Built openly with Claude Code.
+>   [Security model](#security-model), [Quality](#quality).
 
 ## Why
 
@@ -56,6 +63,13 @@ sequenceDiagram
     OS->>You: production verified: back in 1m 12s
 ```
 
+## Architecture
+
+![OpsSwipe architecture: five signal sources feed one incident per service; the Supabase backend holds all keys and decides what may run; the phone approves; code fixes merge only after an OIDC-signed CI proof](docs/architecture.png)
+
+Five sources (your app's signed 5xx reports, a health check every minute, the alert inbox, Sentry, AI agents) open one
+incident per service. Everything with a key runs on the server; the phone only approves. Details in [CLAUDE.md](CLAUDE.md).
+
 ## What it does
 
 | Feature | How |
@@ -70,7 +84,7 @@ sequenceDiagram
 | **Repo linking** | Any service (Render or a GCP VM) can be linked to the repo it deploys from; the app can report its running commit (`release`) so OpsSwipe knows exactly what broke |
 | **Revenue at risk** | Connect your own app's RevenueCat (a read-only v2 key; the project is detected from the key): incidents show *~$X/h at risk* and recoveries *about $Y lost*, estimated from your last 28 days of revenue. Optional, never a setup step; one-tap connect through RevenueCat OAuth is next |
 | **Approval layer for AI agents** | An AI SRE or script proposes a fix, or asks to run any command itself (a force-push, a migration, `terraform apply`), with a token from Settings; it appears as a card with the agent's name and the exact command, and happens only after your swipe and fingerprint. A ready-made Claude Code hook (`integrations/claude-code`) sends risky commands to your phone and fails closed |
-| **Teams and escalation** (Pro) | Invite teammates with a code: they can fix your incidents (never see your keys), and get paged when one sits unanswered for 5 minutes |
+| **Teams and escalation** (Team plan) | Invite teammates with a code: they can fix your incidents (never see your keys), and get paged when one sits unanswered for 5 minutes |
 | **Public status page** | One link with live up/down, 90 days of uptime and incident history, updated by your incidents; names only, never errors or paths |
 | **Weekly report** | Every Monday on your phone and Slack/Discord: uptime, time back up, revenue at risk, fixes proven and written by AI |
 | **Suggested fix with a reason** | Deterministic rules pick the fix instantly (recent deploy: roll back; a VM answering 500: revert). An AI model (NVIDIA Nemotron, or Claude on Vertex AI) may rephrase the reason only when it independently agrees: measured on our eval, it picked a worse fix 7–27% of the time, so it explains and never overrules |
@@ -125,18 +139,23 @@ app.use((req, res, next) => {
 
 | Plan | What you get |
 | --- | --- |
-| Free | Your first outage, start to finish: the revert, the proof and the merge are all included |
-| Pro ($4.99/month, $39.99/year) | Every outage after |
+| Free | One service, your first outage start to finish (the revert, the proof and the merge), status page, weekly report |
+| Pro ($14.99/month or $119.99/year) | Every outage, AI fixes with regression tests, fix ready before you wake up, alert inbox, agent approvals |
+| Team ($39.99/month or $359.99/year, up to 10 people) | Everything in Pro, teammates who can fix your incidents, 5-minute escalation |
+
+Every paid plan starts with a 7-day free trial. App stores can't price per seat, so Team is one flat plan.
 
 - **Priced per outage, not per action.** Metering each swipe would put a paywall between a revert PR and its proven merge,
   in the middle of an outage. The free tier covers one whole incident instead, counted by an atomic Postgres function and
   refunded if its first fix fails.
-- The paywall appears at the moment of highest intent and says what's at stake ("api is down… Pro fixes it now"). It's a
-  RevenueCat Paywall, so pricing and copy change from the dashboard; Restore and Customer Center are in Settings.
-- **Nothing can be unlocked on the phone.** Every fix checks the `pro` entitlement with RevenueCat's REST API on the server.
+- The trial is offered once during onboarding, after a practice fix, and never in the middle of an outage. When the free
+  outage is used, the paywall says what's at stake ("api is down, ~$38/h at risk"). It's a RevenueCat Paywall with a
+  Pro / Team switcher, so pricing and copy change from the dashboard; Restore and Customer Center are in Settings.
+- **Nothing can be unlocked on the phone.** Every fix checks the `pro` or `team` entitlement with RevenueCat's REST API
+  on the server; inviting teammates checks `team`.
 - **A billing outage never blocks a fix.** RevenueCat webhooks keep a copy of each plan's expiry in Postgres; if the REST API
   is unreachable, the server falls back to it.
-- Flat price for one person, no per-seat or per-SMS fees.
+- Flat prices, no per-seat or per-SMS fees, no add-ons: the status page is included.
 
 ## Security model
 
@@ -153,7 +172,10 @@ app.use((req, res, next) => {
 | Account deletion | Settings → Delete account revokes Google, deletes every secret, service, incident and log row (the audit log goes with the account) |
 | Replaying untrusted traffic | Replays run your users' failing requests in CI, never in production; the job has read-only repo access, and only the OpsSwipe proof workflow's OIDC token is accepted, for the exact commit OpsSwipe opened |
 | One stray error at 3am | A single reported 500 is held; a second within a minute pages you. Health checks retry once before paging |
-| Forged CI proofs | Proofs carry a GitHub Actions OIDC token, verified against GitHub's keys; no secrets live in your repo |
+| Forged CI proofs | Proofs carry a GitHub Actions OIDC token, verified against GitHub's keys; no secrets live in your repo. The PR's own code (install, tests, the app) runs in Docker on a copy of the repo, so it can't reach the token or the reporter |
+| Prompt injection through requests | Failing requests and commit messages reach the AI as escaped, tagged data, and every prompt says to treat them as data; the AI's answer is checked by code (allowed fixes only, only the bad commit's files plus one test path, never CI config) |
+| AI agents going rogue | Agents only propose; the Claude Code hook blocks a risky command when nobody answers or OpsSwipe is unreachable |
+| Teammates | They see and can fix the owner's incidents, never services, keys or connections (row-level security, proven by a SQL test) |
 | Merging something other than what was proven | Proof is bound to the PR's head commit, and the merge is pinned to that `sha` (GitHub returns 409 otherwise) |
 | Replay causing side effects | Requests are replayed only against the PR build in CI, never production; samples carry no headers or cookies |
 | Double swipe | The incident is claimed atomically; the second request gets 409 |
@@ -163,21 +185,24 @@ More in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Quality
 
-- **Tests:** 64 Deno tests (providers incl. Railway, revenue at risk, proof-workflow pinning, report confirmation, Connect keys and OIDC, Google grant, push, alert-webhook allowlist,
+- **Tests:** 86 Deno tests (providers incl. Railway, revenue at risk, proof-workflow pinning, report confirmation, Connect keys and OIDC, Google grant, push, alert-webhook allowlist,
   Sentry and RevenueCat webhooks, confirm-before-paging, rollback, revert and merge PRs, signing, sample scrubbing, proof
   binding, the incident flow incl. failed proofs, suggestions), SQL tests for the free-outage meter and tenant isolation
   (row-level security, Vault access) on Postgres 17, 2 tests for the demo service's reporting, and app tests for the
-  recovery timeline, incident report and weekly stats.
+  recovery timeline, incident report and weekly stats. Since then: regression-test patches, postmortems, the alert
+  inbox parser, status page, weekly report, escalation, chat OAuth and command approvals, all with tests.
 - **Eval:** 14 labeled incident scenarios score fix suggestions on allowlist safety (must be 100%), correctness and concision.
-  `deno task eval` runs the rules in CI; `deno task eval vertex` scores Claude.
-- **CI:** format, lint, typecheck, tests, eval, migrations and app checks on every push.
+  `deno task eval` runs the rules in CI; `deno task eval nvidia` (or `openai`, `vertex`) scores a model. With the
+  structured prompt, NVIDIA Nemotron answered 10 of 10 cases correctly (4 more fell back to rules when the API was busy).
+- **CI:** format, lint, typecheck, tests, eval, shellcheck, SQL tests on Postgres 17, app and demo checks on every push.
+- **CD:** when CI passes on `main`, migrations apply and every Edge Function deploys (`.github/workflows/deploy.yml`).
 
 ## Stack
 
 Expo SDK 57, React Native, Reanimated 4, Gesture Handler, expo-haptics, expo-local-authentication, expo-notifications, Geist
 fonts, Phosphor icons · RevenueCat (`react-native-purchases`, `react-native-purchases-ui`) · Supabase (Postgres, Realtime, Edge
-Functions, Cron, Vault) · NVIDIA Nemotron (or Claude on Vertex AI) · GitHub Git Data API and Actions · Render · Railway · GCP Compute
-Engine · Sentry, Discord and Slack webhooks
+Functions, Cron, Vault) · NVIDIA Nemotron with a Groq backup (or Claude on Vertex AI) · GitHub Git Data API and Actions ·
+Render · Railway · GCP Compute Engine · Sentry, Discord and Slack · GitHub Pages (status page)
 
 ## Run it
 
@@ -190,14 +215,14 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh release   # a bad release: re
 
 ## Roadmap
 
-- Reports from Datadog and Alertmanager
+- One-tap Connect Railway and RevenueCat through OAuth (no pasted keys)
 - More fixes: scale up, restart a Kubernetes deployment, roll back on Fly, Vercel and Coolify
-- Escalation: call or SMS when a push goes unanswered; a hosted status page
+- Escalation by phone call or SMS; on-call rotations; two-person approval for risky fixes
+- An MCP server so any agent (Cursor, Claude Desktop) can ask for approval
 - iOS build (the app is cross-platform; this entry ships Android)
-- One-tap "Connect RevenueCat" through RevenueCat OAuth (a consent screen, no keys) once OpsSwipe is registered as an OAuth client
-- Team plan, two-person approval for risky fixes
 - Google OAuth verification, so Connect Google Cloud has no warning screen or 100-user cap
 
 ## License
 
-MIT
+MIT. See also [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md),
+[PRIVACY.md](PRIVACY.md) and [TERMS.md](TERMS.md).

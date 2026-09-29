@@ -13,6 +13,9 @@ jobs:
       - run: deno task check
       - run: deno task test
       - run: deno task eval # rule-based suggestions: 100% allowlist + labels, or the build fails
+      - run: shellcheck infra/chaos.sh integrations/claude-code/opsswipe-gate.sh # the scripts judges and users run
+      - name: Status page is valid HTML with its data URL
+        run: grep -q 'functions/v1/status' status-page/index.html && grep -q '</html>' status-page/index.html
 
   database:
     runs-on: ubuntu-latest

@@ -18,6 +18,7 @@ release() {
 }
 case "${1:-}" in
   gcp)
+    # shellcheck disable=SC2016 # $(hostname) runs on the VM, not here
     gcloud compute ssh "${VM:-opsswipe-demo}" --zone "${ZONE:-us-central1-a}" \
       --command 'sudo systemctl stop opsswipe-demo && echo "demo app stopped on $(hostname)"' ;;
   release)

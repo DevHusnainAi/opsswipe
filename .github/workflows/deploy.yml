@@ -1,0 +1,33 @@
+# CD: once CI is green on main, apply migrations and deploy every Edge Function to Supabase.
+# Needs repo secrets SUPABASE_ACCESS_TOKEN (supabase.com/dashboard/account/tokens) and SUPABASE_DB_PASSWORD.
+# Function secrets (API keys) are set once with `supabase secrets set` and are never in this repo.
+name: deploy
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency: deploy
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: mwkwhfqcgxossweqwibt
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Apply migrations
+        run: supabase link --project-ref "$PROJECT_REF" && supabase db push --linked
+      - name: Deploy functions
+        run: supabase functions deploy --project-ref "$PROJECT_REF"

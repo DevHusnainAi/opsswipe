@@ -304,6 +304,7 @@ export default function App() {
     const restored = (await Purchases.restorePurchases()).entitlements.active;
     const active = !!restored.pro || !!restored.team;
     setPro(active);
+    setTeam(!!restored.team);
     return active;
   };
 

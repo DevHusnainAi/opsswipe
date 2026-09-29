@@ -55,19 +55,18 @@ tests that missed the bug ([Seer self-healing workflow](https://sentry.io/cookbo
 
 A great 2-minute video is built around a few scenes people can retell. Ours:
 
-1. **The live save (the hook).** Laptop breaks the site → phone, app closed, buzzes → swipe → fingerprint → site back. A
-   visible stopwatch runs the whole time; the card shows "~$4.20/h at risk" and ends on "down 1m 12s · back 38s after
-   fix · about $0.08 lost". One continuous take, no cut.
-   *This answers "working app" beyond doubt.*
-2. **The proof (the originality).** A bad release → OpsSwipe opens a revert PR that carries the exact requests that failed in
-   production → CI replays them → card shows "3/3 failing production requests now pass" → only then does Merge appear.
-   *This is what no other project does.*
-3. **The fair paywall (the RevenueCat moment).** The first outage is free, start to finish. The next outage: card snaps
-   back, the banner reads "api is down (~$4.20/h at risk)… Pro is $4.99/month", and the RevenueCat paywall slides up *at
-   the moment of need*. Test Store purchase, fix runs. Caption: "Your revenue, from RevenueCat, prices the moment.
-   Entitlement checked on the server." *This answers "thoughtful RevenueCat use".*
+1. **The live save (the hook).** Laptop breaks the site; the phone, app closed, buzzes; swipe; fingerprint; site back. A
+   visible stopwatch runs the whole time; the card shows "~$X/h at risk" from RevenueCat and ends on "back Ns after fix".
+   One continuous take, no cut. *This answers "working app" beyond doubt.*
+2. **Fixed while you slept (the originality).** A bad release breaks an untested route. Before you look, OpsSwipe has
+   already written the fix and a regression test, opened the PR and let CI replay the exact requests that failed:
+   "A fix is ready and proven, 3/3 pass". You read the diff on the phone, swipe Merge, and the postmortem says why it
+   broke. *This is what no other entry does.*
+3. **Your AI agent asks first, and RevenueCat is part of the product.** Claude Code tries `git push --force`; the phone
+   asks; decline; Claude is told no. Then 10 seconds on the plan: the trial offered during onboarding, revenue at risk on
+   the card, Pro/Team on the paywall. *This answers "timely idea" and "thoughtful RevenueCat use".*
 
-Everything else (Connect, security, tests) gets seconds, not scenes.
+Everything else (Connect, alert inbox, teams, status page, security, tests) gets seconds, not scenes.
 
 ## 3. Shot list and script (1:55)
 
@@ -75,15 +74,15 @@ Word budget: ~270 words of narration at a natural pace. Times are targets; fit t
 
 | Time | Picture | Voice-over | On-screen text (Remotion) |
 | --- | --- | --- | --- |
-| 0:00–0:08 | Evening, phone face-down on a dinner table (real or a Higgsfield shot). Buzz. | "AI writes half your code now. It's Friday night, and your backend just went down." | *Your app. Your backend. You're not at your laptop.* |
-| 0:08–0:14 | Logo reveal over the incident card showing "~$4.20/h at risk" | "This is Ops Swipe. It shows what the outage costs, fixes it from your lock screen, and proves the fix." | **OpsSwipe** |
-| 0:14–0:26 | Phone: Services → GitHub Connect → Google Cloud: sign in, pick project and VM, link repo, Add (sped up 3x) | "Connect GitHub and Google Cloud in a few taps. Ops Swipe only gets permission to restart what you pick." | *No cloud keys stored. Reset-only access to one VM.* |
-| 0:26–1:02 | **Split screen, one take, stopwatch visible:** left laptop runs `chaos.sh gcp`, site stops answering; right phone locked → push → open → card with suggested fix and reason → swipe → fingerprint → banner → laptop site back | "Let's break production for real." *(pause for the buzz)* "My phone wakes me, even with the app closed. Ops Swipe knows what broke, what it's costing me from my Revenue Cat numbers, and suggests a fix. I swipe. My fingerprint approves it." *(pause)* "Back online." | Stopwatch. Then: **down 1m 12s · back 38s after fix · about $0.08 lost** |
-| 1:02–1:32 | Laptop: `chaos.sh release`, site shows 500; phone card offers Revert PR / Fix with AI → Revert PR → GitHub PR page showing `.opsswipe/replays/<sha>.json` → Actions run → phone card "3/3 failing production requests now pass" → Merge PR → site back, "back up" push | "But what if the bug is in the code, maybe code an AI wrote? Other tools write a fix and hope. Ops Swipe proves it. The pull request carries the exact requests that failed in production. CI replays them against the fix. Three out of three now pass. Only then can I merge, and only that exact commit." | *Replayed: the real failing requests* → **3/3 pass** → *Merge pinned to the proven commit* |
-| 1:32–1:45 | Next outage → swipe → card snaps back → banner with the cost → RevenueCat paywall → Test Store purchase → fix runs | "Your first outage is free, start to finish. The next one shows what it's costing you, next to four ninety-nine a month. Revenue Cat entitlements are checked on the server." | *RevenueCat prices the moment · server-side entitlement* |
-| 1:45–1:55 | End card: logo, the one line, repo URL, "Built by a first-semester student" | "AI writes your fixes. Ops Swipe proves them. Open source. Built by a first-semester student." | **AI writes your fixes. OpsSwipe proves them.** github.com/DevHusnainAi/opsswipe |
+| 0:00–0:10 | Evening, phone face-down on a dinner table. Buzz: "checkout-api is down, ~$38/h at risk" | "I'm a student. My app makes money while I sleep, until the backend breaks." | *Your app. Your backend. You're not at your laptop.* |
+| 0:10–0:18 | Title card over the incident card | "Pagers wake you up. They don't fix anything. This is Ops Swipe." | *90% of overnight pages aren't critical. The rest need a laptop.* **OpsSwipe** |
+| 0:18–0:48 | **Split screen, one take, stopwatch:** laptop runs `chaos.sh gcp`; phone locked, push, card with cause, cost and suggested fix; swipe; fingerprint; site back | "Let's break production for real. My phone knows first. One card: what broke, what it's costing me from my Revenue Cat, and the fix. Swipe. Fingerprint. Back online." | Stopwatch, then **back Ns after the fix** |
+| 0:48–1:22 | `chaos.sh release`; push: "A fix is ready and proven, 3/3 failing requests pass"; open the card, the diff with the fix and the regression test; swipe Merge; "back up"; the postmortem | "When the bug is in the code, Ops Swipe has the fix waiting before I wake up. The AI wrote it and a test. CI replayed the exact requests that failed in production. Only then can I merge, and only that exact commit. Then it tells me why it broke." | *Written by AI · proven in CI · merged by you* → **3/3 pass** |
+| 1:22–1:38 | Laptop: Claude Code runs `git push --force origin main`; phone: "Claude Code asks to run a command"; decline; terminal shows it was blocked | "And my AI agents ask my phone before they touch production." | *AI agents ask first* |
+| 1:38–1:48 | Onboarding trial screen, Pro/Team paywall, revenue at risk | "First outage free. Pro and Team with a seven-day trial. Revenue Cat entitlements are checked on the server." | *RevenueCat: part of the product* |
+| 1:48–1:55 | End card: logo, the line, repo URL, "Built by a student with Claude Code" | "AI writes your fixes. Ops Swipe proves them." | **AI writes your fixes. OpsSwipe proves them.** github.com/DevHusnainAi/opsswipe |
 
-Replace every number in the script (1m 12s, 38s, 3/3) with what the real take shows. Never narrate a number the picture
+Replace every number in the script (seconds, 3/3, $/h) with what the real take shows. Never narrate a number the picture
 doesn't show.
 
 ## 4. Recording day
@@ -147,31 +146,31 @@ Keep that section uncut; speed ramps are fine elsewhere.
 
 Put a short **"For the judges"** box at the very top, mapped to the four criteria:
 
-> **Idea:** AI writes your code; OpsSwipe makes sure its fixes are proven before they touch production. A pager for solo
-> devs: it confirms an outage before paging, shows what it costs, fixes it from the lock screen, and, as far as we found
-> first, won't let a code fix merge until CI replays the exact requests that failed in production.
-> **Working app:** Real fixes on a real cloud in the video: a Google Cloud VM reboot, a revert PR proven in CI, and the merge
-> that deploys it. Push alerts with the app closed. One continuous take with a clock.
-> **RevenueCat:** Your own RevenueCat revenue turns every incident into $/hour at risk. The first outage is free; the paywall
-> appears at the moment of need with that cost next to $4.99/month; entitlements are checked on the server, with a
-> webhook-kept copy so a billing outage never blocks a fix.
-> **Care:** Least privilege everywhere (reboot-only role on one VM, 1-hour GitHub tokens, secrets in Vault), per-user
-> row-level security, CI proof authenticated by GitHub OIDC and pinned to the proof workflow, 64 backend tests, SQL tests,
-> a 14-case AI eval, decision records.
+> **Idea:** AI writes your fixes; OpsSwipe proves them. A pager for solo devs that turns an outage into one card with a
+> fix attached, has the AI fix and a regression test ready before you wake, lets it merge only after CI replays the
+> exact requests that failed in production, and makes AI agents ask your phone before touching production.
+> **Progress:** Real fixes on real infrastructure in the video: a Google Cloud VM reboot, an AI fix PR proven in CI and
+> merged pinned to that commit, push alerts with the app closed, the agent gate. One continuous take with a clock.
+> **RevenueCat:** Your own RevenueCat revenue turns every incident into $/hour at risk. First outage free; Free / Pro /
+> Team with monthly and yearly plans and a 7-day trial offered during onboarding, never mid-outage; entitlements checked
+> on the server, with a webhook-kept copy so a billing outage never blocks a fix.
+> **Care:** Least privilege (reboot-only role on one VM, 1-hour GitHub tokens, secrets in Vault), row-level security,
+> OIDC-signed proofs with the PR's code isolated in Docker, prompts that treat request data as data, 86 backend tests,
+> SQL tests on Postgres 17, a 14-case AI eval, CI and CD, decision records, privacy policy and terms.
 
 Then Devpost's standard sections:
 
 - **Inspiration:** the solo-dev story, in first person. Why a phone, why proof (tests passed, merged, still broken in production).
 - **What it does:** the three moments, one short paragraph each, with a GIF each.
-- **How we built it:** the architecture diagram from the README; Expo + Supabase + RevenueCat; Claude on Vertex for suggestions
-  (rules first, AI can only pick allowed fixes); built with Claude Code.
+- **How we built it:** the architecture diagram from the README; Expo + Supabase + RevenueCat; NVIDIA Nemotron with a Groq
+  backup for suggestions, fixes and postmortems (rules decide, AI output is checked by code); built with Claude Code.
 - **Challenges:** proving a fix without replaying writes against production (replay only in CI, scrubbed samples);
   connecting clouds without ever holding a user's cloud key.
 - **Accomplishments:** the live save under a minute; the verified-fix loop; security without shortcuts.
 - **What we learned:** honest and short.
-- **What's next:** the README roadmap (iOS, call/SMS escalation, a status page, more hosts, team plan).
+- **What's next:** the README roadmap (iOS, call/SMS escalation, OAuth for Railway and RevenueCat, more hosts, an MCP server).
 - **Built with:** expo, react-native, typescript, supabase, postgresql, deno, revenuecat, github-actions, google-cloud,
-  claude.
+  nvidia, claude-code.
 - Images: 3–5 real phone screenshots (card, proof strip, paywall, Services), not mockups.
 
 ## 9. The repo, as a judge skims it
