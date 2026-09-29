@@ -1,5 +1,15 @@
 // A CI proof only counts for the exact commit OpsSwipe opened, and only if everything passed.
-export type PrRef = { repo: string; number: number; headSha: string; url: string; branch: string; kind?: string };
+export type PrRef = {
+  repo: string;
+  number: number;
+  headSha: string;
+  url: string;
+  branch: string;
+  kind?: string;
+  // The failing requests this PR carries in .opsswipe/replays, fixed when it opened. The proof is judged
+  // against these: failures seen later aren't in the PR, so CI couldn't replay them.
+  replay?: { method: string; path: string; status: number }[];
+};
 export type ProofResult = { method: string; path: string; now: number }; // "now": the status this PR's build gave
 export type ProofPayload = {
   repo: string;

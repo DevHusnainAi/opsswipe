@@ -50,8 +50,10 @@ Deno.serve(async (req) => {
 
   // The sha CI says it tested comes from the PR's own script; GitHub says what the PR points at now.
   const head = await prHead(inc.context.pr!, await githubToken(inc.owner)).catch(() => null);
+  if (!head) return json(503, { error: 'could not check the PR with GitHub; re-run the job' });
   if (head !== inc.context.pr?.headSha) return json(409, { error: 'the PR changed after OpsSwipe opened it' });
-  const result = evaluateProof(inc.context.pr, { ...body, repo, pr: prNumber }, inc.context.replay ?? []);
+  const expected = inc.context.pr?.replay ?? inc.context.replay ?? [];
+  const result = evaluateProof(inc.context.pr, { ...body, repo, pr: prNumber }, expected);
   if (result.status !== 'accepted') {
     return result.status === 'stale'
       ? json(409, { error: 'proof is for a different commit than OpsSwipe opened' })

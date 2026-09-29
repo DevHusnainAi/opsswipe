@@ -121,8 +121,10 @@ export async function aiFixPr(
       },
     ],
   }, token);
-  return { detail: pr.url, pr };
+  return { detail: pr.url, pr: { ...pr, replay: carried(input.failing) } };
 }
+
+const carried = (samples: ReplaySample[]) => samples.map(({ method, path, status }) => ({ method, path, status }));
 
 export async function revertPr(t: Target, sha: string, inc: Incident, token: string): Promise<Outcome> {
   const pr = await openRevertPr({
@@ -142,5 +144,5 @@ export async function revertPr(t: Target, sha: string, inc: Incident, token: str
     ].filter((l) => l !== null).join('\n'),
     replay: inc.context.replay ?? [],
   }, token);
-  return { detail: pr.url, pr };
+  return { detail: pr.url, pr: { ...pr, replay: carried(inc.context.replay ?? []) } };
 }

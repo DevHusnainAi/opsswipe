@@ -22,7 +22,8 @@ Deno.serve(async (req) => {
   }
   const { data: services } = await db.from('services').select().eq('owner', inbox.owner);
   let paged = 0, quiet = 0;
-  for (const a of parseAlerts(body).filter((x) => x.firing)) {
+  // ponytail: at most 100 alerts per request; a bigger batch is cut, not stored row by row.
+  for (const a of parseAlerts(body).filter((x) => x.firing).slice(0, 100)) {
     const s = matchService(a.target, (services ?? []) as Service[]);
     if (s) {
       // One open card per service: the first alert opens it, the next 49 only raise its count.
