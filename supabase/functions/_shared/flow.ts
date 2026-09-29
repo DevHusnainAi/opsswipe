@@ -108,3 +108,9 @@ export const needsEscalation = (
 ) =>
   inc.status === 'active' && !inc.context.escalated_at && actions === 0 &&
   now - Date.parse(inc.created_at) >= ESCALATE_AFTER_MS;
+
+// A fix normally finishes in seconds. A claim still 'resolving' after 5 minutes means the function
+// died mid-fix (timeout, crash); the health check hands the card back so the service isn't stuck.
+export const STALE_CLAIM_MS = 5 * 60_000;
+export const staleClaim = (claimedAt: string | null | undefined, now = Date.now()) =>
+  !claimedAt || now - Date.parse(claimedAt) >= STALE_CLAIM_MS;

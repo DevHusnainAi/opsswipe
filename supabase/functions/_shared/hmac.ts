@@ -22,10 +22,11 @@ export async function verifyHex(secret: string, body: string, hex: string | null
   return crypto.subtle.verify('HMAC', await key(secret), sig, enc.encode(body));
 }
 
-// Constant-time comparison of two shared secrets (a header value against the configured one).
+// Constant-time comparison of two shared secrets (a header value against the configured one). An unset
+// configured secret (b) never matches, so a missing env var fails closed.
 export function timingSafeEqual(a: string, b: string) {
   const x = enc.encode(a), y = enc.encode(b);
   let diff = x.length ^ y.length;
   for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x.at(i) ?? 0) ^ (y.at(i) ?? 0);
-  return diff === 0;
+  return diff === 0 && y.length > 0;
 }

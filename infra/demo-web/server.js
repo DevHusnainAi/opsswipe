@@ -2,21 +2,19 @@
 // Only a restart clears it (Render restart, or a reset of the demo VM, infra/demo-box.sh).
 // /livez always answers so a platform health check doesn't auto-heal it before a human approves.
 const http = require('node:http');
-const { createHmac, timingSafeEqual } = require('node:crypto');
+const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 
 // Bad-release demo: commit this as false and push (infra/chaos.sh release). It breaks only the
 // pricing API, a path the tests don't cover, so CI passes and deploys it, like a real regression.
 // Requests fail, and OpsSwipe offers a revert or AI fix PR, proven in CI before it can merge.
 const RELEASE_OK = true;
 
-const KEY = Buffer.from(process.env.CHAOS_KEY ?? '');
+const CHAOS_KEY = process.env.CHAOS_KEY ?? '';
+const digest = (s) => createHash('sha256').update(s).digest(); // same length both sides: no length leak
 const bootedAt = new Date().toISOString();
 let wedged = false;
 
-const keyOk = (given = '') => {
-  const g = Buffer.from(given);
-  return KEY.length > 0 && g.length === KEY.length && timingSafeEqual(g, KEY);
-};
+const keyOk = (given = '') => CHAOS_KEY.length > 0 && timingSafeEqual(digest(given), digest(CHAOS_KEY));
 
 const page = `<!doctype html><meta name=viewport content="width=device-width"><title>opsswipe-demo-web</title>
 <body style="background:#0A0A0A;color:#10B981;font:22px monospace;display:grid;place-items:center;height:100vh;margin:0">

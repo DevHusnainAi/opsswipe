@@ -175,4 +175,5 @@ Deno.test('shared secrets compare in constant time and only when equal', () => {
   assert(!timingSafeEqual('Bearer abc', 'Bearer abd'));
   assert(!timingSafeEqual('Bearer ab', 'Bearer abc'));
   assert(!timingSafeEqual('', 'x'));
+  assert(!timingSafeEqual('', ''), 'an unset secret never matches');
 });

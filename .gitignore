@@ -7,3 +7,7 @@ gcp-sa-key.json
 google-oauth-client.json
 firebase-fcm-key.json
 supabase/.temp/
+
+# pasted agent sessions: may hold secrets
+resume.txt
+*.transcript

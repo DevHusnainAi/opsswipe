@@ -3,7 +3,15 @@
 // its last fix. App-level failures arrive event-driven through /report instead. Also escalates
 // incidents nobody has answered to the owner's team.
 import { env, json } from '../_shared/db.ts';
-import { closeSelfHealed, escalate, HEALTH_TITLE, markRecovered, openIncident } from '../_shared/incidents.ts';
+import { timingSafeEqual } from '../_shared/hmac.ts';
+import {
+  closeSelfHealed,
+  escalate,
+  HEALTH_TITLE,
+  markRecovered,
+  openIncident,
+  sweepStaleClaims,
+} from '../_shared/incidents.ts';
 import { confirmedProbe, isUp } from '../_shared/probe.ts';
 import { scrubSample } from '../_shared/replay.ts';
 import { allServices, type Service } from '../_shared/services.ts';
@@ -28,7 +36,9 @@ async function check(s: Service) {
 }
 
 Deno.serve(async (req) => {
-  if (req.headers.get('x-cron-secret') !== env('CRON_SECRET')) return json(403, { error: 'forbidden' });
-  const results = await Promise.allSettled([...(await allServices()).map(check), escalate()]);
+  if (!timingSafeEqual(req.headers.get('x-cron-secret') ?? '', env('CRON_SECRET'))) {
+    return json(403, { error: 'forbidden' });
+  }
+  const results = await Promise.allSettled([...(await allServices()).map(check), escalate(), sweepStaleClaims()]);
   return json(200, results.map((r) => (r.status === 'fulfilled' ? r.value : { error: String(r.reason) })));
 });

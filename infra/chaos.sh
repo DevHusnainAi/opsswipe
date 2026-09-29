@@ -12,7 +12,7 @@ set -euo pipefail
 release() {
   : "${DEMO_REPO:?set DEMO_REPO to your local clone of opsswipe-demo-target}"
   git -C "$DEMO_REPO" pull -q --rebase # a merged revert or fix PR may have moved main
-  sed -i "s/^const RELEASE_OK = $1;/const RELEASE_OK = $2;/" "$DEMO_REPO/server.js"
+  sed -i.bak "s/^const RELEASE_OK = $1;/const RELEASE_OK = $2;/" "$DEMO_REPO/server.js" && rm -f "$DEMO_REPO/server.js.bak" # GNU and BSD sed
   if git -C "$DEMO_REPO" diff --quiet; then echo "main already has RELEASE_OK = $2" && exit 0; fi
   git -C "$DEMO_REPO" commit -qam "$3" && git -C "$DEMO_REPO" push -q
 }

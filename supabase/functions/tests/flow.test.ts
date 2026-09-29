@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { afterFix, afterProof, confirmsReport, needsEscalation, selfHealed } from '../_shared/flow.ts';
+import { afterFix, afterProof, confirmsReport, needsEscalation, selfHealed, staleClaim } from '../_shared/flow.ts';
 import type { PrRef } from '../_shared/proof.ts';
 
 const now = new Date('2026-09-28T10:00:00Z');
@@ -120,4 +120,11 @@ Deno.test('an untouched incident pages the team once, after 5 minutes', () => {
   assertEquals(needsEscalation(inc, 1, t0 + 9 * 60_000), false, 'someone is already on it');
   assertEquals(needsEscalation({ ...inc, context: { escalated_at: 'x' } }, 0, t0 + 9 * 60_000), false, 'only once');
   assertEquals(needsEscalation({ ...inc, status: 'resolved' }, 0, t0 + 9 * 60_000), false);
+});
+
+Deno.test('a fix still running after 5 minutes is handed back', () => {
+  const t0 = Date.parse('2026-09-29T03:00:00Z');
+  assertEquals(staleClaim('2026-09-29T03:00:00Z', t0 + 4 * 60_000), false, 'a slow fix is left alone');
+  assertEquals(staleClaim('2026-09-29T03:00:00Z', t0 + 5 * 60_000), true);
+  assertEquals(staleClaim(null, t0), true, 'claimed before claimed_at existed');
 });

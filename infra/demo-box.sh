@@ -13,7 +13,7 @@ meta() { curl -fsS -H 'Metadata-Flavor: Google' "http://metadata.google.internal
 REPO=$(meta demo-repo)
 : "${REPO:?set the demo-repo metadata to the demo repo URL}"
 
-command -v node >/dev/null && command -v git >/dev/null || { apt-get update -y && apt-get install -y nodejs git; }
+if ! command -v node >/dev/null || ! command -v git >/dev/null; then apt-get update -y && apt-get install -y nodejs git; fi
 systemctl disable --now nginx 2>/dev/null || true # the first version of this VM served a static page
 
 [ -d /opt/demo/.git ] || git clone -q "$REPO" /opt/demo
@@ -69,11 +69,26 @@ chmod 755 /usr/local/bin/opsswipe-deploy
 systemctl disable --now opsswipe-deploy.timer 2>/dev/null || true # the first version pulled every 30 s
 rm -f /etc/systemd/system/opsswipe-deploy.timer /etc/systemd/system/opsswipe-deploy.service
 
-# CI's way in: a user with no shell rights beyond running the deploy script as root.
-KEY=$(meta deploy-key)
+# CI's way in: a user who can only run the deploy script. Two locks, so neither alone is trusted:
+# sshd forces the command for this user whatever authorized_keys says, and the key from metadata
+# must be exactly one public key line (a newline in metadata can't smuggle in a second, unrestricted key).
+KEY=$(meta deploy-key | head -n 1)
+if ! [[ "$KEY" =~ ^(ssh-ed25519|ecdsa-sha2-nistp256|ssh-rsa)\ [A-Za-z0-9+/=]+(\ [^[:space:]]+)?$ ]]; then
+  [ -n "$KEY" ] && echo "demo-box: deploy-key metadata is not a single public key; ignoring it" >&2
+  KEY=""
+fi
 id deploy >/dev/null 2>&1 || useradd --create-home --shell /bin/bash deploy
 echo 'deploy ALL=(root) NOPASSWD: /usr/local/bin/opsswipe-deploy' > /etc/sudoers.d/opsswipe-deploy
 chmod 440 /etc/sudoers.d/opsswipe-deploy
+cat > /etc/ssh/sshd_config.d/opsswipe-deploy.conf <<'SSHD'
+Match User deploy
+  ForceCommand sudo /usr/local/bin/opsswipe-deploy
+  AllowTcpForwarding no
+  AllowAgentForwarding no
+  X11Forwarding no
+  PermitTTY no
+SSHD
+systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
 install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
 if [ -n "$KEY" ]; then
   echo "command=\"sudo /usr/local/bin/opsswipe-deploy\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty $KEY" \

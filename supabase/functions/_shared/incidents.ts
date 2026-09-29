@@ -16,7 +16,7 @@ import {
   toTarget,
 } from './services.ts';
 import { aiFixPr, badCommit, type Incident, isPro } from './codeFix.ts';
-import { afterFix, confirmsReport, ESCALATE_AFTER_MS, needsEscalation, selfHealed } from './flow.ts';
+import { afterFix, confirmsReport, ESCALATE_AFTER_MS, needsEscalation, selfHealed, staleClaim } from './flow.ts';
 import { money, type Revenue, revenuePerHour } from './revenue.ts';
 import { nvidiaLlm, openaiLlm, withFallback } from './llm.ts';
 import { llmPatcher, type Patcher, vertexPatcher } from './patch.ts';
@@ -306,5 +306,27 @@ export async function escalate(now = Date.now()) {
         data: { incidentId: inc.id },
       });
     }
+  }
+}
+
+// A fix whose function died mid-run (timeout, crash) leaves the card 'resolving', which would block
+// every new incident for that service. Hand it back: the card returns, and a free outage that bought
+// nothing is refunded (refund_free_run checks no fix executed).
+export async function sweepStaleClaims(now = Date.now()) {
+  const { data } = await db.from('incidents').select('id, owner, action, target_server, claimed_at')
+    .eq('status', 'resolving');
+  for (const inc of (data ?? []).filter((i) => staleClaim(i.claimed_at, now))) {
+    const { data: back } = await db.from('incidents').update({ status: 'active' }).eq('id', inc.id)
+      .eq('status', 'resolving').select('id').maybeSingle();
+    if (!back) continue;
+    await db.rpc('refund_free_run', { uid: inc.owner, incident: inc.id });
+    await db.from('audit_log').insert({
+      incident_id: inc.id,
+      actor: inc.owner,
+      action: inc.action,
+      target: inc.target_server,
+      outcome: 'failed',
+      detail: 'the fix did not finish in time; the card is back so you can try again',
+    });
   }
 }

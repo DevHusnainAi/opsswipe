@@ -59,8 +59,9 @@ Deno.serve(async (req) => {
   if (requested !== undefined && typeof requested !== 'string') return json(400, { error: 'action must be a string' });
 
   // Claim the incident atomically: a double swipe can't run a fix twice, and only its owner (or their
-  // team) can claim it at all (someone else's incident looks exactly like a missing one).
-  const { data: inc } = await db.from('incidents').update({ status: 'resolving' })
+  // team) can claim it at all (someone else's incident looks exactly like a missing one). claimed_at
+  // lets the health check hand back a claim whose function died mid-fix (sweepStaleClaims).
+  const { data: inc } = await db.from('incidents').update({ status: 'resolving', claimed_at: new Date().toISOString() })
     .eq('id', incidentId).in('owner', await ownersFor(user.id)).eq('status', 'active').select().maybeSingle<Incident>();
   if (!inc) return json(409, { error: 'incident is not active' });
 
@@ -75,39 +76,36 @@ Deno.serve(async (req) => {
       outcome,
       detail,
     });
-
-  // An agent's own command: the human's approval is the whole action; OpsSwipe runs nothing.
-  const approval = action === 'approve' && inc.suggested_by === 'agent' && inc.actions.includes('approve');
-  const service = !approval && inc.service_id ? await getService(inc.service_id) : null;
-  if (
-    !approval && (!service || !actionsFor(toTarget(service)).includes(action) || !inc.actions.includes(action))
-  ) {
+  const refuse = async (status: number, error: string, outcome: string, detail?: string) => {
     await release();
-    await audit('failed', 'fix not allowed for this target');
-    return json(403, { error: 'fix not allowed' });
-  }
-  // Checked before metering, so nobody pays for a merge that was never going to run.
-  if (action === 'merge_pr' && !canMerge(inc.context.pr, inc.context.proof)) {
-    await release();
-    await audit('failed', 'no passing proof for the current PR commit');
-    return json(403, { error: 'PR is not proven' });
-  }
+    await audit(outcome, detail);
+    return json(status, { error });
+  };
 
+  // From the claim on, every exit either finishes the incident or hands it back: nothing between
+  // here and the final update can leave it stuck in 'resolving'.
   let usedFreeRun = false;
   let outcome: Outcome;
   try {
-    // The account that owns the outage pays, whoever on the team swipes.
-    if (!(await isPro(inc.owner))) {
+    // An agent's own command: the human's approval is the whole action; OpsSwipe runs nothing.
+    const approval = action === 'approve' && inc.suggested_by === 'agent' && inc.actions.includes('approve');
+    const service = !approval && inc.service_id ? await getService(inc.service_id) : null;
+    if (
+      !approval && (!service || !actionsFor(toTarget(service)).includes(action) || !inc.actions.includes(action))
+    ) return await refuse(403, 'fix not allowed', 'failed', 'fix not allowed for this target');
+    // Checked before metering, so nobody pays for a merge that was never going to run.
+    if (action === 'merge_pr' && !canMerge(inc.context.pr, inc.context.proof)) {
+      return await refuse(403, 'PR is not proven', 'failed', 'no passing proof for the current PR commit');
+    }
+    // The account that owns the outage pays, whoever on the team swipes. Approving an agent's own
+    // command runs nothing, so it never uses the free outage.
+    if (!approval && !(await isPro(inc.owner))) {
       const { data: ok } = await db.rpc('consume_free_run', {
         uid: inc.owner,
         free_limit: FREE_RUNS,
         incident: inc.id,
       });
-      if (!ok) {
-        await release();
-        await audit('paywalled');
-        return json(402, { error: 'free tier exhausted' });
-      }
+      if (!ok) return await refuse(402, 'free tier exhausted', 'paywalled');
       usedFreeRun = true;
     }
     outcome = approval ? { detail: 'approved' } : await runAction(service!, action, inc);
