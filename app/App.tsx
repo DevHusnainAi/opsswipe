@@ -134,7 +134,8 @@ export default function App() {
     if (!purchasesReady.current) {
       Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_RC_KEY!, appUserID: uid });
       Purchases.addCustomerInfoUpdateListener((info) => {
-        setPro(!!info.entitlements.active.pro);
+        // Team includes everything in Pro.
+        setPro(!!info.entitlements.active.pro || !!info.entitlements.active.team);
         setTeam(!!info.entitlements.active.team);
       });
       purchasesReady.current = true;
@@ -143,7 +144,7 @@ export default function App() {
     }
     try {
       const info = await Purchases.getCustomerInfo();
-      setPro(!!info.entitlements.active.pro);
+      setPro(!!info.entitlements.active.pro || !!info.entitlements.active.team);
       setTeam(!!info.entitlements.active.team);
     } catch {
       // offline: the server still enforces the plan on every fix
@@ -300,7 +301,8 @@ export default function App() {
   };
 
   const restore = async () => {
-    const active = !!(await Purchases.restorePurchases()).entitlements.active.pro;
+    const restored = (await Purchases.restorePurchases()).entitlements.active;
+    const active = !!restored.pro || !!restored.team;
     setPro(active);
     return active;
   };
