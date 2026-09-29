@@ -45,7 +45,7 @@ export function SlackSignIn({ url, onDone }: { url: string; onDone: () => void }
               onDone();
               return false;
             }
-            return r.url.startsWith('https://');
+            return r.url.startsWith('https://') || r.url.startsWith('about:'); // Slack uses about:blank frames
           }}
           style={{ flex: 1 }}
         />

@@ -134,7 +134,7 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
 
   const cloud = !!(status?.render.connected || status?.google.connected);
   const steps = [
-    { done: cloud, title: 'Connect where your app runs', body: 'Render or Google Cloud.', action: () => setSheet('provider') },
+    { done: cloud, title: 'Connect where your app runs', body: 'Render, Railway or Google Cloud.', action: () => setSheet('provider') },
     { done: !!services?.length, title: 'Add your first service', body: 'OpsSwipe starts watching it right away.', action: () => setSheet('provider') },
     {
       done: !!status?.github.connected,

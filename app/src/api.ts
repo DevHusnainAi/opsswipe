@@ -25,6 +25,8 @@ export type Incident = {
     agent?: { name: string };
     alert_count?: number; // alerts from other tools folded into this card (alert inbox)
     self_healed?: boolean;
+    dismissed?: boolean; // closed as a false alarm
+    declined?: boolean; // an agent's proposal the human said no to
     // the model's second opinion: agreed or not (with its reason), or why it was unavailable
     ai?: { action: string; reason: string; agreed: boolean } | { error: string };
     live?: { commit?: { id: string; message?: string } } | null; // the release running when it broke

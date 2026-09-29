@@ -316,7 +316,7 @@ export default function App() {
         (action === 'revert_pr' || action === 'fix_pr') && res.detail?.startsWith('https://')
           ? {
             kind: 'ok',
-            text: `${action === 'fix_pr' ? 'Claude opened a fix PR' : 'Revert PR opened'}. CI is proving it against the failing requests.`,
+            text: `${action === 'fix_pr' ? 'The AI opened a fix PR' : 'Revert PR opened'}. CI is proving it against the failing requests.`,
             link: { label: 'Open PR', url: res.detail },
           }
           : action === 'merge_pr'
@@ -339,7 +339,7 @@ export default function App() {
     setBanner({
       kind: 'warn',
       text: cost
-        ? `${inc.target_server} is down (${cost}) and your free outage is used. Pro is $4.99/month.`
+        ? `${inc.target_server} is down (${cost}) and your free outage is used. Try Pro free for 7 days.`
         : `${inc.target_server} is down and your free outage is used. Pro fixes it now.`,
     });
     try {
@@ -418,7 +418,7 @@ export default function App() {
     ? 'Your first outage is on us: every fix until it is over. Pro covers every outage after.'
     : freeNow
     ? 'This outage is on us, start to finish. Pro covers every outage after.'
-    : 'Your free outage is used. Pro fixes every outage after, for $4.99 a month.';
+    : 'Your free outage is used. Pro fixes every outage after this one; try it free for 7 days.';
 
   // Deletes the account on the server, then clears this phone the same way sign-out does.
   const deleteAccount = async () => {
@@ -545,7 +545,7 @@ export default function App() {
                         <Plug size={32} color={c.green} weight="bold" />
                         <Text style={type.body}>Connect your first service</Text>
                         <Text style={[type.caption, { textAlign: 'center' }]}>
-                          Add a Render service or a GCP VM. OpsSwipe watches it and pages you when it breaks.
+                          Add a Render or Railway service, or a Google Cloud VM. OpsSwipe watches it and pages you when it breaks.
                         </Text>
                         <Button label="Connect a service" icon={Plug} onPress={() => setTab('services')} />
                         <Button label="Try a sample incident" icon={Hand} kind="secondary" onPress={trySample} />

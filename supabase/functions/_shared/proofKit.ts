@@ -88,17 +88,21 @@ jobs:
       START_COMMAND: npm start
       PORT: '3000'
       OPSSWIPE_PROOF_URL: ${proofUrl}
+      SANDBOX: env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: $INSTALL_COMMAND
+      # The PR's own code (install scripts, tests, the app) runs without the variables that mint the OIDC
+      # token, so it can't sign a proof itself; only the last step, OpsSwipe's own script, can.
+      # ponytail: a process of the same OS user could still read the runner's memory; isolate further if needed.
+      - run: $SANDBOX $INSTALL_COMMAND
       - name: Tests
         id: tests
-        run: if $TEST_COMMAND; then echo "passed=true" >> "$GITHUB_OUTPUT"; else echo "passed=false" >> "$GITHUB_OUTPUT"; fi
+        run: if $SANDBOX $TEST_COMMAND; then echo "passed=true" >> "$GITHUB_OUTPUT"; else echo "passed=false" >> "$GITHUB_OUTPUT"; fi
       - name: Start this PR's build
         run: |
-          $START_COMMAND &
+          $SANDBOX $START_COMMAND &
           for i in $(seq 60); do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 1; done
       - name: Replay production failures and report
         env:

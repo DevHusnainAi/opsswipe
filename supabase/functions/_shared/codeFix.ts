@@ -72,6 +72,7 @@ export async function aiFixPr(
   inc: Incident,
   token: string,
   patcher: Patcher | undefined,
+  prepared = false, // opened automatically when the incident opened, before anyone approved anything
 ): Promise<Outcome> {
   if (!patcher) throw new Error('AI fixes are not switched on for this server');
   const branch = t.branch ?? 'main';
@@ -94,7 +95,9 @@ export async function aiFixPr(
     branchName: `opsswipe/fix-${short}-${Date.now().toString(36)}`,
     title: `Fix ${inc.title.toLowerCase()} after ${short}`,
     body: [
-      'Written by Claude and opened by OpsSwipe after the on-call engineer approved it with biometrics.',
+      prepared
+        ? 'Written by AI and opened by OpsSwipe automatically when the outage began. Nothing is merged until the on-call engineer approves it with their fingerprint.'
+        : 'Written by AI and opened by OpsSwipe after the on-call engineer approved it with their fingerprint.',
       '',
       `**Incident:** ${inc.title} on \`${inc.target_server}\``,
       `**Symptom:** ${inc.metric}`,

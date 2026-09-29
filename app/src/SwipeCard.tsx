@@ -172,7 +172,7 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline, o
                   {incident.suggested_by === 'agent'
                     ? `  ${incident.context?.agent?.name ?? 'AI agent'}`
                     : incident.suggested_by === 'ai'
-                    ? '  Claude'
+                    ? '  Rules + AI'
                     : '  Rules'}
                 </Text>
               </Text>

@@ -356,7 +356,8 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       const now = new Date().toISOString(); // recovered_at too: no "back up" push for a false alarm
       const { data } = await db.from('incidents').update({ status: 'resolved', resolved_at: now, recovered_at: now })
         .eq('id', String(p.incidentId ?? '')).in('owner', await ownersFor(owner)).eq('status', 'active')
-        .select('id, target_server').maybeSingle();
+        .select('id, target_server, context').maybeSingle();
+      if (data) await db.from('incidents').update({ context: { ...data.context, dismissed: true } }).eq('id', data.id);
       need(data, 'That incident is no longer open.');
       await db.from('audit_log').insert({
         incident_id: data!.id,
@@ -385,6 +386,8 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       need(inc, 'No such incident.');
       const ctx = inc!.context ?? {};
       if (ctx.postmortem) return { postmortem: ctx.postmortem };
+      // Not outages: a false alarm, a declined agent proposal, an agent's own command.
+      need(inc!.service_id && !ctx.dismissed && !ctx.declined, 'No postmortem: this was not an outage.');
       need(inc!.status === 'resolved', 'The postmortem is written once the incident is resolved.');
       const llm = aiLlm();
       need(llm, 'AI is switched off on this server, so there is no postmortem.');
@@ -522,6 +525,9 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         .gt('created_at', new Date(Date.now() - 7 * 86_400_000).toISOString()).select('owner').maybeSingle();
       need(invite, 'That code is not valid any more. Ask for a new one.');
       need(invite!.owner !== owner, 'That is your own invite code.');
+      const { count } = await db.from('team_members').select('member', { count: 'exact', head: true })
+        .eq('owner', invite!.owner);
+      need((count ?? 0) < 10, 'That team is full (10 people). Ask the owner to make room.');
       await db.from('team_members').upsert({ owner: invite!.owner, member: owner });
       return { joined: true };
     }

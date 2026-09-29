@@ -144,7 +144,10 @@ export async function openIncident(
 
   // Opt-in (Pro): the AI fix is written, opened as a PR and proven by CI before anyone looks, so the
   // page can say "a fix is ready". Nothing reaches production: merging still needs a swipe.
-  if (inc && actions.includes('fix_pr') && s.config.autofix) EdgeRuntime.waitUntil(prepareFix(s, inc.id));
+  // Only when a release is known to have broken it: a stopped VM or a network blip isn't a code bug.
+  if (inc && actions.includes('fix_pr') && s.config.autofix && deploys.live?.commit?.id) {
+    EdgeRuntime.waitUntil(prepareFix(s, inc.id));
+  }
 
   const ai = aiSuggester();
   if (inc && ai) {
@@ -171,7 +174,7 @@ async function prepareFix(s: Service, id: string) {
     if (!inc) return;
     const token = await githubToken(s.owner);
     const t = toTarget(s);
-    const { pr, detail } = await aiFixPr(t, await badCommit(s, t, inc, token), inc, token, patcher);
+    const { pr, detail } = await aiFixPr(t, await badCommit(s, t, inc, token), inc, token, patcher, true);
     const { data: now } = await db.from('incidents').select().eq('id', id).maybeSingle<Incident>();
     if (!now || now.status !== 'active' || now.context.pr) return; // the engineer got there first
     const next = afterFix('fix_pr', now, { pr });
@@ -286,7 +289,8 @@ const formatDuration = (ms: number) => {
 // Nobody answered in 5 minutes: page everyone on the owner's team (their phones and their Slack/Discord).
 export async function escalate(now = Date.now()) {
   const { data: open } = await db.from('incidents').select('id, owner, target_server, created_at, status, context')
-    .eq('status', 'active').lt('created_at', new Date(now - ESCALATE_AFTER_MS).toISOString());
+    .eq('status', 'active').lt('created_at', new Date(now - ESCALATE_AFTER_MS).toISOString())
+    .is('context->>escalated_at', null);
   for (const inc of open ?? []) {
     const { count } = await db.from('audit_log').select('id', { count: 'exact', head: true }).eq('incident_id', inc.id);
     if (!needsEscalation(inc, count ?? 0, now)) continue;

@@ -48,7 +48,8 @@ export function IncidentDetail(
   }, [i.id, prNumber]);
   // Written once by the server after the incident resolves, then kept on the incident.
   const [pm, setPm] = useState<{ why: string; prevent: string[] } | string | null>(null);
-  const resolved = i.status === 'resolved' && !ctx.self_healed;
+  // Only real outages get a postmortem: not a false alarm, a declined proposal or an agent's own command.
+  const resolved = i.status === 'resolved' && !!i.provider && !ctx.self_healed && !ctx.dismissed && !ctx.declined;
   useEffect(() => {
     if (!resolved) return;
     connect<{ postmortem: { why: string; prevent: string[] } }>('postmortem', { incidentId: i.id })
