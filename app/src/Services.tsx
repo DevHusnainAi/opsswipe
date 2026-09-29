@@ -113,8 +113,13 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
 
   const installProof = (s: Service) =>
     run(`proof-${s.id}`, async () => {
-      const r = await connect<{ prUrl: string }>('install_proof', { serviceId: s.id });
-      setNotice({ text: 'Proof workflow PR opened. Check its commands, then merge it.', url: r.prUrl });
+      const r = await connect<{ prUrl: string; installed?: boolean }>('install_proof', { serviceId: s.id });
+      setNotice({
+        text: r.installed
+          ? 'Proof is already on: your repo has the workflow, so every PR replays your production failures.'
+          : 'Proof workflow PR opened. Check its commands, then merge it.',
+        url: r.prUrl,
+      });
       await load();
     });
 
@@ -285,7 +290,13 @@ export function Services({ active, openAdd = 0 }: { active: boolean; openAdd?: n
                     <View style={styles.actions}>
                       {s.config.repo && status.github.connected && (
                         <Button
-                          label={busy === `proof-${s.id}` ? 'Opening PR…' : s.config.proofPr ? 'Proof PR' : 'Add proof to repo'}
+                          label={
+                            busy === `proof-${s.id}`
+                              ? 'Opening PR…'
+                              : s.config.proofPr
+                              ? s.config.proofPr.includes('/actions/') ? 'Proof workflow' : 'Proof PR'
+                              : 'Add proof to repo'
+                          }
                           kind="secondary"
                           onPress={() => (s.config.proofPr ? Linking.openURL(s.config.proofPr) : installProof(s))}
                           style={{ flex: 1 }}
