@@ -9,7 +9,8 @@ export type RailwayTarget =
   & { provider: 'railway'; projectId: string; serviceId: string; environmentId: string; url: string }
   & Linked;
 export type Target = GcpTarget | RenderTarget | RailwayTarget;
-export type Action = 'reset' | 'restart' | 'rollback' | 'revert_pr' | 'fix_pr' | 'merge_pr';
+// 'approve': an AI agent's own command, approved by the human; OpsSwipe runs nothing.
+export type Action = 'reset' | 'restart' | 'rollback' | 'revert_pr' | 'fix_pr' | 'merge_pr' | 'approve';
 
 export const CODE_FIXES: Action[] = ['revert_pr', 'fix_pr'];
 

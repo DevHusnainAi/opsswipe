@@ -1,10 +1,11 @@
 // Approval API for AI agents.
 //   POST /agent  {"service":"web","action":"restart","reason":"...","symptom":"..."}  -> 201 {id,status}
+//   POST /agent  {"command":"git push --force origin main","reason":"...","title":"..."}  -> 201 {id,status}
 //   GET  /agent?id=<proposal id>                                                     -> {status, detail?, pr?}
 // Authorization: Bearer ops_... (created in the app: Settings -> Agent access). The proposal becomes
 // an incident card on the owner's phone, marked with the agent's name; nothing runs until they
 // approve it with a swipe and biometrics (or decline it).
-import { hashToken, parseProposal, proposalStatus } from '../_shared/agents.ts';
+import { hashToken, parseApproval, parseProposal, proposalStatus } from '../_shared/agents.ts';
 import { db, json } from '../_shared/db.ts';
 import { notify, type Service, toTarget } from '../_shared/services.ts';
 import { actionsFor } from '../_shared/targets.ts';
@@ -31,9 +32,34 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== 'POST') return json(405, { error: 'GET or POST' });
+  const body = await req.json().catch(() => null);
+
+  // A command the agent wants to run itself: no service, nothing for OpsSwipe to execute.
+  if (body && typeof body === 'object' && 'command' in body) {
+    const a = parseApproval(body);
+    if (typeof a === 'string') return json(400, { error: a });
+    const { data: inc } = await db.from('incidents').insert({
+      title: a.title,
+      owner: agent.owner,
+      target_server: agent.name,
+      metric: a.command,
+      actions: ['approve'],
+      action: 'approve',
+      reason: a.reason,
+      suggested_by: 'agent',
+      context: { agent: { name: agent.name }, command: a.command },
+    }).select('id').single();
+    await notify(agent.owner, {
+      title: `${agent.name} asks to run a command`,
+      body: a.reason,
+      data: { incidentId: inc!.id },
+    });
+    return json(201, { id: inc!.id, status: 'pending' });
+  }
+
   const { data: services } = await db.from('services').select().eq('owner', agent.owner);
   const byName = new Map(((services ?? []) as Service[]).map((s) => [s.name, s]));
-  const p = parseProposal(await req.json().catch(() => null), (name) => {
+  const p = parseProposal(body, (name) => {
     const s = byName.get(name);
     return s ? actionsFor(toTarget(s)) : null;
   });

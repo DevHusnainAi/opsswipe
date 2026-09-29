@@ -1,5 +1,5 @@
 import { assert, assertEquals } from 'jsr:@std/assert@1';
-import { hashToken, newToken, parseProposal, proposalStatus } from '../_shared/agents.ts';
+import { hashToken, newToken, parseApproval, parseProposal, proposalStatus } from '../_shared/agents.ts';
 import type { Action } from '../_shared/targets.ts';
 
 const allowed = (name: string): Action[] | null =>
@@ -44,4 +44,25 @@ Deno.test('proposal status tells the agent what the human did', () => {
     pr: undefined,
   });
   assertEquals(proposalStatus({ status: 'resolved', context: { declined: true } }, null), { status: 'declined' });
+});
+
+Deno.test('a command approval needs the command and a reason the human can read', () => {
+  assertEquals(
+    parseApproval({ command: ' git push --force origin main ', reason: 'Rewrite the leaked key out of history' }),
+    {
+      command: 'git push --force origin main',
+      reason: 'Rewrite the leaked key out of history',
+      title: 'Wants to run a command',
+    },
+  );
+  assertEquals(
+    (parseApproval({ command: 'x', reason: 'y', title: 'Drop the old table' }) as { title: string }).title,
+    'Drop the old table',
+  );
+  assertEquals(parseApproval({ reason: 'y' }), 'command is required (up to 500 characters)');
+  assertEquals(parseApproval({ command: 'x'.repeat(501), reason: 'y' }), 'command is required (up to 500 characters)');
+  assertEquals(
+    parseApproval({ command: 'rm -rf build' }),
+    'reason is required (up to 300 characters): the human reads it before approving',
+  );
 });

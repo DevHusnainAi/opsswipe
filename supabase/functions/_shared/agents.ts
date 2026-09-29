@@ -49,3 +49,19 @@ export function proposalStatus(inc: Inc, latest: Audit | null) {
   }
   return { status: inc.status === 'resolving' ? ('running' as const) : ('pending' as const) };
 }
+
+// Any risky action the agent will run itself (a force-push, a migration, `terraform apply`): OpsSwipe
+// runs nothing, it only asks the human and answers the agent. The command is shown verbatim on the card.
+export type Approval = { command: string; reason: string; title: string };
+
+export function parseApproval(raw: unknown): Approval | string {
+  const b = (raw ?? {}) as Record<string, unknown>;
+  const command = typeof b.command === 'string' ? b.command.trim() : '';
+  if (!command || command.length > 500) return 'command is required (up to 500 characters)';
+  const reason = typeof b.reason === 'string' ? b.reason.trim() : '';
+  if (!reason || reason.length > 300) {
+    return 'reason is required (up to 300 characters): the human reads it before approving';
+  }
+  const title = typeof b.title === 'string' && b.title.trim() ? b.title.trim().slice(0, 80) : 'Wants to run a command';
+  return { command, reason, title };
+}

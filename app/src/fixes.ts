@@ -1,6 +1,6 @@
 // Display metadata for each allowlisted fix. The server decides what's allowed; this only words it.
 import type { Icon } from 'phosphor-react-native';
-import { ArrowClockwise, ArrowCounterClockwise, GitMerge, GitPullRequest, MagicWand, Power, X } from 'phosphor-react-native';
+import { ArrowClockwise, ArrowCounterClockwise, GitMerge, GitPullRequest, MagicWand, Power, ShieldCheck, X } from 'phosphor-react-native';
 
 export type Fix = {
   label: string; // picker chip
@@ -60,6 +60,15 @@ export const FIXES: Record<string, Fix> = {
     doing: 'Merging the proven PR for',
     confirm: 'Merges the exact commit CI proved. Your host then deploys it.',
     icon: GitMerge,
+  },
+  // An AI agent's own command (shown verbatim on the card): the agent runs it once you approve.
+  approve: {
+    label: 'Approve',
+    rail: 'Swipe to approve',
+    verb: 'Approve the command from',
+    doing: 'Approving the command from',
+    confirm: 'The agent runs it after you approve. OpsSwipe itself runs nothing.',
+    icon: ShieldCheck,
   },
   // Not a fix: closing a false alarm. Listed so Activity can name it.
   dismiss: {

@@ -75,8 +75,12 @@ Deno.serve(async (req) => {
       detail,
     });
 
-  const service = inc.service_id ? await getService(inc.service_id) : null;
-  if (!service || !actionsFor(toTarget(service)).includes(action) || !inc.actions.includes(action)) {
+  // An agent's own command: the human's approval is the whole action; OpsSwipe runs nothing.
+  const approval = action === 'approve' && inc.suggested_by === 'agent' && inc.actions.includes('approve');
+  const service = !approval && inc.service_id ? await getService(inc.service_id) : null;
+  if (
+    !approval && (!service || !actionsFor(toTarget(service)).includes(action) || !inc.actions.includes(action))
+  ) {
     await release();
     await audit('failed', 'fix not allowed for this target');
     return json(403, { error: 'fix not allowed' });
@@ -100,7 +104,7 @@ Deno.serve(async (req) => {
       }
       usedFreeRun = true;
     }
-    outcome = await runAction(service, action, inc);
+    outcome = approval ? { detail: 'approved' } : await runAction(service!, action, inc);
   } catch (e) {
     await release();
     if (usedFreeRun) await db.rpc('refund_free_run', { uid: user.id, incident: inc.id });
