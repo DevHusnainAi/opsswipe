@@ -76,6 +76,7 @@ export type Service = {
 };
 export type RenderOption = { id: string; name: string; url: string; repo?: string };
 export type ConnectStatus = {
+  statusPage: string | null; // public status page link, when turned on
   github: { connected: boolean; account: string | null; installUrl: string };
   render: { connected: boolean };
   railway: { connected: boolean };

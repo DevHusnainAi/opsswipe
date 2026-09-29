@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status</title>
+<meta name="description" content="Live status and uptime, updated automatically by OpsSwipe.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* One static page for every OpsSwipe account: ?s=<slug> picks whose. Data: /functions/v1/status. */
+  :root {
+    --bg: #fafafa; --surface: #ffffff; --text: #0a0a0a; --muted: #6b6b73; --border: #e4e4e7;
+    --up: #10b981; --down: #ef4444; --warn: #f59e0b; --none: #e4e4e7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0a0a0a; --surface: #131315; --text: #ededed; --muted: #a1a1aa; --border: #27272a;
+      --up: #10b981; --down: #f87171; --warn: #fbbf24; --none: #27272a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 Geist, system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 24px; letter-spacing: -0.01em; }
+  .banner { display: flex; gap: 12px; align-items: center; padding: 16px 20px; border-radius: 14px;
+    font-weight: 600; font-size: 16px; background: color-mix(in srgb, var(--up) 12%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--up) 40%, transparent); }
+  .banner.down { background: color-mix(in srgb, var(--down) 12%, var(--surface));
+    border-color: color-mix(in srgb, var(--down) 40%, transparent); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--up); flex: none; }
+  .down .dot, .dot.down { background: var(--down); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; margin-top: 16px; }
+  .svc { padding: 16px 20px; border-top: 1px solid var(--border); }
+  .svc:first-child { border-top: 0; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .name { display: flex; align-items: center; gap: 10px; font-weight: 500; font-family: 'Geist Mono', monospace; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .bars { display: grid; grid-template-columns: repeat(90, 1fr); gap: 2px; height: 32px; margin: 12px 0 6px; }
+  .bars i { border-radius: 2px; background: var(--up); }
+  .bars i.warn { background: var(--warn); } .bars i.bad { background: var(--down); }
+  .scale { display: flex; justify-content: space-between; }
+  h2 { font-size: 15px; font-weight: 600; margin: 32px 0 8px; }
+  .inc { padding: 14px 20px; border-top: 1px solid var(--border); }
+  .inc:first-child { border-top: 0; }
+  footer { margin-top: 40px; text-align: center; }
+  a { color: inherit; }
+  @media (max-width: 480px) { .bars { gap: 1px; height: 28px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Status</h1>
+  <div id="banner" class="banner"><span class="dot"></span><span id="headline">Loading…</span></div>
+  <div id="services" class="card"></div>
+  <h2>Past incidents</h2>
+  <div id="incidents" class="card"></div>
+  <footer class="muted">
+    <span id="updated"></span> · Updated automatically by <a href="https://github.com/DevHusnainAi/opsswipe">OpsSwipe</a>
+  </footer>
+</main>
+<script>
+  const API = 'https://mwkwhfqcgxossweqwibt.supabase.co/functions/v1/status';
+  const slug = new URLSearchParams(location.search).get('s') || '';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const when = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const mins = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`);
+  const dayLabel = (i) => new Date(Date.now() - (89 - i) * 864e5).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+  async function load() {
+    try {
+      const res = await fetch(`${API}?s=${encodeURIComponent(slug)}`);
+      if (!res.ok) throw new Error(res.status === 404 ? 'This status page does not exist.' : 'Status is unavailable right now.');
+      render(await res.json());
+    } catch (e) {
+      $('headline').textContent = e.message;
+      $('banner').className = 'banner down';
+    }
+  }
+
+  function render(d) {
+    const down = d.services.filter((s) => !s.up);
+    $('banner').className = down.length ? 'banner down' : 'banner';
+    $('headline').textContent = !d.services.length ? 'No services yet'
+      : down.length ? `${down.map((s) => s.name).join(', ')} ${down.length === 1 ? 'is' : 'are'} down. A fix is in progress.`
+      : 'All systems operational';
+    $('services').innerHTML = d.services.map((s) => `
+      <div class="svc">
+        <div class="row">
+          <span class="name"><span class="dot ${s.up ? '' : 'down'}"></span>${esc(s.name)}</span>
+          <span class="muted">${s.uptime.toFixed(2)}% uptime</span>
+        </div>
+        <div class="bars">${s.days.map((m, i) => `<i class="${m > 30 ? 'bad' : m > 0 ? 'warn' : ''}" title="${dayLabel(i)}: ${m ? mins(m) + ' down' : 'no downtime'}"></i>`).join('')}</div>
+        <div class="scale muted"><span>90 days ago</span><span>Today</span></div>
+      </div>`).join('');
+    $('incidents').innerHTML = d.incidents.length ? d.incidents.map((i) => `
+      <div class="inc">
+        <div class="row"><strong>${esc(i.service)}: ${esc(i.title)}</strong><span class="muted">${i.ongoing ? 'Ongoing' : mins(i.minutes)}</span></div>
+        <div class="muted">${when(i.started)}</div>
+      </div>`).join('') : '<div class="inc muted">No incidents in the last 90 days.</div>';
+    $('updated').textContent = `Checked ${new Date(d.updated).toLocaleTimeString()}`;
+  }
+
+  load();
+  setInterval(load, 60_000);
+</script>
+</body>
+</html>

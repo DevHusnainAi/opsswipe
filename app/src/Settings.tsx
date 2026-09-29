@@ -5,6 +5,7 @@ import {
   ArrowCounterClockwise,
   ArrowSquareOut,
   Bell,
+  Broadcast,
   ChatCircleText,
   BellSlash,
   CreditCard,
@@ -12,6 +13,7 @@ import {
   Crown,
   GithubLogo,
   Info,
+  ShareNetwork,
   ShieldCheck,
   SignOut,
   SlackLogo,
@@ -52,13 +54,16 @@ export function Settings(p: Props) {
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [channel, setChannel] = useState<ConnectStatus['alerts'] | null>(null);
+  const [statusPage, setStatusPage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const user = (await supabase.auth.getUser()).data.user;
     // GitHub accounts show @username; email accounts show the address.
     setLogin(user?.user_metadata?.user_name ? `@${user.user_metadata.user_name}` : (user?.email ?? null));
     setAlerts(Notifications ? ((await Notifications.getPermissionsAsync()).granted ? 'on' : 'off') : 'unavailable');
-    setChannel((await connect<ConnectStatus>('status')).alerts);
+    const st = await connect<ConnectStatus>('status');
+    setChannel(st.alerts);
+    setStatusPage(st.statusPage);
   }, []);
 
   useEffect(() => {
@@ -254,6 +259,39 @@ export function Settings(p: Props) {
       )}
 
       <AgentAccess active={p.active} />
+
+      {/* Free, with "Updated automatically by OpsSwipe" on the page: every customer's customers see it. */}
+      <Section title="Status page">
+        <View style={styles.group}>
+          <Row
+            icon={Broadcast}
+            tint={statusPage ? c.green : undefined}
+            title={statusPage ? 'Your public status page is live' : 'Public status page'}
+            body={statusPage
+              ? 'Uptime and incidents update themselves. Shows service names only, never errors or paths.'
+              : 'Give your users one link that says whether you are up, with 90 days of uptime.'}
+          />
+          {statusPage ? (
+            <>
+              <Action icon={ArrowSquareOut} label="Open status page" primary onPress={() => Linking.openURL(statusPage)} />
+              <Action icon={ShareNetwork} label="Share the link" onPress={() => void Share.share({ message: statusPage })} />
+              <Action
+                icon={Trash}
+                label={busy === 'status' ? 'Turning off…' : 'Turn off'}
+                danger
+                onPress={() => run('status', async () => void (await connect('status_page', { on: false })))}
+              />
+            </>
+          ) : (
+            <Action
+              icon={Broadcast}
+              label={busy === 'status' ? 'Creating…' : 'Create status page'}
+              primary
+              onPress={() => run('status', async () => void (await connect('status_page', { on: true })))}
+            />
+          )}
+        </View>
+      </Section>
 
       <Section title="About">
         <View style={styles.group}>

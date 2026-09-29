@@ -33,6 +33,10 @@ import {
 } from '../_shared/services.ts';
 import { validateTarget } from '../_shared/targets.ts';
 
+// The page is static HTML (status-page/index.html) hosted where HTML is allowed; it reads /status.
+const statusPageUrl = (slug: string) =>
+  `${env('STATUS_PAGE_URL') || 'https://devhusnainai.github.io/opsswipe-status/'}?s=${slug}`;
+
 const functionUrl = (name: string) => `${env('SUPABASE_URL')}/functions/v1/${name}`;
 const randomSecret = () =>
   Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -100,6 +104,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         connection(owner, 'alerts'),
         connection(owner, 'revenuecat'),
       ]);
+      const { data: page } = await db.from('status_pages').select('slug').eq('owner', owner).maybeSingle();
       // The install link with a one-time state comes from github_start; this is the plain one.
       return {
         github: {
@@ -107,6 +112,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
           account: gh?.account ?? null,
           installUrl: installUrl(),
         },
+        statusPage: page ? statusPageUrl(page.slug) : null,
         render: { connected: !!rd?.secret_id },
         railway: { connected: !!rw?.secret_id },
         alerts: {
@@ -475,6 +481,20 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       }
       await db.from('services').update({ config }).eq('id', s!.id);
       return { config };
+    }
+
+    // Public status page: an unguessable link that shows service names, up/down and uptime only.
+    case 'status_page': {
+      if (!p.on) {
+        await db.from('status_pages').delete().eq('owner', owner);
+        return { statusPage: null };
+      }
+      const { data: had } = await db.from('status_pages').select('slug').eq('owner', owner).maybeSingle();
+      const slug = had?.slug ??
+        Array.from(crypto.getRandomValues(new Uint8Array(10)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32])
+          .join('');
+      if (!had) await db.from('status_pages').insert({ owner, slug });
+      return { statusPage: statusPageUrl(slug) };
     }
 
     // Pro: when an incident opens, write the AI fix and let CI prove it before the engineer looks.
