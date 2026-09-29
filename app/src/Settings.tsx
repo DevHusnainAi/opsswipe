@@ -94,7 +94,14 @@ export function Settings(p: Props) {
     run(kind, async () => {
       const { url } = await connect<{ url: string }>('alerts_start', { kind, returnTo: appBase });
       const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
-      if (r.type === 'success' && paramsOf(r.url).error) throw new Error(`${kind === 'slack' ? 'Slack' : 'Discord'} did not finish. Try again.`);
+      const name = kind === 'slack' ? 'Slack' : 'Discord';
+      if (r.type === 'success' && paramsOf(r.url).error) throw new Error(`${name} did not finish. Try again.`);
+      // Signing in on a phone often ends on the provider's "get the app" page and drops the request.
+      // The browser is signed in by then, so a second tap goes straight to the channel picker.
+      const now = (await connect<ConnectStatus>('status')).alerts;
+      if (!now.connected) {
+        return `Not connected yet. If ${name} asked you to sign in, you're signed in now: tap Add to ${name} again and pick a channel.`;
+      }
     });
 
   const version = Constants.expoConfig?.version ?? '1.0.0';
