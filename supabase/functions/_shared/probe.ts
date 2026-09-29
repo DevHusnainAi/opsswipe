@@ -4,12 +4,12 @@ import { resolvesPublic } from './netguard.ts';
 
 export type Probe = { status: string; ms: number }; // "200", "503", or an error name like "TimeoutError"
 
-export async function probe(url: string): Promise<Probe> {
+export async function probe(url: string, method = 'GET'): Promise<Probe> {
   const t0 = Date.now();
   // Never probe inside a network (netguard.ts), and don't follow redirects there either: a redirect
   // is an answer (3xx), not something to chase.
   if (!(await resolvesPublic(url))) return { status: 'BlockedAddress', ms: 0 };
-  const status = await fetch(url, { signal: AbortSignal.timeout(4000), redirect: 'manual' }).then(
+  const status = await fetch(url, { method, signal: AbortSignal.timeout(4000), redirect: 'manual' }).then(
     async (r) => (await r.body?.cancel(), String(r.status)),
     (e) => e.name,
   );

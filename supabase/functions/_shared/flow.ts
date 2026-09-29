@@ -114,3 +114,21 @@ export const needsEscalation = (
 export const STALE_CLAIM_MS = 5 * 60_000;
 export const staleClaim = (claimedAt: string | null | undefined, now = Date.now()) =>
   !claimedAt || now - Date.parse(claimedAt) >= STALE_CLAIM_MS;
+
+// "Back up" means the requests that failed now work, not just that the health URL answers: after a merge
+// the homepage can be fine while /api/price still fails (the deploy never ran). Only GET and HEAD are
+// re-checked against production, the same kind of request the health check already makes; anything
+// else is never replayed there, and those incidents fall back to the health URL.
+export function recoveryChecks(replay: { method: string; path: string }[] | undefined, serviceUrl: string) {
+  const origin = new URL(serviceUrl).origin;
+  const urls = (replay ?? []).filter((s) => s.method === 'GET' || s.method === 'HEAD')
+    .map((s) => ({ method: s.method, url: new URL(s.path, origin).toString() }))
+    .filter((s) => new URL(s.url).origin === origin); // a sample path can never point the check elsewhere
+  return urls.filter((u, i) => urls.findIndex((v) => v.url === u.url && v.method === u.method) === i).slice(0, 3);
+}
+
+// A fix that didn't take: still failing this long after it ran, the card comes back (once) with the
+// production fixes, instead of a "back up" that never arrives.
+export const STILL_FAILING_MS = 10 * 60_000;
+export const stillFailing = (resolvedAt: string, warned: boolean, now = Date.now()) =>
+  !warned && now - Date.parse(resolvedAt) >= STILL_FAILING_MS;

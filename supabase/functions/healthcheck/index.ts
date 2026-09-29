@@ -21,7 +21,7 @@ async function check(s: Service) {
   const p = await confirmedProbe(s.config.url);
   const { status, ms } = p;
   if (isUp(p)) {
-    await markRecovered(s.id);
+    await markRecovered(s);
     await closeSelfHealed(s.id);
     return { service: s.id, up: true, ms };
   }

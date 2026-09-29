@@ -107,7 +107,9 @@ new functions. `agent/` is the Approval API: agents with a hashed `ops_` token p
 - Few dependencies by design: JWTs are signed with WebCrypto (`_shared/jwt.ts`), GitHub/Render/GCP/Expo push are plain `fetch`.
   The only SDK is Anthropic's. Don't add libraries for things a few lines of `fetch`/WebCrypto do.
 - Edge Functions import with inline `npm:`/`jsr:` specifiers (hence `no-import-prefix` is disabled in `deno.json`).
-- Never trust the client for what to run; never replay requests against production (CI only).
+- Never trust the client for what to run; never replay requests against production (CI only). The one exception is
+  recovery: an incident's failing GET/HEAD requests are re-checked against the service (like the health check) before
+  "back up" (`flow.ts recoveryChecks`); a fix still failing after 10 minutes brings the card back.
 - `incidents.context` updates merge in the database (trigger): send only the keys you change.
 - Service URLs must be public (`_shared/netguard.ts`); probes re-check after DNS.
 - `ponytail:` comments mark deliberate simplifications and name their ceiling.

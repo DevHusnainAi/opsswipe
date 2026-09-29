@@ -1,5 +1,14 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { afterFix, afterProof, confirmsReport, needsEscalation, selfHealed, staleClaim } from '../_shared/flow.ts';
+import {
+  afterFix,
+  afterProof,
+  confirmsReport,
+  needsEscalation,
+  recoveryChecks,
+  selfHealed,
+  staleClaim,
+  stillFailing,
+} from '../_shared/flow.ts';
 import type { PrRef } from '../_shared/proof.ts';
 
 const now = new Date('2026-09-28T10:00:00Z');
@@ -127,4 +136,23 @@ Deno.test('a fix still running after 5 minutes is handed back', () => {
   assertEquals(staleClaim('2026-09-29T03:00:00Z', t0 + 4 * 60_000), false, 'a slow fix is left alone');
   assertEquals(staleClaim('2026-09-29T03:00:00Z', t0 + 5 * 60_000), true);
   assertEquals(staleClaim(null, t0), true, 'claimed before claimed_at existed');
+});
+
+Deno.test('back up means the failing requests work: GETs re-checked on the service, nothing else', () => {
+  const replay = [
+    { method: 'GET', path: '/api/price' },
+    { method: 'POST', path: '/checkout' }, // never replayed against production
+    { method: 'GET', path: '/api/price' }, // once
+    { method: 'GET', path: '//evil.test/x' }, // can't point the check at another host
+  ];
+  assertEquals(recoveryChecks(replay, 'http://34.1.2.3/health'), [{ method: 'GET', url: 'http://34.1.2.3/api/price' }]);
+  assertEquals(recoveryChecks([{ method: 'POST', path: '/checkout' }], 'https://a.example.com/'), []);
+  assertEquals(recoveryChecks(undefined, 'https://a.example.com/'), []);
+});
+
+Deno.test('a fix still failing 10 minutes later brings the card back, once', () => {
+  const t0 = Date.parse('2026-09-29T19:00:00Z');
+  assertEquals(stillFailing('2026-09-29T19:00:00Z', false, t0 + 9 * 60_000), false);
+  assertEquals(stillFailing('2026-09-29T19:00:00Z', false, t0 + 10 * 60_000), true);
+  assertEquals(stillFailing('2026-09-29T19:00:00Z', true, t0 + 30 * 60_000), false, 'only once');
 });

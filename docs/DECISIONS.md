@@ -236,3 +236,11 @@ An outside line-by-line audit found 28 issues. Each fix went where the cause was
   each other's keys. Caps (team size) live in the database.
 - **Reports can be checked.** Each service shows when a signed report last arrived, the secret can be re-issued, and a
   test report checks the whole path: the live demo lost an hour to a VM holding an old secret.
+
+## 35. "Back up" means the failing requests work
+In rehearsal a revert was proven and merged, but GitHub never sent the push event for the merge, so the deploy never
+ran; the homepage (the health URL) was fine throughout, and OpsSwipe said "back up" while `/api/price` still failed.
+Recovery now re-checks the incident's own failing requests against the service, GET and HEAD only (the same kind of
+request the health check makes; nothing that could change data is ever sent to production). A fix still failing 10
+minutes later brings the card back once, with the production fixes ("Merged, but production still fails GET
+/api/price: the deploy may not have run. Reboot to load the new code").

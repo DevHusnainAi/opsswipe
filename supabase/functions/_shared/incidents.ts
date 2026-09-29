@@ -16,7 +16,17 @@ import {
   toTarget,
 } from './services.ts';
 import { aiFixPr, badCommit, type Incident, isPro } from './codeFix.ts';
-import { afterFix, confirmsReport, ESCALATE_AFTER_MS, needsEscalation, selfHealed, staleClaim } from './flow.ts';
+import {
+  afterFix,
+  confirmsReport,
+  ESCALATE_AFTER_MS,
+  needsEscalation,
+  recoveryChecks,
+  selfHealed,
+  staleClaim,
+  stillFailing,
+} from './flow.ts';
+import { probe } from './probe.ts';
 import { money, type Revenue, revenuePerHour } from './revenue.ts';
 import { nvidiaLlm, openaiLlm, withFallback } from './llm.ts';
 import { llmPatcher, type Patcher, vertexPatcher } from './patch.ts';
@@ -266,17 +276,55 @@ export async function closeSelfHealed(serviceId: string) {
 }
 
 // The owner hears about it even with the app closed: the payoff of the swipe.
-export async function markRecovered(serviceId: string) {
-  const now = new Date().toISOString();
-  const { data } = await db.from('incidents').update({ recovered_at: now })
-    .eq('service_id', serviceId).eq('status', 'resolved').is('recovered_at', null)
-    .select('id, owner, target_server, created_at');
+// The service answers again: each fixed incident is "back up" once its own failing requests work too
+// (recoveryChecks). One whose fix didn't take (merged, but the deploy never ran) comes back as a card after
+// STILL_FAILING_MS, with the production fixes, instead of waiting for a "back up" that never comes.
+export async function markRecovered(s: Service, now = Date.now()) {
+  const { data } = await db.from('incidents').select('id, owner, target_server, created_at, resolved_at, context')
+    .eq('service_id', s.id).eq('status', 'resolved').is('recovered_at', null);
   for (const i of data ?? []) {
-    await notify(i.owner, {
-      title: `${i.target_server} is back up`,
-      body: `Down ${formatDuration(Date.parse(now) - Date.parse(i.created_at))}. Healthy again after your fix.`,
-      data: { incidentId: i.id },
-    });
+    if (i.context?.self_healed || i.context?.dismissed || i.context?.declined) continue;
+    const checks = recoveryChecks(i.context?.replay, s.config.url);
+    const failing = [];
+    for (const c of checks) {
+      const p = await probe(c.url, c.method);
+      if (!/^2\d\d$/.test(p.status)) failing.push({ ...c, status: p.status });
+    }
+    if (failing.length === 0) {
+      const at = new Date(now).toISOString();
+      const { data: stamped } = await db.from('incidents').update({ recovered_at: at }).eq('id', i.id)
+        .is('recovered_at', null).select('id').maybeSingle();
+      if (!stamped) continue;
+      await notify(i.owner, {
+        title: `${i.target_server} is back up`,
+        body: `Down ${formatDuration(now - Date.parse(i.created_at))}. ${
+          checks.length ? `${checks.map((c) => new URL(c.url).pathname).join(', ')} answers again` : 'Healthy again'
+        } after your fix.`,
+        data: { incidentId: i.id },
+      });
+      continue;
+    }
+    if (!i.resolved_at || !stillFailing(i.resolved_at, !!i.context?.still_failing, now)) continue;
+    const what = `${failing[0].method} ${new URL(failing[0].url).pathname} → ${failing[0].status}`;
+    const fixes = actionsFor(toTarget(s)).filter((a) => !(CODE_FIXES as string[]).includes(a) && a !== 'merge_pr');
+    const merged = !!i.context?.pr;
+    const reason = merged
+      ? `Merged, but production still fails ${what}: the deploy may not have run. ${
+        fixes.includes('reset') ? 'Reboot to load the new code, or deploy it.' : 'Deploy it, or restart.'
+      }`
+      : `The fix ran, but production still fails ${what}.`;
+    // The card comes back unless another incident is already open for this service (one open per service).
+    const { error } = await db.from('incidents').update({
+      status: 'active',
+      resolved_at: null,
+      actions: fixes,
+      action: fixes[0] ?? 'merge_pr',
+      reason,
+      suggested_by: 'rules',
+      context: { still_failing: { what, at: new Date(now).toISOString() } },
+    }).eq('id', i.id).eq('status', 'resolved');
+    if (error) await db.from('incidents').update({ context: { still_failing: { what } } }).eq('id', i.id);
+    await notify(i.owner, { title: `${i.target_server} still failing`, body: reason, data: { incidentId: i.id } });
   }
 }
 
