@@ -212,6 +212,30 @@ curl -H "Authorization: Bearer ops_..." "https://<ref>.supabase.co/functions/v1/
 # -> pending | running | approved (with detail / PR) | declined | failed
 ```
 
+### Slack and Discord (operator, once)
+
+- **Slack:** api.slack.com/apps → Create New App → From a manifest (YAML):
+  `display_information.name: OpsSwipe`, `features.bot_user.display_name: OpsSwipe`,
+  `oauth_config.redirect_urls: [https://<ref>.supabase.co/functions/v1/oauth-callback]`,
+  `oauth_config.scopes.bot: [incoming-webhook]`. Then Manage Distribution → activate public distribution.
+- **Discord:** discord.com/developers → New Application → OAuth2 → add the same redirect. No bot needed.
+- `npx supabase secrets set SLACK_CLIENT_ID=… SLACK_CLIENT_SECRET=… DISCORD_CLIENT_ID=… DISCORD_CLIENT_SECRET=…`
+- Slack refuses sign-in in phone browsers (it redirects Android to the Play Store), so Add to Slack runs in an
+  in-app web view that presents as desktop (`app/src/SlackSignIn.tsx`, needs a build with `react-native-webview`);
+  "Add to Slack from a computer" shares the link as a fallback.
+
+### Claude Code gate
+
+`integrations/claude-code/README.md`: create an agent token in Settings → Agent access, export
+`OPSSWIPE_AGENT_TOKEN`, add the PreToolUse hook. Risky commands wait for your swipe; no answer means not run.
+
+### Status page and weekly report
+
+- The page is static HTML (`status-page/index.html`, served by GitHub Pages from `DevHusnainAi/opsswipe-status`)
+  reading the public `status` function: Supabase serves HTML as text/plain without a custom domain.
+  Override the link base with the `STATUS_PAGE_URL` secret.
+- The weekly report is a second pg_cron job (`infra/cron.sql`, `opsswipe-weekly`, Mondays 04:00 UTC).
+
 ## 10. Break things
 
 ```bash

@@ -85,7 +85,14 @@ LAN-only `exp://` (`_shared/appLink.ts`). Secrets live in Supabase Vault and are
 Code fixes work for any service with a linked repo (`targets.ts` `actionsFor`): `revert_pr`, `fix_pr` (the AI model writes a patch
 limited to the bad commit's files, `_shared/patch.ts`, gated by `checkPatch`; needs `AI_SUGGESTIONS` set) and `merge_pr`.
 The bad commit comes from Render deploys, else the app's reported `release`, else the branch head (`execute/badCommit`).
-`agent/` is the Approval API: agents with a hashed `ops_` token propose a fix, it becomes an incident card
+The code fixes live in `_shared/codeFix.ts` (used by `execute/` and by `incidents.ts` `prepareFix`, which opens the
+AI fix PR as soon as an incident opens on a service with `config.autofix`). The AI fix adds one regression test at a
+path OpsSwipe picks (`patch.ts` `regressionTestPath`). `connect` also serves `pr_diff`, `postmortem` (written once
+after resolve, `_shared/postmortem.ts`), `status_page`, team actions (`team_members`: teammates see/fix the owner's
+incidents via RLS and `ownersFor`, never services or keys) and one-click Slack/Discord (`alerts_start`, finished in
+`oauth-callback`). `healthcheck` also escalates incidents untouched for 5 min to the team (`flow.ts`
+`needsEscalation`). `status/` (public JSON for `status-page/index.html`) and `weekly/` (Monday report, pg_cron) are
+new functions. `agent/` is the Approval API: agents with a hashed `ops_` token propose a fix, it becomes an incident card
 (`suggested_by='agent'`), the human approves or declines, the agent polls (`_shared/agents.ts`).
 
 ## Conventions

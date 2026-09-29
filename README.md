@@ -64,10 +64,15 @@ sequenceDiagram
 | **No false alarms** | A failed check is retried after 10 s before anyone is paged; a service that recovers on its own closes its card; a false alarm is dismissed in one tap and logged |
 | **Paged on your lock screen** | A high-priority push when something breaks, when CI proves the fix and when it's back up, even with the app closed; optionally mirrored to Discord or Slack |
 | **Fixes across clouds** | Restart or roll back a Render or Railway service; reboot a Google Cloud VM; open a revert PR; merge a proven PR |
-| **Fix with AI** | The AI model writes the smallest code fix, touching only the files the bad commit changed; it ships as a PR that must pass the same replay proof before Merge unlocks |
+| **Fix with AI** | The AI model writes the smallest code fix, touching only the files the bad commit changed, plus one regression test for the failing requests; it ships as a PR that must pass your tests and the same replay proof before Merge unlocks. Read the diff in the app before you swipe |
+| **Fix ready before you wake up** (Pro) | Opt in per service: the moment it breaks, the AI fix is written, opened as a PR and proven by CI. The push says *"a fix is ready and proven"*; you only swipe to merge |
+| **Postmortem** | Once resolved: why it happened (from the bad commit's diff and the failing requests) and 2–4 steps to prevent it, written once and kept |
 | **Repo linking** | Any service (Render or a GCP VM) can be linked to the repo it deploys from; the app can report its running commit (`release`) so OpsSwipe knows exactly what broke |
 | **Revenue at risk** | Connect your own app's RevenueCat (a read-only v2 key; the project is detected from the key): incidents show *~$X/h at risk* and recoveries *about $Y lost*, estimated from your last 28 days of revenue. Optional, never a setup step; one-tap connect through RevenueCat OAuth is next |
-| **Approval layer for AI agents** | An AI SRE or script proposes a fix with a token from Settings; it appears as a card with the agent's name, runs only after your swipe and fingerprint, and the agent can poll the result |
+| **Approval layer for AI agents** | An AI SRE or script proposes a fix, or asks to run any command itself (a force-push, a migration, `terraform apply`), with a token from Settings; it appears as a card with the agent's name and the exact command, and happens only after your swipe and fingerprint. A ready-made Claude Code hook (`integrations/claude-code`) sends risky commands to your phone and fails closed |
+| **Teams and escalation** (Pro) | Invite teammates with a code: they can fix your incidents (never see your keys), and get paged when one sits unanswered for 5 minutes |
+| **Public status page** | One link with live up/down, 90 days of uptime and incident history, updated by your incidents; names only, never errors or paths |
+| **Weekly report** | Every Monday on your phone and Slack/Discord: uptime, time back up, revenue at risk, fixes proven and written by AI |
 | **Suggested fix with a reason** | Deterministic rules pick the fix instantly (recent deploy: roll back; a VM answering 500: revert). An AI model (NVIDIA Nemotron, or Claude on Vertex AI) may rephrase the reason only when it independently agrees: measured on our eval, it picked a worse fix 7–27% of the time, so it explains and never overrules |
 | **Proof before merge** | Failing requests ride into the PR as `.opsswipe/replays/*.json`; CI replays them and runs your tests; merge unlocks only on a full pass, pinned to that commit |
 | **Proof after deploy** | The first healthy check after a fix records it: "down 3m 12s, back 41s after fix" |
@@ -89,7 +94,7 @@ From the app's **Services** screen:
 | **Google Cloud** | Sign in with Google once, then pick a project and a VM any time | A custom role on each VM you add: read its status and reboot it (Google's `reset`: a power-cycle, disk data stays). Google access is kept encrypted so adding VMs needs no new sign-in; Disconnect revokes it |
 | **Failure reports** (optional) | Set the two env vars the app shows once and add the snippet below | Your app's 5xx responses, signed, the moment they happen. Without it, the every-minute health check still pages you |
 | **Sentry** (optional) | A Sentry Internal Integration with the webhook URL the app shows, then paste its Client Secret | Sentry issue alerts open incidents with the failing request, with no code change in your app |
-| **Discord or Slack** (optional) | Paste an incoming webhook URL in Settings | Every alert also posts to that channel |
+| **Slack or Discord** (optional) | Settings → Add to Slack / Add to Discord, pick a channel | Every alert also posts to that channel. Nothing to create or paste |
 | **Proof in CI** | Setup checklist → Turn on proof, and merge the PR | A workflow that replays saved production failures on every PR, authenticated by GitHub OIDC |
 
 Merging a proven PR fixes production when your host deploys `main` automatically (Render, Railway, most platforms; the demo
