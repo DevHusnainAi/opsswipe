@@ -615,8 +615,14 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       need(me?.user?.email !== email, 'That is your own address.');
       const code = inviteCode();
       await db.from('team_invites').insert({ code, owner, email });
+      // The name their Google or GitHub sign-in gave, else the part of the email before the @.
+      const meta = (me?.user?.user_metadata ?? {}) as Record<string, unknown>;
+      const myEmail = me?.user?.email ?? '';
+      const myName =
+        [meta.full_name, meta.name, meta.user_name].find((v): v is string => typeof v === 'string' && !!v.trim()) ??
+          (myEmail.split('@')[0] || 'A teammate');
       const mail = inviteMail(
-        me?.user?.email ?? 'A teammate',
+        { name: myName.trim().slice(0, 60), email: myEmail },
         `${functionUrl('oauth-callback')}?to=team&code=${code}`,
       );
       await sendMail(email, mail.subject, mail.text, mail.html).catch((e) => {

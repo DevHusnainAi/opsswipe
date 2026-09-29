@@ -2,12 +2,15 @@ import { assert, assertEquals } from 'jsr:@std/assert@1';
 import { inviteMail, sendMail } from '../_shared/mail.ts';
 
 Deno.test('the invite email carries the join link and escapes the inviter', () => {
-  const m = inviteMail('<b>eve</b>@x.com', 'https://r.supabase.co/functions/v1/oauth-callback?to=team&code=ABCD2345');
+  const m = inviteMail(
+    { name: '<b>Eve</b>', email: 'eve@x.com' },
+    'https://r.supabase.co/functions/v1/oauth-callback?to=team&code=ABCD2345',
+  );
   assert(m.text.includes('?to=team&code=ABCD2345'), 'the link is in the text version');
   assert(m.html.includes('?to=team&#38;code=ABCD2345'), 'and escaped in the HTML');
   assert(!m.text.includes('Join, code'), 'no join-by-code step: the link is the way in');
-  assert(!m.html.includes('<b>eve</b>'), 'an address is text, never markup');
-  assert(m.html.includes('&#60;b&#62;eve'));
+  assert(!m.html.includes('<b>Eve</b>'), 'a name is text, never markup');
+  assert(m.html.includes('&#60;b&#62;Eve') && m.html.includes('eve@x.com'), 'escaped name, and who sent it');
 });
 
 Deno.test('mail goes to Resend with the key as a bearer token and the verified sender', async () => {
