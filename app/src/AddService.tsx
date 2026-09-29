@@ -22,7 +22,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, Text
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ReportSetup } from './ReportSetup';
 import { SearchList } from './SearchList';
-import { claimFrom, type ConnectStatus, type GcpProject, type NewService, type RenderOption, type VmOption, connect } from './api';
+import { claimFrom, type ConnectStatus, type RailwayService, type GcpProject, type NewService, type RenderOption, type VmOption, connect } from './api';
 import { appBase, appLink } from './env';
 import { paramsOf } from './format';
 import { TARGET, c, radius, space, type } from './theme';
@@ -57,6 +57,10 @@ export function AddService({ start, status, existing, onClose }: Props) {
   const [picked, setPicked] = useState<RenderOption | null>(null);
   const [repo, setRepo] = useState<string | null>(null); // linked GitHub repo, or none
   const [railway, setRailway] = useState({ token: '', link: '', url: '', name: '' });
+  // Connect Railway (OAuth): the shared projects' services to pick from, and the one picked.
+  const [rwServices, setRwServices] = useState<RailwayService[] | null>(null);
+  const [rwPick, setRwPick] = useState<{ s: RailwayService; env: string } | null>(null);
+  const [pasteToken, setPasteToken] = useState(false);
   const github = !!status?.github.connected;
 
   const step = history[history.length - 1];
@@ -193,15 +197,40 @@ export function AddService({ start, status, existing, onClose }: Props) {
       go('done');
     });
 
-  // Railway: a token once, then the service's dashboard link (it carries the project, service and
-  // environment ids) and the public URL to check.
+  const loadRailway = () =>
+    run('rwlist', async () => {
+      const list = (await connect<{ services: RailwayService[] }>('railway_services')).services;
+      setRwServices(list);
+      if (list.length === 1) pickRailway(list[0]);
+    });
+  // The production environment when there is one, else the first; changeable below when there are several.
+  const pickRailway = (s: RailwayService) =>
+    setRwPick({ s, env: (s.environments.find((e) => e.name === 'production') ?? s.environments[0])?.id ?? '' });
+
+  // Connect Railway: Railway's consent screen, where the user picks the projects OpsSwipe may use.
+  const connectRailway = () =>
+    run('rwconnect', async () => {
+      const { url } = await connect<{ url: string }>('railway_start', { returnTo: appBase });
+      const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
+      if (r.type === 'success') await claimFrom(r.url);
+      setChanged(true);
+      const list = (await connect<{ services: RailwayService[] }>('railway_services')).services;
+      setRwServices(list);
+      if (list.length === 1) pickRailway(list[0]);
+    });
+
+  // Railway: a service picked from Connect Railway, or a pasted token and the service's dashboard link (it
+  // carries the project, service and environment ids); then the public URL to check.
   const addRailway = () =>
     run('addrailway', async () => {
       setCreated(
         await connect<NewService>('add_railway', {
           ...railway,
+          ...(rwPick ? { projectId: rwPick.s.projectId, serviceId: rwPick.s.serviceId, environmentId: rwPick.env } : {}),
           token: railway.token.trim(),
-          name: railway.name.trim(),
+          // Blank: the Railway service's own name, made a valid OpsSwipe name.
+          name: railway.name.trim() ||
+            (rwPick?.s.service ?? '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40),
           ...(repo ? { repo } : {}),
         }),
       );
@@ -259,7 +288,10 @@ export function AddService({ start, status, existing, onClose }: Props) {
                 title="Railway service"
                 body="Restart it, or roll back to the previous deployment."
                 tag={status?.railway.connected ? 'Connected' : undefined}
-                onPress={() => go('railway')}
+                onPress={() => {
+                  go('railway');
+                  if (status?.railway.oauth) loadRailway();
+                }}
               />
               <Choice
                 icon={HardDrives}
@@ -332,35 +364,95 @@ export function AddService({ start, status, existing, onClose }: Props) {
 
           {step === 'railway' && (
             <View style={styles.confirm}>
-              {!status?.railway.connected && (
-                <Field
-                  label="Railway API token"
-                  value={railway.token}
-                  onChange={(v) => setRailway((r) => ({ ...r, token: v }))}
-                  placeholder="Account settings → Tokens"
-                  secure
+              {/* Connect Railway (OAuth) when the server offers it; a pasted token stays as the fallback. */}
+              {!rwServices && !pasteToken && status?.railway.available && !status.railway.connected && (
+                <>
+                  <Button label={busy === 'rwconnect' ? 'Waiting for Railway…' : 'Connect Railway'} icon={Train} onPress={connectRailway} />
+                  <Text style={type.caption}>
+                    On Railway&apos;s page you choose which projects OpsSwipe may use. Nothing else in your account is shared.
+                  </Text>
+                  <Pressable onPress={() => setPasteToken(true)} hitSlop={8} accessibilityRole="button">
+                    <Text style={[type.label, { color: c.muted }]}>Or paste an API token</Text>
+                  </Pressable>
+                </>
+              )}
+              {busy === 'rwlist' && <Loading text="Loading your Railway services…" />}
+              {rwServices?.length === 0 && (
+                <Empty text="No services in the projects you shared. Connect again and pick the project on Railway's page." />
+              )}
+              {!!rwServices?.length && (
+                <SearchList
+                  items={rwServices}
+                  text={(s) => `${s.project} ${s.service}`}
+                  placeholder="Search services"
+                  render={(s) => {
+                    const on = rwPick?.s.serviceId === s.serviceId;
+                    return (
+                      <Pressable
+                        key={s.serviceId}
+                        onPress={() => pickRailway(s)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: on }}
+                        style={[styles.option, styles.inList, on && styles.optionOn]}
+                      >
+                        <Train size={22} color={on ? c.green : c.text} />
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={type.monoStrong}>{s.service}</Text>
+                          <Text style={type.caption}>{s.project}</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  }}
                 />
               )}
-              <Field
-                label="Service link"
-                value={railway.link}
-                onChange={(v) => setRailway((r) => ({ ...r, link: v }))}
-                placeholder="railway.com/project/…/service/…?environmentId=…"
-              />
-              <Text style={type.caption}>Open the service in the Railway dashboard and copy the address bar.</Text>
-              <Field
-                label="Public URL to check"
-                value={railway.url}
-                onChange={(v) => setRailway((r) => ({ ...r, url: v }))}
-                placeholder="https://api.up.railway.app/health"
-              />
-              <Field label="Name" value={railway.name} onChange={(v) => setRailway((r) => ({ ...r, name: v }))} placeholder="api" />
-              <RepoPicker value={repo} onChange={setRepo} githubConnected={github} />
-              <Text style={type.caption}>
-                OpsSwipe checks it every minute and can restart it or roll it back
-                {repo ? `, and open revert or AI fix PRs on ${repo}` : ''}. The token is encrypted on the server.
-              </Text>
-              <Button label={busy === 'addrailway' ? 'Checking with Railway…' : 'Add service'} icon={Train} onPress={addRailway} />
+              {rwPick && rwPick.s.environments.length > 1 && (
+                <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+                  {rwPick.s.environments.map((e) => (
+                    <Pressable key={e.id} onPress={() => setRwPick({ ...rwPick, env: e.id })} accessibilityRole="radio"
+                      accessibilityState={{ selected: rwPick.env === e.id }}>
+                      <Chip label={e.name} color={rwPick.env === e.id ? c.green : c.muted} tint={rwPick.env === e.id ? c.greenTint : c.surface2} />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+              {/* The pasted-token way: when chosen, when connected with a token, or when OAuth isn't set up. */}
+              {!rwServices && (pasteToken || !status?.railway.available || (status.railway.connected && !status.railway.oauth)) && (
+                <>
+                  {!status?.railway.connected && (
+                    <Field
+                      label="Railway API token"
+                      value={railway.token}
+                      onChange={(v) => setRailway((r) => ({ ...r, token: v }))}
+                      placeholder="Account settings → Tokens"
+                      secure
+                    />
+                  )}
+                  <Field
+                    label="Service link"
+                    value={railway.link}
+                    onChange={(v) => setRailway((r) => ({ ...r, link: v }))}
+                    placeholder="railway.com/project/…/service/…?environmentId=…"
+                  />
+                  <Text style={type.caption}>Open the service in the Railway dashboard and copy the address bar.</Text>
+                </>
+              )}
+              {(rwPick || (!rwServices && (pasteToken || !status?.railway.available || (status?.railway.connected && !status.railway.oauth)))) && (
+                <>
+                  <Field
+                    label="Public URL to check"
+                    value={railway.url}
+                    onChange={(v) => setRailway((r) => ({ ...r, url: v }))}
+                    placeholder="https://api.up.railway.app/health"
+                  />
+                  <Field label="Name" value={railway.name} onChange={(v) => setRailway((r) => ({ ...r, name: v }))} placeholder={rwPick?.s.service ?? 'api'} />
+                  <RepoPicker value={repo} onChange={setRepo} githubConnected={github} />
+                  <Text style={type.caption}>
+                    OpsSwipe checks it every minute and can restart it or roll it back
+                    {repo ? `, and open revert or AI fix PRs on ${repo}` : ''}. Railway access is encrypted on the server.
+                  </Text>
+                  <Button label={busy === 'addrailway' ? 'Checking with Railway…' : 'Add service'} icon={Train} onPress={addRailway} />
+                </>
+              )}
             </View>
           )}
 

@@ -119,11 +119,18 @@ export type ConnectStatus = {
   alertInbox: string | null; // webhook URL for alerts from other tools
   github: { connected: boolean; account: string | null; installUrl: string };
   render: { connected: boolean };
-  railway: { connected: boolean };
+  railway: { connected: boolean; oauth?: boolean; available?: boolean }; // oauth: connected with Connect Railway
   alerts: { connected: boolean; kind: 'discord' | 'slack' | null; channel?: string | null };
   revenuecat: { connected: boolean; project: string | null };
   google: { connected: boolean; account: string | null; available: boolean };
   gcpIdentity: string | null;
+};
+export type RailwayService = {
+  projectId: string;
+  project: string;
+  serviceId: string;
+  service: string;
+  environments: { id: string; name: string }[];
 };
 export type GcpProject = { id: string; name: string };
 export type VmOption = { name: string; zone: string; status: string; ip: string | null };

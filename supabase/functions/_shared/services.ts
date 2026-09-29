@@ -1,6 +1,7 @@
 // Connected services, per-user connections, and credentials. Keys are only ever read here,
 // on the server, from Supabase Vault; the app never sees them after they're entered.
 import { postAlert } from './alerts.ts';
+import { accessFromGrant, isGrant } from './railway.ts';
 import { db, env } from './db.ts';
 import type { ServiceAccount } from './gcp.ts';
 import { accessFromRefresh, GoogleError, revoke } from './google.ts';
@@ -63,11 +64,15 @@ export async function renderKey(owner: string) {
   return key;
 }
 
+// A pasted token is used as is; an OAuth grant gives a fresh access token, and the rotated refresh token is saved.
 export async function railwayToken(owner: string) {
   const c = await connection(owner, 'railway');
-  const token = c?.secret_id ? await readSecret(c.secret_id) : null;
-  if (!token) throw new Error('Railway is not connected');
-  return token;
+  const stored = c?.secret_id ? await readSecret(c.secret_id) : null;
+  if (!stored) throw new Error('Railway is not connected');
+  if (!isGrant(stored)) return stored;
+  const { access, next } = await accessFromGrant(JSON.parse(stored));
+  if (next) await db.rpc('opsswipe_update_secret', { secret_id: c!.secret_id, value: JSON.stringify(next) });
+  return access;
 }
 
 export async function githubToken(owner: string) {

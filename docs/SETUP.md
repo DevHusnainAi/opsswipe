@@ -225,6 +225,15 @@ curl -H "Authorization: Bearer ops_..." "https://<ref>.supabase.co/functions/v1/
   Every Connect flow (GitHub, Google, Slack, Discord) finishes on the phone that approved it: the redirect carries a
   one-time claim the same account presents, so a Connect link can't be finished on another device.
 
+### Connect Railway (operator, once)
+
+Railway → your workspace → Settings → OAuth Apps → New (workspace admins only). Redirect URI:
+`https://<ref>.supabase.co/functions/v1/oauth-callback`. Then
+`npx supabase secrets set RAILWAY_CLIENT_ID=… RAILWAY_CLIENT_SECRET=…`. Users then tap **Connect Railway**, pick
+projects on Railway's consent screen (`project:member`), and choose the service from a list; without these secrets
+the app offers the pasted API token and dashboard link instead. Render has no OAuth for outside apps, so it stays
+an API key.
+
 ### Email invites (operator, once)
 
 Settings → Team → **Invite by email** sends a join link and the code through Resend (free: 3,000 a month).

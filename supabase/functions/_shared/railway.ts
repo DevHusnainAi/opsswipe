@@ -61,3 +61,94 @@ export function idsFromLink(link: string) {
   const env = link.match(new RegExp(`environmentId=(${ID})`));
   return m && env ? { projectId: m[1], serviceId: m[2], environmentId: env[1] } : null;
 }
+
+// "Connect Railway" with OAuth: the user picks which projects OpsSwipe may use on Railway's consent screen
+// (project:member), instead of pasting an account-wide token. offline_access + prompt=consent returns a
+// refresh token. https://docs.railway.com/integrations/oauth/login-and-tokens
+const OAUTH = 'https://backboard.railway.com/oauth';
+const env = (k: string) => Deno.env.get(k) ?? '';
+const redirectUri = () => `${env('SUPABASE_URL')}/functions/v1/oauth-callback`;
+
+export const railwayOAuthEnabled = () => !!env('RAILWAY_CLIENT_ID') && !!env('RAILWAY_CLIENT_SECRET');
+
+export const railwayAuthorizeUrl = (state: string) =>
+  `${OAUTH}/auth?${new URLSearchParams({
+    response_type: 'code',
+    client_id: env('RAILWAY_CLIENT_ID'),
+    redirect_uri: redirectUri(),
+    scope: 'openid offline_access project:member',
+    prompt: 'consent',
+    state,
+  })}`;
+
+// What's kept in Vault for an OAuth connection. A pasted token is kept as the plain token instead.
+export type RailwayGrant = { refresh: string; access: string; exp: number };
+export const isGrant = (stored: string) => stored.startsWith('{');
+
+async function tokenCall(params: Record<string, string>, now = Date.now()): Promise<RailwayGrant> {
+  const res = await fetch(`${OAUTH}/token`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${btoa(`${env('RAILWAY_CLIENT_ID')}:${env('RAILWAY_CLIENT_SECRET')}`)}`,
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams(params),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const t = await res.json().catch(() => ({}));
+  if (!res.ok || !t.access_token) throw new Error(`railway oauth ${res.status}: ${t.error ?? 'no token'}`);
+  return {
+    refresh: t.refresh_token ?? params.refresh_token,
+    access: t.access_token,
+    exp: now + (t.expires_in ?? 3600) * 1000,
+  };
+}
+
+export const exchangeRailway = (code: string) =>
+  tokenCall({ grant_type: 'authorization_code', code, redirect_uri: redirectUri() });
+
+// A usable access token from a stored grant: the cached one while it has a minute left, else a refresh. Railway
+// rotates refresh tokens, so the caller must store the returned grant when it changed.
+// ponytail: two refreshes at the same moment could race on a rotated token; one retry, or a lock, if that shows up.
+export async function accessFromGrant(g: RailwayGrant, now = Date.now()) {
+  if (g.exp - 60_000 > now) return { access: g.access, next: null };
+  const next = await tokenCall({ grant_type: 'refresh_token', refresh_token: g.refresh }, now);
+  return { access: next.access, next };
+}
+
+export type RailwayService = {
+  projectId: string;
+  project: string;
+  serviceId: string;
+  service: string;
+  environments: { id: string; name: string }[];
+};
+
+// The projects the user shared on the consent screen, as project/service pairs with their environments.
+export async function listRailwayServices(token: string): Promise<RailwayService[]> {
+  const d = await gql<{
+    externalWorkspaces: {
+      projects: {
+        id: string;
+        name: string;
+        services: { edges: { node: { id: string; name: string } }[] };
+        environments: { edges: { node: { id: string; name: string } }[] };
+      }[];
+    }[];
+  }>(
+    token,
+    `query { externalWorkspaces { projects { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } }`,
+    {},
+  );
+  return d.externalWorkspaces.flatMap((w) =>
+    w.projects.flatMap((p) =>
+      p.services.edges.map(({ node: s }) => ({
+        projectId: p.id,
+        project: p.name,
+        serviceId: s.id,
+        service: s.name,
+        environments: p.environments.edges.map((e) => e.node),
+      }))
+    )
+  );
+}

@@ -25,7 +25,13 @@ import type { PrRef } from '../_shared/proof.ts';
 import { authorizeUrl, installUrl, listRepos } from '../_shared/githubApp.ts';
 import { claim, ClaimError, newState, saveAlerts } from '../_shared/oauthState.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
-import { idsFromLink, listDeployments } from '../_shared/railway.ts';
+import {
+  idsFromLink,
+  listDeployments,
+  listRailwayServices,
+  railwayAuthorizeUrl,
+  railwayOAuthEnabled,
+} from '../_shared/railway.ts';
 import { keyProject, RevenueError, revenuePerHour } from '../_shared/revenue.ts';
 import { getRenderService, listServices } from '../_shared/render.ts';
 import {
@@ -179,7 +185,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         statusPage: page ? statusPageUrl(page.slug) : null,
         alertInbox: inbox ? inboxUrl(inbox.key) : null,
         render: { connected: !!rd?.secret_id },
-        railway: { connected: !!rw?.secret_id },
+        railway: { connected: !!rw?.secret_id, oauth: rw?.account === 'oauth', available: railwayOAuthEnabled() },
         alerts: {
           connected: !!al?.secret_id,
           kind: al?.account?.split(' ')[0] ?? null,
@@ -273,9 +279,25 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     }
 
     // Railway: a token (account or workspace) once, then services by their dashboard link.
+    // Connect Railway with OAuth: the user picks the projects on Railway's consent screen; oauth-callback keeps
+    // the grant under a claim, like Google.
+    case 'railway_start': {
+      need(railwayOAuthEnabled(), 'Connect Railway is not set up on this OpsSwipe server. Paste a token instead.');
+      return { url: railwayAuthorizeUrl(withReturn(await newState(owner, 'railway'), p.returnTo)) };
+    }
+
+    // The services in the projects the user shared, to pick from instead of pasting a dashboard link.
+    case 'railway_services':
+      return { services: await listRailwayServices(await railwayToken(owner)) };
+
     case 'add_railway': {
       const token = String(p.token ?? '').trim();
-      const ids = idsFromLink(String(p.link ?? ''));
+      // Picked from the list (Connect Railway), or read from a pasted dashboard link.
+      const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      const chosen = [p.projectId, p.serviceId, p.environmentId].every((v) => UUID.test(String(v)))
+        ? { projectId: String(p.projectId), serviceId: String(p.serviceId), environmentId: String(p.environmentId) }
+        : null;
+      const ids = chosen ?? idsFromLink(String(p.link ?? ''));
       need(ids, 'Paste the service link from the Railway dashboard (railway.com/project/…/service/…?environmentId=…).');
       const url = String(p.url ?? '').trim();
       need(/^https?:\/\/[^\s]+$/.test(url), 'Enter the public URL OpsSwipe should check.');

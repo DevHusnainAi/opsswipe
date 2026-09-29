@@ -9,9 +9,10 @@ import { hashToken } from './agents.ts';
 import { db } from './db.ts';
 import { exchangeCode } from './google.ts';
 import { findInstallation } from './githubApp.ts';
+import { exchangeRailway } from './railway.ts';
 import { connection, deleteSecret, readSecret, storeSecret } from './services.ts';
 
-export type OAuthKind = 'github' | 'google' | 'slack' | 'discord';
+export type OAuthKind = 'github' | 'google' | 'slack' | 'discord' | 'railway';
 export const TTL_MS = 15 * 60_000;
 const random = () =>
   Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -20,6 +21,7 @@ const since = (now = Date.now()) => new Date(now - TTL_MS).toISOString();
 type Result =
   | { kind: 'github'; installation_id: number; account: string }
   | { kind: 'google'; secret_id: string; account: string | null }
+  | { kind: 'railway'; secret_id: string }
   | { kind: 'slack' | 'discord'; secret_id: string; channel: string };
 
 export async function newState(owner: string, kind: OAuthKind) {
@@ -47,6 +49,8 @@ export async function exchange(nonce: string, kind: OAuthKind, code: string, ins
   } else if (kind === 'google') {
     const { refresh, email } = await exchangeCode(code);
     result = { kind, secret_id: await storeSecret(refresh), account: email };
+  } else if (kind === 'railway') {
+    result = { kind, secret_id: await storeSecret(JSON.stringify(await exchangeRailway(code))) };
   } else {
     const { url, channel } = await exchangeChat(kind, code);
     result = { kind, secret_id: await storeSecret(url), channel };
@@ -71,6 +75,12 @@ export async function claim(owner: string, token: string): Promise<{ kind: OAuth
       account: r.account,
     });
     return { kind: 'github', account: r.account };
+  }
+  if (r.kind === 'railway') {
+    const old = await connection(owner, 'railway');
+    await db.from('connections').upsert({ owner, kind: 'railway', secret_id: r.secret_id, account: 'oauth' });
+    await deleteSecret(old?.secret_id);
+    return { kind: 'railway', account: null };
   }
   if (r.kind === 'google') {
     const old = await connection(owner, 'google');
