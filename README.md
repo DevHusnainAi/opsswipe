@@ -1,5 +1,7 @@
 # OpsSwipe
 
+![OpsSwipe: AI writes your fixes. OpsSwipe proves them. A phone card showing a failing service with an AI fix proven in CI, ready to swipe to merge](docs/brand/banner.png)
+
 [![ci](https://github.com/DevHusnainAi/opsswipe/actions/workflows/ci.yml/badge.svg)](https://github.com/DevHusnainAi/opsswipe/actions/workflows/ci.yml)
 
 **AI writes your code now. OpsSwipe makes sure its fixes are proven before they touch production, and shows what every
@@ -196,6 +198,7 @@ More in [docs/DECISIONS.md](docs/DECISIONS.md).
   structured prompt, NVIDIA Nemotron answered 10 of 10 cases correctly (4 more fell back to rules when the API was busy).
 - **CI:** format, lint, typecheck, tests, eval, shellcheck, SQL tests on Postgres 17, app and demo checks on every push.
 - **CD:** when CI passes on `main`, migrations apply and every Edge Function deploys (`.github/workflows/deploy.yml`).
+- **App builds:** a version tag (or a manual run) builds the Android app on EAS (`.github/workflows/eas-build.yml`).
 
 ## Stack
 

@@ -1,0 +1,37 @@
+# Android builds on EAS: on a version tag (v*), or by hand from the Actions tab. The build queues on EAS and the
+# APK link appears on expo.dev. Needs the repo secret EXPO_TOKEN (expo.dev -> Access tokens).
+name: eas-build
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        default: preview
+        type: choice
+        options: [preview, development]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+      - run: npm run typecheck && npm run lint && npm test
+      - run: eas build --platform android --profile "${{ inputs.profile || 'preview' }}" --non-interactive --no-wait

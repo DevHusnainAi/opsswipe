@@ -1,0 +1,95 @@
+<!doctype html>
+<!-- OpsSwipe banner: README header and Devpost cover. Render: chromium --headless --screenshot at 1600x800
+     (banner) or 1200x800 (thumbnail, ?thumb). Uses the app's own fonts, colours and incident card. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: Geist; font-weight: 400; src: url(../../app/node_modules/@expo-google-fonts/geist/400Regular/Geist_400Regular.ttf); }
+  @font-face { font-family: Geist; font-weight: 500; src: url(../../app/node_modules/@expo-google-fonts/geist/500Medium/Geist_500Medium.ttf); }
+  @font-face { font-family: Geist; font-weight: 600; src: url(../../app/node_modules/@expo-google-fonts/geist/600SemiBold/Geist_600SemiBold.ttf); }
+  @font-face { font-family: GeistMono; font-weight: 400; src: url(../../app/node_modules/@expo-google-fonts/geist-mono/400Regular/GeistMono_400Regular.ttf); }
+  @font-face { font-family: GeistMono; font-weight: 500; src: url(../../app/node_modules/@expo-google-fonts/geist-mono/500Medium/GeistMono_500Medium.ttf); }
+  :root { --bg: #0A0A0A; --surface: #111111; --surface2: #171717; --border: #262626; --text: #EDEDED; --muted: #A1A1AA;
+          --green: #10B981; --on-green: #03150E; --green-tint: rgba(16,185,129,.14); --red: #F87171; --red-tint: rgba(248,113,113,.14);
+          --amber: #FBBF24; --amber-tint: rgba(251,191,36,.14); }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1600px; height: 800px; background: var(--bg); color: var(--text); font-family: Geist, sans-serif; overflow: hidden; }
+  body.thumb, body.thumb html { width: 1200px; }
+  .stage { position: relative; width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 500px; align-items: center;
+           padding: 0 112px 0 120px; gap: 72px; }
+  /* A single soft light behind the phone: depth without a gradient on the type. */
+  .stage::before { content: ''; position: absolute; right: 60px; top: 50%; width: 760px; height: 760px; transform: translateY(-50%);
+                   background: radial-gradient(circle, rgba(16,185,129,.16), rgba(16,185,129,0) 62%); pointer-events: none; }
+  .brand { display: flex; align-items: center; gap: 16px; margin-bottom: 56px; }
+  .brand img { width: 56px; height: 56px; }
+  .brand span { font-size: 30px; font-weight: 600; letter-spacing: -.01em; }
+  h1 { font-size: 64px; line-height: 1.02; font-weight: 600; letter-spacing: -.035em; }
+  h1 em { font-style: normal; color: var(--green); }
+  .sub { margin-top: 32px; font-size: 25px; line-height: 1.45; color: var(--muted); max-width: 720px; }
+  .proof { margin-top: 48px; display: flex; gap: 32px; font-family: GeistMono; font-size: 16px; color: var(--muted); white-space: nowrap; }
+  .proof b { color: var(--text); font-weight: 500; }
+
+  .phone { position: relative; width: 420px; height: 610px; justify-self: center; border-radius: 56px; background: #050505;
+           border: 1px solid #2a2a2a; box-shadow: 0 40px 120px rgba(0,0,0,.6), inset 0 0 0 10px #0d0d0d; padding: 64px 22px 22px;
+           transform: rotate(-3deg); }
+  .phone::before { content: ''; position: absolute; top: 22px; left: 50%; width: 110px; height: 28px; transform: translateX(-50%);
+                   border-radius: 20px; background: #000; }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--red); font-weight: 500; margin: 0 6px 14px; }
+  .status i { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+  .card { background: var(--surface); border: 1px solid rgba(16,185,129,.45); border-radius: 22px; padding: 22px 20px; }
+  .chips { display: flex; gap: 8px; margin-bottom: 16px; }
+  .chip { font-size: 12px; padding: 4px 9px; border-radius: 6px; background: var(--surface2); color: var(--muted); font-weight: 500; }
+  .chip.red { background: var(--red-tint); color: var(--red); }
+  .chip.amber { background: var(--amber-tint); color: var(--amber); }
+  .card h3 { font-size: 23px; font-weight: 600; letter-spacing: -.01em; }
+  .mono { font-family: GeistMono; font-size: 14px; color: var(--muted); margin-top: 6px; }
+  .reason { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 15px; line-height: 1.45; }
+  .proven { margin-top: 16px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
+            background: var(--green-tint); color: var(--green); font-size: 15px; font-weight: 500; }
+  .proven svg { flex: none; }
+  .diff { margin-top: 14px; font-family: GeistMono; font-size: 12.5px; line-height: 1.6; background: #0c0c0c; border: 1px solid var(--border);
+          border-radius: 10px; padding: 10px 12px; }
+  .diff .del { color: var(--red); } .diff .add { color: var(--green); } .diff .file { color: var(--muted); }
+  .rail { margin-top: 18px; height: 60px; border-radius: 16px; background: rgba(16,185,129,.18); display: flex; align-items: center;
+          justify-content: space-between; padding: 0 8px 0 22px; color: var(--green); font-size: 16px; font-weight: 600; }
+  .knob { width: 46px; height: 46px; border-radius: 13px; background: var(--green); display: grid; place-items: center; }
+
+  body.thumb .stage { grid-template-columns: 1fr; padding: 0 88px; }
+  body.thumb .phone, body.thumb .stage::before { display: none; }
+  body.thumb h1 { font-size: 84px; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div>
+    <div class="brand"><img src="../../app/assets/logo-mark.png" alt=""><span>OpsSwipe</span></div>
+    <h1>AI writes your fixes.<br><em>OpsSwipe proves them.</em></h1>
+    <p class="sub">A phone pager for indie developers. When production breaks, the fix is ready, and it merges only after CI replays the exact requests that failed.</p>
+    <p class="proof"><span><b>Swipe</b> + fingerprint</span><span><b>3/3</b> failing requests pass</span><span><b>$/h</b> at risk, from RevenueCat</span></p>
+  </div>
+  <div class="phone">
+    <div class="status"><i></i>checkout-api is down</div>
+    <div class="card">
+      <div class="chips"><span class="chip red">CRITICAL</span><span class="chip">Google Cloud</span><span class="chip amber">~$38/h at risk</span></div>
+      <h3>Requests are failing</h3>
+      <p class="mono">GET /api/price → 500</p>
+      <p class="reason">Fix ready: the AI patched the release that broke pricing and added a regression test.</p>
+      <div class="proven">
+        <svg width="18" height="18" viewBox="0 0 256 256"><path fill="currentColor" d="M225.86 102.82c-3.77-3.94-7.67-8-9.14-11.57-1.36-3.27-1.44-8.69-1.52-13.94-.15-9.76-.31-20.82-8-28.51s-18.75-7.85-28.51-8c-5.25-.08-10.67-.16-13.94-1.52-3.56-1.47-7.63-5.37-11.57-9.14C146.28 23.51 138.44 16 128 16s-18.27 7.51-25.18 14.14c-3.94 3.77-8 7.67-11.57 9.14-3.25 1.36-8.69 1.44-13.94 1.52-9.76.15-20.82.31-28.51 8s-7.8 18.75-8 28.51c-.08 5.25-.16 10.67-1.52 13.94-1.47 3.56-5.37 7.63-9.14 11.57C23.51 109.72 16 117.56 16 128s7.51 18.27 14.14 25.18c3.77 3.94 7.67 8 9.14 11.57 1.36 3.27 1.44 8.69 1.52 13.94.15 9.76.31 20.82 8 28.51s18.75 7.85 28.51 8c5.25.08 10.67.16 13.94 1.52 3.56 1.47 7.63 5.37 11.57 9.14C109.72 232.49 117.56 240 128 240s18.27-7.51 25.18-14.14c3.94-3.77 8-7.67 11.57-9.14 3.27-1.36 8.69-1.44 13.94-1.52 9.76-.15 20.82-.31 28.51-8s7.85-18.75 8-28.51c.08-5.25.16-10.67 1.52-13.94 1.47-3.56 5.37-7.63 9.14-11.57C232.49 146.28 240 138.44 240 128s-7.51-18.27-14.14-25.18Zm-52.2 6.84-56 56a8 8 0 0 1-11.32 0l-24-24a8 8 0 0 1 11.32-11.32L112 148.69l50.34-50.35a8 8 0 0 1 11.32 11.32Z"/></svg>
+        Proven in CI: 3/3 failing requests pass
+      </div>
+      <div class="diff">
+        <div class="file">server.js  +1 −1</div>
+        <div class="del">- const RELEASE_OK = false;</div>
+        <div class="add">+ const RELEASE_OK = true;</div>
+      </div>
+      <div class="rail">Swipe to merge
+        <span class="knob"><svg width="22" height="22" viewBox="0 0 256 256"><path fill="#03150E" d="m221.66 133.66-72 72a8 8 0 0 1-11.32-11.32L196.69 136H40a8 8 0 0 1 0-16h156.69l-58.35-58.34a8 8 0 0 1 11.32-11.32l72 72a8 8 0 0 1 0 11.32Z"/></svg></span>
+      </div>
+    </div>
+  </div>
+</div>
+<script>if (location.search.includes('thumb')) document.body.classList.add('thumb');</script>
+</body>
+</html>
