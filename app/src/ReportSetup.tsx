@@ -6,7 +6,9 @@ import { CopyRow } from './AddService';
 import type { Service } from './api';
 import { c, radius, space, type } from './theme';
 
-export function ReportSetup({ report, service }: { report: { url: string; secret: string }; service: Service }) {
+export function ReportSetup(
+  { report, service, onVm = false }: { report: { url: string; secret: string }; service: Service; onVm?: boolean },
+) {
   const q = (v: string) => `'${v.replace(/'/g, `'\\''`)}'`;
   const body = '{"test":true,"method":"GET","path":"/","status":500}';
   const test = [
@@ -15,14 +17,24 @@ export function ReportSetup({ report, service }: { report: { url: string; secret
     `curl -sS -X POST ${q(report.url)} -H 'content-type: application/json' -H "x-opsswipe-signature: sha256=$sig" -d "$body"`,
   ].join('; ');
   const { project, zone, instance } = service.config;
-  const gcloud = service.provider === 'gcp' && project && zone && instance
+  const gcloud = service.provider === 'gcp' && !onVm && project && zone && instance
     ? `gcloud compute instances add-metadata ${instance} --project ${project} --zone ${zone} --metadata ${q(`opsswipe-report-url=${report.url},report-secret=${report.secret}`)}`
     : null;
   return (
     <View style={styles.box}>
-      <Text style={[type.caption, { color: c.amber }]}>
-        Shown only once. Reports are optional for alerts, and needed for Revert and Fix with AI (CI replays those requests).
-      </Text>
+      {onVm
+        ? (
+          <Text style={[type.caption, { color: c.green }]}>
+            Already on {instance}: OpsSwipe wrote the URL and secret onto the VM&apos;s metadata. An app that reads them
+            from there (like the demo) needs nothing else; one that reads environment variables needs the values below.
+          </Text>
+        )
+        : (
+          <Text style={[type.caption, { color: c.amber }]}>
+            Shown only once. Reports are optional for alerts, and needed for Revert and Fix with AI (CI replays those
+            requests).
+          </Text>
+        )}
       <CopyRow label="OPSSWIPE_REPORT_URL" value={report.url} />
       <CopyRow label="REPORT_SECRET" value={report.secret} />
       {gcloud && <CopyRow label="On Google Cloud: set both on the VM (then restart your app)" value={gcloud} lines={6} />}

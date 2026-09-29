@@ -187,3 +187,18 @@ export async function canManage(token: string, vm: GcpVm) {
   });
   return ((r.permissions ?? []) as string[]).includes(permission);
 }
+
+// Writes keys onto one VM's metadata with the user's own Google access, keeping every other key. Used to hand
+// the VM its report URL and secret (and a new secret later), so nobody copies them by hand. The fingerprint
+// makes Google refuse rather than overwrite a concurrent change.
+export async function setVmMetadata(token: string, vm: GcpVm, values: Record<string, string>) {
+  const inst = await call(token, vmUrl(vm));
+  const items = ((inst.metadata?.items ?? []) as { key: string; value: string }[]).filter((i) => !(i.key in values));
+  await call(token, `${vmUrl(vm)}/setMetadata`, {
+    method: 'POST',
+    body: JSON.stringify({
+      fingerprint: inst.metadata?.fingerprint,
+      items: [...items, ...Object.entries(values).map(([key, value]) => ({ key, value }))],
+    }),
+  });
+}

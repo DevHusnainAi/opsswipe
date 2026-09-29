@@ -297,8 +297,9 @@ DEMO_REPO=../opsswipe-demo-target ./infra/chaos.sh heal     # between rehearsals
 - [ ] Settings → Discord or Slack: the test message arrives; the next incident posts there too
 - [ ] Sentry (optional): an issue alert on the linked project opens a card with the failing request
 - [ ] Activity: week stats show; Share on a recovery opens the share sheet with the report
-- [ ] Services: each service shows "Last failure report … ago" (or none yet); **New secret** shows the new URL and
-      secret once, the test command (and on a VM the gcloud command); running the test shows "(test)" and opens no card
+- [ ] Services: each service shows "Last failure report … ago" (or none yet); on a VM, adding it or **New secret**
+      writes the URL and secret onto the VM's metadata ("Already on <vm>"), and the demo app picks them up within a
+      minute with no restart; running the test command shows "(test)" and opens no card
 - [ ] The first fix after installing asks for the fingerprint to set up the fix key (onboarding's practice swipe does
       it for new accounts); signed in long ago, the app asks you to sign in again first
 - [ ] Removing a VM service: `gcloud compute instances get-iam-policy <vm>` no longer lists OpsSwipe's account

@@ -107,12 +107,14 @@ export function Services(
       }));
 
   // A new report secret without removing the service (a lost secret, or an app still sending an old one).
-  const [newReport, setNewReport] = useState<{ service: Service; report: { url: string; secret: string } } | null>(null);
+  const [newReport, setNewReport] = useState<{ service: Service; report: { url: string; secret: string }; onVm: boolean } | null>(null);
   const rotate = (s: Service) =>
     armed(`rs-${s.id}`, () =>
       run(`rs-${s.id}`, async () => {
-        const r = await connect<{ report: { url: string; secret: string } }>('rotate_report_secret', { serviceId: s.id });
-        setNewReport({ service: s, report: r.report });
+        const r = await connect<{ report: { url: string; secret: string }; onVm: boolean }>('rotate_report_secret', {
+          serviceId: s.id,
+        });
+        setNewReport({ service: s, report: r.report, onVm: r.onVm });
         await load();
       }));
 
@@ -325,7 +327,7 @@ export function Services(
                         </Text>
                       </Pressable>
                     </View>
-                    {newReport?.service.id === s.id && <ReportSetup report={newReport.report} service={s} />}
+                    {newReport?.service.id === s.id && <ReportSetup report={newReport.report} service={s} onVm={newReport.onVm} />}
                     <SentryLink service={s} onSaved={load} />
                     <View style={styles.actions}>
                       {s.config.repo && status.github.connected && (

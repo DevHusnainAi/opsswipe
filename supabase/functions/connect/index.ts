@@ -6,9 +6,17 @@ import { alertKind, chatAuthorizeUrl } from '../_shared/alerts.ts';
 import { withReturn } from '../_shared/appLink.ts';
 import { isTeam } from '../_shared/codeFix.ts';
 import { db, env, json } from '../_shared/db.ts';
-import { getInstanceStatus } from '../_shared/gcp.ts';
+import { type GcpVm, getInstanceStatus } from '../_shared/gcp.ts';
 import { freshSignIn, registerFixKey, validKey } from '../_shared/fixKeys.ts';
-import { consentUrl, GoogleError, grantReset, listProjects, listVms, revokeReset } from '../_shared/google.ts';
+import {
+  consentUrl,
+  GoogleError,
+  grantReset,
+  listProjects,
+  listVms,
+  revokeReset,
+  setVmMetadata,
+} from '../_shared/google.ts';
 import { branchExists, commitFiles, fileText, openFilesPr, prFiles } from '../_shared/github.ts';
 import { aiLlm } from '../_shared/incidents.ts';
 import { writePostmortem } from '../_shared/postmortem.ts';
@@ -79,6 +87,18 @@ async function releaseVms(owner: string, vms: Service[]) {
   }
   return failed;
 }
+
+// A VM gets its report URL and secret straight onto its metadata (the demo app reads them from there, live),
+// so connecting or re-issuing a secret needs no copying. False when Google refused; the app then shows the command.
+const reportToVm = (owner: string, config: Record<string, string>, report: { url: string; secret: string }) =>
+  googleToken(owner)
+    .then((token) =>
+      setVmMetadata(token, config as unknown as GcpVm, {
+        'opsswipe-report-url': report.url,
+        'report-secret': report.secret,
+      })
+    )
+    .then(() => true, (e) => (console.error('vm metadata:', String(e)), false));
 
 async function addService(
   owner: string,
@@ -335,7 +355,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         vmStatus = await getInstanceStatus(vm, sa).catch(() => 'pending');
       }
       const added = await addService(owner, String(p.name ?? vm.instance).toLowerCase(), 'gcp', config);
-      return { ...added, vmStatus };
+      return { ...added, vmStatus, onVm: await reportToVm(owner, vm, added.report) };
     }
 
     case 'register_push': {
@@ -630,7 +650,8 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       await db.from('services').update({ report_secret_id: secretId, last_report_at: null, last_report_test: null })
         .eq('id', s!.id);
       await deleteSecret(s!.report_secret_id);
-      return { report: { url: `${functionUrl('report')}?service=${s!.id}`, secret } };
+      const report = { url: `${functionUrl('report')}?service=${s!.id}`, secret };
+      return { report, onVm: s!.provider === 'gcp' ? await reportToVm(owner, s!.config, report) : false };
     }
 
     case 'remove_service': {

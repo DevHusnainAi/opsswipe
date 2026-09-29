@@ -53,7 +53,7 @@ export function AddService({ start, status, existing, onClose }: Props) {
   const [vms, setVms] = useState<VmOption[] | null>(null);
   const [vm, setVm] = useState<VmOption | null>(null);
   const [vmUrl, setVmUrl] = useState('');
-  const [created, setCreated] = useState<(NewService & { vmStatus?: string }) | null>(null);
+  const [created, setCreated] = useState<(NewService & { vmStatus?: string; onVm?: boolean }) | null>(null);
   const [picked, setPicked] = useState<RenderOption | null>(null);
   const [repo, setRepo] = useState<string | null>(null); // linked GitHub repo, or none
   const [railway, setRailway] = useState({ token: '', link: '', url: '', name: '' });
@@ -181,7 +181,7 @@ export function AddService({ start, status, existing, onClose }: Props) {
   const addVm = () =>
     run('addvm', async () => {
       setCreated(
-        await connect<NewService & { vmStatus: string }>('gcp_add', {
+        await connect<NewService & { vmStatus: string; onVm: boolean }>('gcp_add', {
           project: project!.id,
           zone: vm!.zone,
           instance: vm!.name,
@@ -454,7 +454,7 @@ export function AddService({ start, status, existing, onClose }: Props) {
                   for alerts, and needed for Revert and Fix with AI (CI replays those requests).
                 </Text>
               </View>
-              <ReportSetup report={created.report} service={created.service} />
+              <ReportSetup report={created.report} service={created.service} onVm={created.onVm} />
               {created.vmStatus === 'pending' && (
                 <Text style={type.caption}>Google is still applying access; reboots work within a minute.</Text>
               )}

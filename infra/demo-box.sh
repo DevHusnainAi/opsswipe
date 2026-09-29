@@ -19,10 +19,10 @@ systemctl disable --now nginx 2>/dev/null || true # the first version of this VM
 [ -d /opt/demo/.git ] || git clone -q "$REPO" /opt/demo
 git -C /opt/demo fetch -q origin main && git -C /opt/demo reset -q --hard origin/main
 
+# The report URL and secret aren't copied here: the app reads them from metadata while it runs (OpsSwipe writes
+# them there when the VM is connected or a new secret is issued), so a new secret works without a restart.
 cat > /etc/opsswipe-demo.env <<ENV
 PORT=80
-OPSSWIPE_REPORT_URL=$(meta opsswipe-report-url)
-REPORT_SECRET=$(meta report-secret)
 ENV
 
 # Security patches install themselves every night (Debian's unattended-upgrades; on by default on GCE).

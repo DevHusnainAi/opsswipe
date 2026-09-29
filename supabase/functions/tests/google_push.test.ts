@@ -7,6 +7,7 @@ import {
   grantReset,
   revokeReset,
   ROLE_ID,
+  setVmMetadata,
   withBinding,
   withoutBinding,
 } from '../_shared/google.ts';
@@ -156,4 +157,29 @@ Deno.test('canManage: the owner must still hold setIamPolicy on the VM', async (
   assertEquals(f.calls[0].body, { permissions: ['compute.instances.setIamPolicy'] });
   f = mockFetch({ 'POST /testIamPermissions': [200, {}] }); // Google returns no list when none are held
   assertEquals(await canManage('tok', vm).finally(f.restore), false);
+});
+
+Deno.test('setVmMetadata writes the report keys onto that VM, keeping its other metadata', async () => {
+  const f = mockFetch({
+    'GET /instances/web-1': [200, {
+      metadata: {
+        fingerprint: 'fp1',
+        items: [
+          { key: 'startup-script', value: 'x' },
+          { key: 'report-secret', value: 'old' },
+        ],
+      },
+    }],
+    'POST /setMetadata': [200, {}],
+  });
+  await setVmMetadata('tok', vm, { 'opsswipe-report-url': 'https://r', 'report-secret': 'new' }).finally(f.restore);
+  const set = f.calls.find((c) => c.url.endsWith('/instances/web-1/setMetadata'))!;
+  assertEquals(set.body, {
+    fingerprint: 'fp1',
+    items: [
+      { key: 'startup-script', value: 'x' },
+      { key: 'opsswipe-report-url', value: 'https://r' },
+      { key: 'report-secret', value: 'new' },
+    ],
+  });
 });
