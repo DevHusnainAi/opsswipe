@@ -132,7 +132,7 @@ export function AddService({ start, status, existing, onClose }: Props) {
     run('addrender', async () => {
       const detected = picked!.repo ?? null;
       setCreated(
-        await connect<NewService>('add_render', {
+        await connect<NewService & { onVm: boolean }>('add_render', {
           serviceId: picked!.id,
           // Unchanged: keep Render's repo and branch. Changed: the server checks GitHub can see it.
           ...(repo !== detected ? { repo: repo ?? '' } : {}),

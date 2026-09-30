@@ -2,7 +2,7 @@ import { assert, assertEquals, assertRejects, assertThrows } from 'jsr:@std/asse
 import { isActive, planFromEvent, proFromRow } from '../_shared/entitlement.ts';
 import { timingSafeEqual } from '../_shared/hmac.ts';
 import { resetInstance, type ServiceAccount, signJwt } from '../_shared/gcp.ts';
-import { restartService } from '../_shared/render.ts';
+import { restartService, setRenderEnv } from '../_shared/render.ts';
 import { actionsFor, validateTarget } from '../_shared/targets.ts';
 
 const b64 = (s: string) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
@@ -179,4 +179,24 @@ Deno.test('shared secrets compare in constant time and only when equal', () => {
   assert(!timingSafeEqual('Bearer ab', 'Bearer abc'));
   assert(!timingSafeEqual('', 'x'));
   assert(!timingSafeEqual('', ''), 'an unset secret never matches');
+});
+
+Deno.test('setRenderEnv sets each variable, then deploys so the app starts with them', async () => {
+  const sent: { url: string; method: string; body: string }[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    sent.push({ url: String(url), method: init?.method ?? 'GET', body: String(init?.body ?? '') });
+    return Promise.resolve(Response.json({}));
+  }) as typeof fetch;
+  try {
+    await setRenderEnv('srv-1', 'key', { OPSSWIPE_REPORT_URL: 'https://r', REPORT_SECRET: 's' });
+  } finally {
+    globalThis.fetch = real;
+  }
+  assertEquals(sent.map((c) => `${c.method} ${c.url.replace('https://api.render.com/v1', '')}`), [
+    'PUT /services/srv-1/env-vars/OPSSWIPE_REPORT_URL',
+    'PUT /services/srv-1/env-vars/REPORT_SECRET',
+    'POST /services/srv-1/deploys',
+  ]);
+  assertEquals(JSON.parse(sent[1].body), { value: 's' });
 });

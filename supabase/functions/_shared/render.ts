@@ -23,6 +23,18 @@ export async function restartService(serviceId: string, apiKey: string) {
   await call(`/services/${serviceId}/restart`, apiKey, { method: 'POST' });
 }
 
+// Sets environment variables on the service, then deploys so the app starts with them (Render doesn't redeploy on
+// its own after an API change). https://api-docs.render.com/reference/update-env-var · create-deploy
+export async function setRenderEnv(serviceId: string, apiKey: string, vars: Record<string, string>) {
+  for (const [key, value] of Object.entries(vars)) {
+    await call(`/services/${serviceId}/env-vars/${encodeURIComponent(key)}`, apiKey, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    });
+  }
+  await call(`/services/${serviceId}/deploys`, apiKey, { method: 'POST', body: '{}' });
+}
+
 export async function listDeploys(serviceId: string, apiKey: string): Promise<Deploy[]> {
   const rows = await call(`/services/${serviceId}/deploys?limit=10`, apiKey);
   return (rows ?? []).map((r: { deploy: Deploy }) => r.deploy);

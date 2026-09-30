@@ -34,7 +34,7 @@ import {
   setRailwayVariables,
 } from '../_shared/railway.ts';
 import { keyProject, RevenueError, revenuePerHour } from '../_shared/revenue.ts';
-import { getRenderService, listServices } from '../_shared/render.ts';
+import { getRenderService, listServices, setRenderEnv } from '../_shared/render.ts';
 import {
   connection,
   type ConnectionKind,
@@ -130,7 +130,11 @@ const reportToHost = (owner: string, s: { provider: string; config: Record<strin
     ? reportToVm(owner, s.config, report)
     : s.provider === 'railway'
     ? reportToRailway(owner, s.config, report)
-    : Promise.resolve(false);
+    : renderKey(owner)
+      .then((key) =>
+        setRenderEnv(s.config.serviceId, key, { OPSSWIPE_REPORT_URL: report.url, REPORT_SECRET: report.secret })
+      )
+      .then(() => true, (e) => (console.error('render env:', String(e)), false));
 
 async function addService(
   owner: string,
@@ -382,7 +386,8 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       const picked = await chosenRepo(owner, p);
       if (picked) Object.assign(config, picked);
       else if (r.repo) Object.assign(config, { repo: r.repo, branch: r.branch ?? 'main' });
-      return await addService(owner, String(p.name ?? r.name).toLowerCase(), 'render', config);
+      const added = await addService(owner, String(p.name ?? r.name).toLowerCase(), 'render', config);
+      return { ...added, onVm: await reportToHost(owner, added.service, added.report) };
     }
 
     // Connect Google Cloud once; then pick projects and VMs any time. Each VM added grants OpsSwipe reset on it.
