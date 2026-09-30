@@ -17,6 +17,8 @@ your swipe and fingerprint.
 
 ![OpsSwipe: a phone card showing a failing service with an AI fix proven in CI, ready to swipe to merge](docs/brand/banner.png)
 
+**[▶ Watch the 2-minute demo](https://youtu.be/kKa17His_c4)**
+
 [Features](#features) · [How it works](#how-it-works) · [Getting started](#getting-started) ·
 [Security](#security) · [Contributing](#contributing) · [Demo video](#demo)
 
@@ -175,7 +177,7 @@ Connect everything from the app's **Services** screen:
 
 | Connect | How | What OpsSwipe gets |
 | --- | --- | --- |
-| **Account** | Continue with GitHub, or email and password | Your services, fixes and plan on any phone |
+| **Account** | Continue with GitHub or Google, or email and password | Your services, fixes and plan on any phone |
 | **GitHub** | Install the OpsSwipe GitHub App on the repos you choose | 1-hour tokens to open and merge PRs there |
 | **Google Cloud** | Sign in with Google, then pick a project and a VM | A custom role on each VM you add: read its status and reboot it |
 | **Render** | Paste an API key (Render has no OAuth for outside apps) | Restart, roll back, read deploys, and set the service's report URL and secret |
@@ -274,13 +276,20 @@ docs/                  Setup runbook, design decisions, brand assets
 
 ## Roadmap
 
-- One-tap Connect for RevenueCat revenue (OAuth) instead of a read-only key
-- iOS build (the app is cross-platform; Android ships first)
-- More fixes: scale up, Kubernetes restarts, Fly, Vercel and Coolify rollbacks
-- Phone-call and SMS escalation, on-call rotations, two-person approval for risky fixes
-- An MCP server so any agent can ask for approval
-- Connect probes to the checked IP (closes DNS rebinding); a list of signed-in phones to revoke fix keys
-- Google OAuth verification, so Connect Google Cloud shows no warning screen
+The failing traffic as the test is the idea everything next grows from:
+
+- **Prove every fix, not just code fixes**: before a rollback, CI builds the older commit and replays the failing
+  requests against it (never against production).
+- **An outage memory per repo**: every PR shows which past outages it was checked against, and warns when a change
+  would bring one back.
+- **A human in the loop for every AI agent**: an MCP server on top of the Approval API, so any agent needs a swipe and
+  a fingerprint before a risky action.
+- **On-call for small teams**: rotations, phone-call and SMS escalation, two-person approval for risky fixes.
+- **Revenue decides what comes first**: one-tap RevenueCat connection (OAuth instead of a key); when two things break,
+  the costlier one pages first.
+- **Everywhere indie apps run**: Google Play and iOS releases; Fly.io, Vercel and Kubernetes; scale-up as a fix.
+- **Hardening**: probes connect to the checked IP (closes DNS rebinding), a list of signed-in phones to revoke fix
+  keys, and Google OAuth verification so Connect Google Cloud shows no warning screen.
 
 ## Contributing
 
@@ -294,9 +303,12 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and
 ## Acknowledgements
 
 Built for the [RevenueCat Shipaton 2026](https://www.revenuecat.com/shipaton/) (Next Gen Award) with
-[Claude Code](https://claude.com/claude-code). Judges: the submission, demo script and what to look at are in
+[Claude Code](https://claude.com/claude-code). Judges: what the video shows and where to look in the code are in
 [docs/SUBMISSION.md](docs/SUBMISSION.md).
 
 ### Demo
 
-> Demo video: ⟨YouTube link⟩
+[![OpsSwipe demo video: fix production from your phone, and prove it worked](https://img.youtube.com/vi/kKa17His_c4/maxresdefault.jpg)](https://youtu.be/kKa17His_c4)
+
+Everything in the video is real: a real Android phone, a Google Cloud VM, Render and Railway services, real pull
+requests and real CI runs (for example [the revert PR with its passing proof](https://github.com/DevHusnainAi/opsswipe-demo-target/pull/6)).

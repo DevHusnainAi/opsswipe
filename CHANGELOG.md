@@ -7,27 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-
-- **Report settings set for you on Render and Railway**: adding a service (or issuing a new report secret) sets
-  `OPSSWIPE_REPORT_URL` and `REPORT_SECRET` on the service through the host's API, like the VM metadata on Google Cloud.
-- Fix PRs list the failing production requests, how the fix is proven, and the reverted commit's author, message and files.
-- Settings tells a teammate on the Free plan that the owner's incidents are fixed on the owner's plan.
-
-### Fixed
-
-- **Railway rollback**: Railway marks a replaced deployment `REMOVED`, so rollback found nothing; it now uses Railway's
-  `canRollback`. Railway's deploy history also feeds the suggestion, so a failure right after a deploy suggests Roll back.
-- **Connect Railway** finishes when Railway's window is closed (its consent page never returns to the app), for the
-  account that started it, once, within 15 minutes.
-- A clear message instead of a generic error when Railway isn't connected yet.
-
 ## [1.0.0] - 2026-09-30
 
 First public release, built for the RevenueCat Shipaton 2026.
 
 ### Added
 
+- **Report settings set for you on Render and Railway**: adding a service (or issuing a new report secret) sets
+  `OPSSWIPE_REPORT_URL` and `REPORT_SECRET` on the service through the host's API, like the VM metadata on Google Cloud.
+- Fix PRs list the failing production requests, how the fix is proven, and the reverted commit's author, message and files.
+- Settings tells a teammate on the Free plan that the owner's incidents are fixed on the owner's plan.
 - **Alarm-style paging**: outages ring on an "Outages (alarm)" channel at alarm volume, repeat every 2 minutes until
   someone opens or acts on them, and escalate to the team after 5 minutes.
 - **Team invites by email** (Resend): a join link; people without an account sign up and are joined. Joining by a typed code is gone.
@@ -60,6 +49,14 @@ Fixes for every finding of an independent audit, each at its root (see [docs/DEC
 - The Claude Code hook is default-deny and fails closed.
 - Service URLs can't point inside a network; row-level security has regression tests for every client write.
 - Fixes can't get stuck mid-run; concurrent writers can't erase each other's incident data.
+
+### Fixed
+
+- **Railway rollback**: Railway marks a replaced deployment `REMOVED`, so rollback found nothing; it now uses Railway's
+  `canRollback`. Railway's deploy history also feeds the suggestion, so a failure right after a deploy suggests Roll back.
+- **Connect Railway** finishes when Railway's window is closed (its consent page never returns to the app), for the
+  account that started it, once, within 15 minutes.
+- A clear message instead of a generic error when Railway isn't connected yet.
 
 ## [0.2.0] - 2026-09-29
 

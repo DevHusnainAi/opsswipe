@@ -64,7 +64,7 @@ a.box(fx[3], 330, 255, 96, 'connect + OAuth', ['GitHub, Google, Railway,', 'Slac
 a.path([(737, 330), (737, 306), (187, 306), (187, 328)], 'Merge unlocked', 462, 306, color=C['green'])
 # outputs
 oy = 560
-outs = [('Alarm push', ['Slack, Discord'], None, None), ('Phone app', ['swipe + fingerprint'], C['blue'], C['blueTint']),
+outs = [('Alerts', ['alarm push, Slack, Discord'], None, None), ('Phone app', ['swipe + fingerprint'], C['blue'], C['blueTint']),
         ('Your services', ['GCP VM, Render, Railway'], None, None), ('GitHub', ['revert / AI fix PR, merge'], None, None),
         ('GitHub Actions', ['replays failing requests', 'in locked-down containers'], None, None)]
 for i, (t, l, st, fi) in enumerate(outs):

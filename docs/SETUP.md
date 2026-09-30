@@ -172,7 +172,7 @@ and `REPORT_SECRET` on the service itself and it redeploys (for a Railway web se
 
 ### 9. Connect everything from the app
 
-First launch: the welcome tour, **Create account** (Continue with GitHub, or email and password), **Turn on alerts**,
+First launch: the welcome tour, **Create account** (Continue with GitHub or Google, or email and password), **Turn on alerts**,
 then the **Services** tab's setup checklist.
 
 1. **Connections → GitHub → Connect**: install the GitHub App on `opsswipe-demo-target`.
