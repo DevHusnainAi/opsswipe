@@ -4,7 +4,13 @@ import type { RailwayTarget } from './targets.ts';
 
 const API = 'https://backboard.railway.com/graphql/v2';
 
-type Deployment = { id: string; status: string; createdAt: string };
+export type Deployment = {
+  id: string;
+  status: string;
+  createdAt: string;
+  canRollback?: boolean;
+  meta?: { commitHash?: string; commitMessage?: string } | null;
+};
 
 async function gql<T>(token: string, query: string, variables: Record<string, unknown>): Promise<T> {
   const res = await fetch(API, {
@@ -26,17 +32,22 @@ export async function listDeployments(
 ) {
   const d = await gql<{ deployments: { edges: { node: Deployment }[] } }>(
     token,
-    `query($input: DeploymentListInput!) { deployments(input: $input, first: 10) { edges { node { id status createdAt } } } }`,
+    `query($input: DeploymentListInput!) { deployments(input: $input, first: 10) { edges { node { id status createdAt canRollback meta } } } }`,
     { input: { projectId: t.projectId, serviceId: t.serviceId, environmentId: t.environmentId } },
   );
   return d.deployments.edges.map((e) => e.node);
 }
 
-// Newest first. The live deployment is the newest SUCCESS; the rollback target the one before it.
+// Newest first. The live deployment is the newest SUCCESS. Railway marks a replaced deployment REMOVED, not SUCCESS,
+// so the rollback target is the newest older one Railway itself says it can roll back to.
 export function pickDeployments(all: Deployment[]) {
-  const ok = [...all].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .filter((d) => d.status === 'SUCCESS');
-  return { live: ok.at(0), previous: ok.at(1) };
+  const sorted = [...all].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const live = sorted.find((d) => d.status === 'SUCCESS');
+  const previous = live &&
+    sorted.find((d) =>
+      Date.parse(d.createdAt) < Date.parse(live.createdAt) && (d.canRollback || d.status === 'SUCCESS')
+    );
+  return { live, previous };
 }
 
 export async function restartRailway(t: RailwayTarget, token: string) {

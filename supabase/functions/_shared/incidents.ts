@@ -4,12 +4,15 @@
 import { db, env } from './db.ts';
 import { accessToken } from './gcp.ts';
 import { type Deploy, listDeploys, pickRollback } from './render.ts';
+import { type Deployment, listDeployments, pickDeployments } from './railway.ts';
+import type { RailwayTarget } from './targets.ts';
 import { mergeSamples, type ReplaySample } from './replay.ts';
 import {
   connection,
   githubToken,
   notify,
   platformSa,
+  railwayToken,
   readSecret,
   renderKey,
   type Service,
@@ -74,9 +77,24 @@ export function aiPatcher(): Patcher | undefined {
   return sa.project_id ? vertexPatcher(sa.project_id, () => accessToken(sa)) : undefined;
 }
 
+// Railway's deployments in Render's shape, so the same rules see a fresh deploy and suggest a rollback.
+const asDeploy = (d?: Deployment): Deploy | undefined =>
+  d && {
+    id: d.id,
+    status: d.status,
+    createdAt: d.createdAt,
+    commit: d.meta?.commitHash ? { id: d.meta.commitHash, message: d.meta.commitMessage } : undefined,
+  };
+
 async function deployHistory(s: Service): Promise<{ live?: Deploy; previous?: Deploy }> {
-  if (s.provider !== 'render') return {};
   try {
+    if (s.provider === 'railway') {
+      const { live, previous } = pickDeployments(
+        await listDeployments(await railwayToken(s.owner), toTarget(s) as RailwayTarget),
+      );
+      return { live: asDeploy(live), previous: asDeploy(previous) };
+    }
+    if (s.provider !== 'render') return {};
     return pickRollback(await listDeploys(s.config.serviceId, await renderKey(s.owner)));
   } catch (e) {
     console.warn('deploy history unavailable:', String(e));
@@ -113,7 +131,7 @@ export async function openIncident(
   const [deploys, revenue] = await Promise.all([deployHistory(s), revenueAtRisk(s.owner)]);
   if (!deploys.live && release) {
     deploys.live = { id: 'reported', status: 'live', createdAt: new Date().toISOString(), commit: { id: release } };
-  }
+  } else if (deploys.live && !deploys.live.commit && release) deploys.live.commit = { id: release };
   // merge_pr is never offered up front: /proof adds it once CI has proven a PR. The AI fix needs
   // Claude, so it's offered only when this server has it switched on.
   // Code fixes need something to replay: without samples, a PR could never be proven.

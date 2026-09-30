@@ -46,14 +46,17 @@ Deno.test('Railway ids come from the dashboard link; the target validates them a
   assert(threw, 'a UUID is not a Render serviceId: each provider keeps its own format');
 });
 
+// Railway marks a replaced deployment REMOVED; canRollback says which of those it can go back to.
 const deployments = [
-  { id: 'd-new-failed', status: 'FAILED', createdAt: '2026-09-28T12:00:00Z' },
-  { id: 'd-live', status: 'SUCCESS', createdAt: '2026-09-28T11:00:00Z' },
-  { id: 'd-prev', status: 'SUCCESS', createdAt: '2026-09-28T10:00:00Z' },
+  { id: 'd-new-failed', status: 'FAILED', createdAt: '2026-09-28T12:00:00Z', canRollback: false },
+  { id: 'd-live', status: 'SUCCESS', createdAt: '2026-09-28T11:00:00Z', canRollback: false },
+  { id: 'd-skipped', status: 'REMOVED', createdAt: '2026-09-28T10:30:00Z', canRollback: false },
+  { id: 'd-prev', status: 'REMOVED', createdAt: '2026-09-28T10:00:00Z', canRollback: true },
+  { id: 'd-older', status: 'REMOVED', createdAt: '2026-09-28T09:00:00Z', canRollback: true },
 ];
 
 Deno.test('Railway: restart the live deployment, roll back to the previous successful one', async () => {
-  assertEquals(pickDeployments(deployments), { live: deployments[1], previous: deployments[2] });
+  assertEquals(pickDeployments(deployments), { live: deployments[1], previous: deployments[3] });
   const sent: { query: string; variables: { id?: string } }[] = [];
   const real = globalThis.fetch;
   globalThis.fetch = ((_u: string, init: RequestInit) => {
