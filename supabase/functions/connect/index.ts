@@ -23,7 +23,7 @@ import { aiLlm } from '../_shared/incidents.ts';
 import { writePostmortem } from '../_shared/postmortem.ts';
 import type { PrRef } from '../_shared/proof.ts';
 import { authorizeUrl, installUrl, listRepos } from '../_shared/githubApp.ts';
-import { claim, ClaimError, newState, saveAlerts } from '../_shared/oauthState.ts';
+import { claim, ClaimError, finishRailway, newState, saveAlerts } from '../_shared/oauthState.ts';
 import { PROOF_SCRIPT, PROOF_SCRIPT_PATH, PROOF_WORKFLOW_PATH, proofWorkflow } from '../_shared/proofKit.ts';
 import {
   idsFromLink,
@@ -283,16 +283,21 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     // the grant under a claim, like Google.
     case 'railway_start': {
       need(railwayOAuthEnabled(), 'Connect Railway is not set up on this OpsSwipe server. Paste a token instead.');
-      return { url: railwayAuthorizeUrl(withReturn(await newState(owner, 'railway'), p.returnTo)) };
+      const state = await newState(owner, 'railway');
+      return { url: railwayAuthorizeUrl(withReturn(state, p.returnTo)), state };
     }
 
+    // The app, once Railway's window closes: finish the connection it started (see finishRailway).
+    case 'railway_finish':
+      return await finishRailway(owner, String(p.state ?? '')).catch((e) => {
+        throw e instanceof ClaimError
+          ? new UserError('Railway did not finish connecting. Tap Connect Railway again.')
+          : e;
+      });
+
     // The services in the projects the user shared, to pick from instead of pasting a dashboard link.
-    // Not connected yet: the consent screen was closed before "Open OpsSwipe", so the app never claimed it.
     case 'railway_services':
-      need(
-        (await connection(owner, 'railway'))?.secret_id,
-        'Railway isn\'t connected yet. Tap Connect Railway again, and on the last page tap "Open OpsSwipe" instead of closing it.',
-      );
+      need((await connection(owner, 'railway'))?.secret_id, "Railway isn't connected yet. Tap Connect Railway again.");
       return {
         services: await railwayToken(owner).then(listRailwayServices).catch((e) => {
           console.error('railway_services:', String(e));

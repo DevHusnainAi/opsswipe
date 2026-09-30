@@ -76,12 +76,7 @@ export async function claim(owner: string, token: string): Promise<{ kind: OAuth
     });
     return { kind: 'github', account: r.account };
   }
-  if (r.kind === 'railway') {
-    const old = await connection(owner, 'railway');
-    await db.from('connections').upsert({ owner, kind: 'railway', secret_id: r.secret_id, account: 'oauth' });
-    await deleteSecret(old?.secret_id);
-    return { kind: 'railway', account: null };
-  }
+  if (r.kind === 'railway') return await keepRailway(owner, r.secret_id);
   if (r.kind === 'google') {
     const old = await connection(owner, 'google');
     await db.from('connections').upsert({ owner, kind: 'google', secret_id: r.secret_id, account: r.account });
@@ -92,6 +87,26 @@ export async function claim(owner: string, token: string): Promise<{ kind: OAuth
   await deleteSecret(r.secret_id); // saveAlerts keeps its own copy
   await saveAlerts(owner, url ?? '', r.channel);
   return { kind: r.kind, account: r.channel };
+}
+
+async function keepRailway(owner: string, secretId: string) {
+  const old = await connection(owner, 'railway');
+  await db.from('connections').upsert({ owner, kind: 'railway', secret_id: secretId, account: 'oauth' });
+  await deleteSecret(old?.secret_id);
+  return { kind: 'railway' as const, account: null };
+}
+
+// Railway's consent page follows our redirect in the background and stays on "Authentication Successful", so the
+// claim never reaches the phone. The app finishes it with the state it started: same account, once, within 15 minutes.
+// ponytail: this drops the claim's forwarded-link guard for Railway only (someone who approves a link another user
+// forwarded shares their projects with that user); a device-bound claim needs Railway to navigate back.
+export async function finishRailway(owner: string, nonce: string) {
+  if (!/^[0-9a-f]{32}$/.test(nonce)) throw new ClaimError();
+  const { data } = await db.from('oauth_states').delete().eq('nonce', nonce).eq('owner', owner).eq('kind', 'railway')
+    .not('result', 'is', null).gt('completed_at', since()).select('result').maybeSingle();
+  const r = data?.result as Result | undefined;
+  if (r?.kind !== 'railway') throw new ClaimError();
+  return await keepRailway(owner, r.secret_id);
 }
 
 export class ClaimError extends Error {

@@ -61,3 +61,29 @@ Deno.test('no matching claim (another account, expired or used) connects nothing
   }
   assert(!f.calls.some((c) => c.url.pathname.endsWith('/connections')));
 });
+
+Deno.test('Railway is finished by the account that started it, with a result, once, within 15 minutes', async () => {
+  const { finishRailway } = await import('../_shared/oauthState.ts');
+  const f = mockDb({ oauth_states: [{ result: { kind: 'railway', secret_id: 's1' } }], connections: [] });
+  try {
+    assertEquals(await finishRailway(OWNER, 'a'.repeat(32)), { kind: 'railway', account: null });
+  } finally {
+    f.restore();
+  }
+  const take = f.calls.find((c) => c.url.pathname.endsWith('/oauth_states'))!;
+  assertEquals(take.method, 'DELETE', 'single use');
+  const q = take.url.searchParams;
+  assertEquals(q.get('owner'), `eq.${OWNER}`);
+  assertEquals(q.get('kind'), 'eq.railway', 'never finishes a GitHub, Google or Slack flow');
+  assertEquals(q.get('result'), 'not.is.null', 'an exchange still in flight is left alone');
+  assert(q.get('completed_at')?.startsWith('gt.'), 'expires');
+  assert(f.calls.some((c) => c.method === 'POST' && c.url.pathname.endsWith('/connections')), 'then connects');
+
+  const none = mockDb({ oauth_states: [] });
+  try {
+    await assertRejects(() => finishRailway(OWNER, 'a'.repeat(32)), ClaimError);
+    await assertRejects(() => finishRailway(OWNER, 'nope'), ClaimError);
+  } finally {
+    none.restore();
+  }
+});

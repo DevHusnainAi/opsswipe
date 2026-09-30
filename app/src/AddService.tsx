@@ -207,17 +207,14 @@ export function AddService({ start, status, existing, onClose }: Props) {
   // Connect Railway: Railway's consent screen, where the user picks the projects OpsSwipe may use.
   const connectRailway = () =>
     run('rwconnect', async () => {
-      const { url } = await connect<{ url: string }>('railway_start', { returnTo: appBase });
+      const { url, state } = await connect<{ url: string; state: string }>('railway_start', { returnTo: appBase });
       const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
+      // Railway stays on its own "Authentication Successful" page, so no link comes back: the user closes it
+      // and the app finishes the connection it started.
       if (r.type === 'success') await claimFrom(r.url);
+      else await connect('railway_finish', { state });
       setChanged(true);
-      // "Open OpsSwipe" on Railway's last page arrives through the app's link handler, which may still be claiming.
-      const services = () => connect<{ services: RailwayService[] }>('railway_services');
-      const list = (await services().catch(async (e) => {
-        if (r.type === 'success') throw e;
-        await new Promise((ok) => setTimeout(ok, 2000));
-        return services();
-      })).services;
+      const list = (await connect<{ services: RailwayService[] }>('railway_services')).services;
       setRwServices(list);
       if (list.length === 1) pickRailway(list[0]);
     });
