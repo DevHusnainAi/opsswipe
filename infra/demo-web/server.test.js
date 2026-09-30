@@ -41,6 +41,7 @@ test('a 5xx is reported to OpsSwipe with a valid signature and no headers', asyn
       PORT: port,
       CHAOS_KEY: 'k',
       REPORT_SECRET: 'shh',
+      GIT_SHA: 'a'.repeat(40),
       OPSSWIPE_REPORT_URL: `http://127.0.0.1:${receiver.address().port}/report?service=abc`,
     },
   });
@@ -56,7 +57,7 @@ test('a 5xx is reported to OpsSwipe with a valid signature and no headers', asyn
 
   assert.equal(got.length, 1);
   assert.equal(got[0].url, '/report?service=abc', 'the report URL from the app identifies the service');
-  assert.deepEqual(JSON.parse(got[0].body), { method: 'GET', path: '/?page=2', status: 503 });
+  assert.deepEqual(JSON.parse(got[0].body), { method: 'GET', path: '/?page=2', status: 503, release: 'a'.repeat(40) });
   assert.equal(got[0].sig, `sha256=${createHmac('sha256', 'shh').update(got[0].body).digest('hex')}`);
   assert.ok(!got[0].body.includes('secret'), 'cookies never leave the app');
 });

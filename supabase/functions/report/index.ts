@@ -1,9 +1,12 @@
 // Event-driven detection: a service reports its own failing requests the moment they happen.
 // POST /report?service=<id>, signed with that service's own HMAC secret (shown once at connect).
 // Only 5xx responses count; samples are scrubbed and kept so a PR can be proven against them.
-import { json } from '../_shared/db.ts';
+// Optional `release`: the commit the app is running (e.g. GIT_SHA set at deploy). On hosts with no
+// deploy history of their own (a VM), it tells a revert or AI fix which commit broke things.
+// `"test": true` checks the setup end to end without opening an incident.
+import { db, json } from '../_shared/db.ts';
 import { verify } from '../_shared/hmac.ts';
-import { addSamples, openIncident, openIncidentFor } from '../_shared/incidents.ts';
+import { reportFailure } from '../_shared/incidents.ts';
 import { scrubSample } from '../_shared/replay.ts';
 import { getService, readSecret } from '../_shared/services.ts';
 
@@ -29,15 +32,15 @@ Deno.serve(async (req) => {
   } catch {
     return json(400, { error: 'invalid JSON' });
   }
+  // Proof the app's URL and secret are right, shown per service in the app. A test report ("test": true,
+  // the command the app shows) stops here: it never opens an incident.
+  await db.from('services').update({ last_report_at: new Date().toISOString(), last_report_test: body.test === true })
+    .eq('id', service.id);
+  if (body.test === true) return json(200, { test: true, service: service.name });
   const sample = scrubSample(body);
   if (!sample) return json(202, { ignored: true }); // not a 5xx, or not replayable
 
-  const open = await openIncidentFor(service.id);
-  if (open) {
-    await addSamples(open.id, open.context ?? {}, [sample]);
-    return json(200, { added: true });
-  }
   const metric = `${sample.method} ${sample.path} → ${sample.status} (reported by the app)`;
-  const { opened } = await openIncident(service, 'Requests are failing', metric, [sample]);
-  return json(200, { opened });
+  const release = typeof body.release === 'string' && /^[0-9a-f]{40}$/.test(body.release) ? body.release : undefined;
+  return json(200, await reportFailure(service, sample, metric, release));
 });

@@ -7,11 +7,17 @@ import { MAX_SAMPLES, mergeSamples, scrubSample } from '../_shared/replay.ts';
 const now = new Date('2026-09-27T10:00:00Z');
 const SHA = 'a'.repeat(40);
 const pr: PrRef = { repo: 'me/app', number: 7, headSha: SHA, url: 'https://github.com/me/app/pull/7', branch: 'b' };
+// What OpsSwipe saved when production failed, and what CI says this PR's build answers now.
+const saved = [
+  { method: 'GET', path: '/api/price', status: 500 },
+  { method: 'POST', path: '/checkout', status: 502 },
+];
+const now200 = saved.map((s) => ({ method: s.method, path: s.path, now: 200 }));
 const proof = (over: Partial<ProofPayload> = {}): ProofPayload => ({
   repo: 'me/app',
   pr: 7,
   headSha: SHA,
-  replay: { passed: 3, total: 3 },
+  results: now200,
   tests: { passed: true },
   ...over,
 });
@@ -56,30 +62,40 @@ Deno.test('parseProof rejects malformed or impossible results', () => {
   const { repo: _r, pr: _p, ...body } = proof();
   assert(parseProof(body));
   assertEquals(parseProof({ ...body, headSha: 'abc' }), null);
-  assertEquals(parseProof({ ...body, replay: { passed: 4, total: 3 } }), null);
+  assertEquals(parseProof({ ...body, results: [{ method: 'GET', path: 'https://evil.test', now: 200 }] }), null);
+  assertEquals(parseProof({ ...body, results: [{ method: 'GET', path: '/', now: 999 }] }), null);
+  assertEquals(parseProof({ ...body, results: undefined as never }), null);
   assertEquals(parseProof({ ...body, tests: {} }), null);
   assertEquals(parseProof({ ...body, runUrl: 'https://evil.test/run' }), null, 'run links must point at GitHub');
   assertEquals(parseProof(null), null);
 });
 
-Deno.test('evaluateProof binds to the exact PR commit; merge unlocks only on a full pass', () => {
-  const accepted = evaluateProof(pr, proof(), now);
+Deno.test('evaluateProof binds to the exact PR commit; merge unlocks only when every saved failure answers 2xx', () => {
+  const accepted = evaluateProof(pr, proof(), saved, now);
   assert(accepted.status === 'accepted' && accepted.proof.ok && canMerge(pr, accepted.proof));
+  assertEquals(accepted.proof.results[1], { method: 'POST', path: '/checkout', was: 502, now: 200 });
 
-  assertEquals(evaluateProof(pr, proof({ headSha: 'b'.repeat(40) })).status, 'stale', 'pushed after we opened it');
-  assertEquals(evaluateProof(pr, proof({ pr: 8 })).status, 'unknown');
-  assertEquals(evaluateProof(undefined, proof()).status, 'unknown');
+  assertEquals(
+    evaluateProof(pr, proof({ headSha: 'b'.repeat(40) }), saved).status,
+    'stale',
+    'pushed after we opened it',
+  );
+  assertEquals(evaluateProof(pr, proof({ pr: 8 }), saved).status, 'unknown');
+  assertEquals(evaluateProof(undefined, proof(), saved).status, 'unknown');
 
   for (
-    const partial of [
-      proof({ replay: { passed: 2, total: 3 } }),
-      proof({ tests: { passed: false } }),
-      proof({ replay: { passed: 0, total: 0 } }),
-    ]
+    const [why, partial] of [
+      ['a 404 is a different error, not a fix', proof({ results: [now200[0], { ...now200[1], now: 404 }] })],
+      ['a redirect to a login page is not a fix', proof({ results: [now200[0], { ...now200[1], now: 302 }] })],
+      ['leaving a failing request out does not help', proof({ results: [now200[0]] })],
+      ['tests must pass', proof({ tests: { passed: false } })],
+    ] as const
   ) {
-    const r = evaluateProof(pr, partial, now);
-    assert(r.status === 'accepted' && !r.proof.ok && !canMerge(pr, r.proof));
+    const r = evaluateProof(pr, partial, saved, now);
+    assert(r.status === 'accepted' && !r.proof.ok && !canMerge(pr, r.proof), why);
   }
+  const none = evaluateProof(pr, proof({ results: [] }), [], now);
+  assert(none.status === 'accepted' && !none.proof.ok, 'nothing to replay proves nothing');
   assert(!canMerge({ ...pr, headSha: 'c'.repeat(40) }, accepted.proof), 'proof for another sha');
 });
 

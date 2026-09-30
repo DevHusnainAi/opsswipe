@@ -1,15 +1,17 @@
 -- Multi-tenant isolation and vault access. Run against a migrated DB (see meter.sql).
 begin;
-grant select on incidents, services, connections, audit_log, push_tokens to authenticated;
+grant select on incidents, services, connections, audit_log, push_tokens, team_members to authenticated;
 
 do $$
 declare
   alice uuid := gen_random_uuid();
   bob uuid := gen_random_uuid();
+  carol uuid := gen_random_uuid();
   s_alice uuid;
   secret_id uuid;
 begin
-  insert into auth.users values (alice), (bob);
+  insert into auth.users values (alice), (bob), (carol);
+  insert into team_members (owner, member) values (alice, carol); -- carol is on alice's team
   insert into services (owner, name, provider, config) values (alice, 'web', 'render', '{"serviceId":"srv-1","url":"u"}')
     returning id into s_alice;
   insert into services (owner, name, provider, config) values (bob, 'web', 'render', '{"serviceId":"srv-2","url":"u"}');
@@ -31,6 +33,19 @@ begin
 
   perform set_config('test.uid', bob::text, true);
 end $$;
+
+-- A teammate sees the owner's incidents (to fix them), and nothing else of the owner's.
+do $$ begin perform set_config('test.uid', (select member::text from team_members limit 1), true); end $$;
+set local role authenticated;
+do $$
+begin
+  assert (select count(*) from incidents) = 1, 'carol sees alice''s incident';
+  assert (select count(*) from services) = 0, 'but not her services';
+  assert (select count(*) from connections) = 0, 'or her connections';
+  assert (select count(*) from team_members) = 1, 'carol sees the team she is on';
+end $$;
+reset role;
+do $$ begin perform set_config('test.uid', (select owner::text from services where config->>'serviceId' = 'srv-2'), true); end $$;
 
 set local role authenticated;
 do $$

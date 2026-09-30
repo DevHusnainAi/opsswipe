@@ -2,8 +2,13 @@
 // carries a GitHub Actions OIDC token, which proves which repo and which PR the run was for.
 // Accepted only for the exact head commit OpsSwipe opened; merge_pr unlocks only on a full pass.
 import { db, json } from '../_shared/db.ts';
-import { prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
-import { notify } from '../_shared/services.ts';
+import { afterProof } from '../_shared/flow.ts';
+import { aiEnabled } from '../_shared/incidents.ts';
+import { fromWorkflow, prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
+import { PROOF_WORKFLOW_PATH } from '../_shared/proofKit.ts';
+import { prHead } from '../_shared/github.ts';
+import type { ReplaySample } from '../_shared/replay.ts';
+import { githubToken, notify } from '../_shared/services.ts';
 import { canMerge, evaluateProof, parseProof, type Proof, type PrRef } from '../_shared/proof.ts';
 
 Deno.serve(async (req) => {
@@ -12,6 +17,7 @@ Deno.serve(async (req) => {
   try {
     const claims = await verifyGithubOidc(req.headers.get('Authorization')?.replace(/^Bearer /i, '') ?? '');
     if (claims.event_name !== 'pull_request') throw new Error('not a pull_request run');
+    if (!fromWorkflow(claims, PROOF_WORKFLOW_PATH)) throw new Error(`not the ${PROOF_WORKFLOW_PATH} workflow`);
     repo = claims.repository;
     prNumber = prNumberFromRef(claims.ref);
   } catch (e) {
@@ -32,34 +38,54 @@ Deno.serve(async (req) => {
     .eq('context->pr->>repo', repo)
     .eq('context->pr->>number', String(prNumber))
     .maybeSingle<
-      { id: string; owner: string; target_server: string; actions: string[]; context: { pr?: PrRef; proof?: Proof } }
+      {
+        id: string;
+        owner: string;
+        target_server: string;
+        actions: string[];
+        context: { pr?: PrRef; proof?: Proof; replay?: ReplaySample[]; prepared?: boolean };
+      }
     >();
   if (!inc) return json(404, { error: 'no open incident for this PR' });
 
-  const result = evaluateProof(inc.context.pr, { ...body, repo, pr: prNumber });
+  // The sha CI says it tested comes from the PR's own script; GitHub says what the PR points at now.
+  const head = await prHead(inc.context.pr!, await githubToken(inc.owner)).catch(() => null);
+  if (!head) return json(503, { error: 'could not check the PR with GitHub; re-run the job' });
+  if (head !== inc.context.pr?.headSha) return json(409, { error: 'the PR changed after OpsSwipe opened it' });
+  const expected = inc.context.pr?.replay ?? inc.context.replay ?? [];
+  const result = evaluateProof(inc.context.pr, { ...body, repo, pr: prNumber }, expected);
   if (result.status !== 'accepted') {
     return result.status === 'stale'
       ? json(409, { error: 'proof is for a different commit than OpsSwipe opened' })
       : json(404, { error: 'PR does not match' });
   }
 
-  const actions = inc.actions.filter((a) => a !== 'merge_pr');
-  if (canMerge(inc.context.pr, result.proof)) actions.push('merge_pr');
+  const next = afterProof(inc, result.proof, canMerge(inc.context.pr, result.proof), {
+    ai: aiEnabled(),
+    repo: (inc.context.replay?.length ?? 0) > 0,
+  });
   await db.from('incidents').update({
-    actions,
-    // a proven PR becomes the suggested fix
-    ...(result.proof.ok
-      ? { action: 'merge_pr', reason: 'CI proved the fix against the failing production requests.' }
-      : {}),
-    context: { ...inc.context, proof: result.proof },
+    ...next,
+    ...(next.action ? { suggested_by: 'rules' } : {}),
+    context: { proof: result.proof }, // merged into the stored context (a trigger)
   }).eq('id', inc.id);
-  if (result.proof.ok) {
-    const { passed, total } = result.proof;
-    await notify(inc.owner, {
-      title: `Fix proven for ${inc.target_server}`,
-      body: `${passed}/${total} failing production requests now pass. Ready to merge.`,
-      data: { incidentId: inc.id },
-    });
-  }
+  const { passed, total } = result.proof;
+  await notify(
+    inc.owner,
+    result.proof.ok
+      ? {
+        // A prepared fix is the first thing a sleeping engineer reads: say it's done, not what to do.
+        title: inc.context.prepared
+          ? `${inc.target_server} is down. A fix is ready and proven`
+          : `Fix proven for ${inc.target_server}`,
+        body: `${passed}/${total} failing production requests now pass. Swipe to merge.`,
+        data: { incidentId: inc.id },
+      }
+      : {
+        title: `Fix not proven for ${inc.target_server}`,
+        body: `${next.reason ?? `Only ${passed}/${total} failing requests pass.`}`,
+        data: { incidentId: inc.id },
+      },
+  );
   return json(200, { accepted: true, ok: result.proof.ok });
 });

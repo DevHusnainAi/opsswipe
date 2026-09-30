@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
 import { b64url, pkcs1ToPkcs8, signRs256 } from '../_shared/jwt.ts';
-import { AUDIENCE, ISSUER, prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
+import { AUDIENCE, fromWorkflow, ISSUER, prNumberFromRef, verifyGithubOidc } from '../_shared/oidc.ts';
 import { PROOF_SCRIPT, proofWorkflow } from '../_shared/proofKit.ts';
 import { githubRepo } from '../_shared/render.ts';
 
@@ -87,6 +87,105 @@ Deno.test('proof kit: workflow asks for OIDC, points at our endpoint, and the sc
   assert(wf.includes('id-token: write'));
   assert(wf.includes('OPSSWIPE_PROOF_URL: https://ref.supabase.co/functions/v1/proof'));
   assert(wf.includes('${{ steps.tests.outputs.passed }}'), 'GitHub expression survives the template');
+  for (
+    const lock of ['persist-credentials: false', '--network none', '--internal', '--cap-drop ALL', 'no-new-privileges']
+  ) {
+    assert(wf.includes(lock), `PR code is locked down: ${lock}`);
+  }
+  assert(wf.includes('proof.mjs report'), 'the token is only used by the reporter step');
   const mod = await import(`data:text/javascript,${encodeURIComponent(PROOF_SCRIPT)}`);
-  assertEquals(typeof mod.replayAll, 'function');
+  assertEquals([
+    mod.fixed({ was: 500, now: 200 }),
+    mod.fixed({ was: 500, now: 404 }),
+    mod.fixed({ was: 500, now: 302 }),
+  ], [
+    true,
+    false,
+    false,
+  ]);
+});
+
+Deno.test('proof replay step reports what each saved failure returns now', async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.mkdir(`${dir}/replays`);
+  await Deno.writeTextFile(`${dir}/proof.mjs`, PROOF_SCRIPT);
+  await Deno.writeTextFile(
+    `${dir}/replays/abc.json`,
+    JSON.stringify({
+      samples: [{ method: 'GET', path: '/ok', status: 500 }, { method: 'GET', path: '/gone', status: 500 }],
+    }),
+  );
+  const server = Deno.serve(
+    { hostname: '127.0.0.1', port: 0, onListen: () => {} },
+    (r) => new Response('', { status: r.url.endsWith('/ok') ? 200 : 404 }),
+  );
+  try {
+    const out = await new Deno.Command('node', {
+      args: ['proof.mjs', 'replay', `http://127.0.0.1:${server.addr.port}`, 'replays'],
+      cwd: dir,
+    }).output();
+    assertEquals(JSON.parse(new TextDecoder().decode(out.stdout)), [
+      { method: 'GET', path: '/ok', was: 500, now: 200 },
+      { method: 'GET', path: '/gone', was: 500, now: 404 },
+    ]);
+  } finally {
+    await server.shutdown();
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test('only the OpsSwipe proof workflow of that same repo can prove a fix', () => {
+  const base = { repository: 'me/app', ref: 'refs/pull/7/merge', event_name: 'pull_request', run_id: '1', exp: 0 };
+  const path = '.github/workflows/opsswipe-proof.yml';
+  assertEquals(fromWorkflow({ ...base, job_workflow_ref: `me/app/${path}@refs/pull/7/merge` }, path), true);
+  assertEquals(
+    fromWorkflow({ ...base, job_workflow_ref: 'me/app/.github/workflows/other.yml@refs/pull/7/merge' }, path),
+    false,
+  );
+  assertEquals(
+    fromWorkflow({ ...base, job_workflow_ref: `evil/lib/${path}@refs/heads/main` }, path),
+    false,
+    'a reusable workflow elsewhere',
+  );
+  assertEquals(fromWorkflow(base, path), false, 'no claim, no proof');
+});
+
+Deno.test("GitHub connect finds the user's own installation, none yet, or refuses someone else's", async () => {
+  Deno.env.set('SUPABASE_URL', Deno.env.get('SUPABASE_URL') ?? 'http://localhost:54321'); // db.ts connects on import
+  Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? 'test');
+  const { findInstallation } = await import('../_shared/githubApp.ts');
+  const real = globalThis.fetch;
+  const reply = (installations: unknown[]) => (globalThis.fetch = ((u: string) =>
+    Promise.resolve(Response.json(
+      u.includes('access_token')
+        ? { access_token: 'user-token' }
+        : u.endsWith('/user')
+        ? { login: 'me' }
+        : { installations },
+    ))) as typeof fetch);
+  try {
+    reply([{ id: 11, account: { login: 'some-org' } }, { id: 22, account: { login: 'me' } }]);
+    assertEquals(
+      await findInstallation('code'),
+      { login: 'me', installationId: 22 },
+      'prefers the one on their account',
+    );
+    reply([]);
+    assertEquals(await findInstallation('code'), { login: 'me', installationId: null }, 'not installed yet');
+    reply([{ id: 22, account: { login: 'me' } }]);
+    await assertRejects(() => findInstallation('code', 99), Error, 'does not belong to you');
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+Deno.test('a PR with nothing to replay passes the proof check instead of failing every ordinary PR', async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.mkdir(`${dir}/.opsswipe`);
+  await Deno.writeTextFile(`${dir}/.opsswipe/proof.mjs`, PROOF_SCRIPT);
+  const out = await new Deno.Command('node', { args: ['.opsswipe/proof.mjs', 'http://127.0.0.1:9'], cwd: dir })
+    .output();
+  assertEquals(out.code, 0);
+  assert(new TextDecoder().decode(out.stdout).includes('nothing for OpsSwipe to prove'));
+  await Deno.remove(dir, { recursive: true });
 });

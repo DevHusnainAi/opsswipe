@@ -1,6 +1,6 @@
 // Display metadata for each allowlisted fix. The server decides what's allowed; this only words it.
 import type { Icon } from 'phosphor-react-native';
-import { ArrowClockwise, ArrowCounterClockwise, GitMerge, GitPullRequest, Power } from 'phosphor-react-native';
+import { ArrowClockwise, ArrowCounterClockwise, GitMerge, GitPullRequest, MagicWand, Power, ShieldCheck, X } from 'phosphor-react-native';
 
 export type Fix = {
   label: string; // picker chip
@@ -13,11 +13,12 @@ export type Fix = {
 
 export const FIXES: Record<string, Fix> = {
   reset: {
-    label: 'Reset VM',
-    rail: 'Swipe to reset',
-    verb: 'Reset',
-    doing: 'Resetting',
-    confirm: 'Hard-reboots the VM. It can\'t be undone.',
+    // Google calls it "reset": a power-cycle, not a wipe. Users read "reset" as factory reset, so say reboot.
+    label: 'Reboot VM',
+    rail: 'Swipe to reboot',
+    verb: 'Reboot',
+    doing: 'Rebooting',
+    confirm: 'Power-cycles the VM. Files and disk data stay; work in memory is lost.',
     icon: Power,
   },
   restart: {
@@ -44,6 +45,14 @@ export const FIXES: Record<string, Fix> = {
     confirm: 'Opens a pull request. Production changes only after it is merged.',
     icon: GitPullRequest,
   },
+  fix_pr: {
+    label: 'Fix with AI',
+    rail: 'Swipe to write a fix',
+    verb: 'Write an AI fix for',
+    doing: 'Claude is writing a fix for',
+    confirm: 'Claude writes a code fix and opens a PR. Nothing changes until CI proves it and you merge.',
+    icon: MagicWand,
+  },
   merge_pr: {
     label: 'Merge PR',
     rail: 'Swipe to merge',
@@ -51,6 +60,24 @@ export const FIXES: Record<string, Fix> = {
     doing: 'Merging the proven PR for',
     confirm: 'Merges the exact commit CI proved. Your host then deploys it.',
     icon: GitMerge,
+  },
+  // An AI agent's own command (shown verbatim on the card): the agent runs it once you approve.
+  approve: {
+    label: 'Approve',
+    rail: 'Swipe to approve',
+    verb: 'Approve the command from',
+    doing: 'Approving the command from',
+    confirm: 'The agent runs it after you approve. OpsSwipe itself runs nothing.',
+    icon: ShieldCheck,
+  },
+  // Not a fix: closing a false alarm. Listed so Activity can name it.
+  dismiss: {
+    label: 'Dismiss',
+    rail: 'Dismiss',
+    verb: 'Dismiss',
+    doing: 'Dismissing',
+    confirm: 'Closes the card without running anything.',
+    icon: X,
   },
 };
 

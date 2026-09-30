@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "818290504793",
+    "project_id": "opsswipe",
+    "storage_bucket": "opsswipe.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:818290504793:android:5696276b99f92779f8ed48",
+        "android_client_info": {
+          "package_name": "dev.husnainai.opsswipe"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCltaI7jaDVm4_QlxsiQwZLBmLBtAUiNn0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

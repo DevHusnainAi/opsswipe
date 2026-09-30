@@ -12,8 +12,21 @@ export async function sign(secret: string, body: string) {
 }
 
 export async function verify(secret: string, body: string, header: string | null) {
-  const hex = header?.startsWith('sha256=') ? header.slice(7) : '';
-  if (!secret || !/^[0-9a-f]{64}$/.test(hex)) return false;
+  return await verifyHex(secret, body, header?.startsWith('sha256=') ? header.slice(7) : '');
+}
+
+// Bare hex digest, as Sentry sends it in Sentry-Hook-Signature.
+export async function verifyHex(secret: string, body: string, hex: string | null) {
+  if (!secret || !hex || !/^[0-9a-f]{64}$/.test(hex)) return false;
   const sig = Uint8Array.from(hex.match(/../g)!, (h) => parseInt(h, 16));
   return crypto.subtle.verify('HMAC', await key(secret), sig, enc.encode(body));
+}
+
+// Constant-time comparison of two shared secrets (a header value against the configured one). An unset
+// configured secret (b) never matches, so a missing env var fails closed.
+export function timingSafeEqual(a: string, b: string) {
+  const x = enc.encode(a), y = enc.encode(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x.at(i) ?? 0) ^ (y.at(i) ?? 0);
+  return diff === 0 && y.length > 0;
 }

@@ -47,7 +47,9 @@ export async function resetInstance(t: GcpVm, sa: ServiceAccount) {
 export async function getInstanceStatus(t: GcpVm, sa: ServiceAccount): Promise<string> {
   const res = await fetch(vmUrl(t), { headers: { Authorization: `Bearer ${await accessToken(sa)}` } });
   if (res.status === 403 || res.status === 404) {
-    throw new Error(`OpsSwipe can't see ${t.instance} yet. Run the two commands, then try again.`);
+    throw new Error(
+      `OpsSwipe can't see ${t.instance} yet. Google may still be applying access; try again in a minute.`,
+    );
   }
   if (!res.ok) throw new Error(`gcp get ${res.status}: ${await res.text()}`);
   return (await res.json()).status as string;

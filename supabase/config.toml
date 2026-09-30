@@ -19,3 +19,24 @@ verify_jwt = false
 
 [functions.oauth-callback]
 verify_jwt = false
+
+# Agents authenticate with their own ops_ token (hashed lookup), not a Supabase JWT.
+[functions.agent]
+verify_jwt = false
+
+[functions.status]
+verify_jwt = false
+
+[functions.weekly]
+verify_jwt = false
+
+[functions.alerts]
+verify_jwt = false
+
+# Authenticated by the Authorization value set in the RevenueCat dashboard, not a Supabase JWT.
+[functions.revenuecat-webhook]
+verify_jwt = false
+
+# Signed by the user's Sentry Internal Integration (Sentry-Hook-Signature), not a Supabase JWT.
+[functions.sentry]
+verify_jwt = false

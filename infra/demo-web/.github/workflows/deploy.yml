@@ -1,0 +1,36 @@
+# CI/CD: every push to main runs the tests; only a green build deploys. The deploy key can do exactly
+# one thing on the VM: run its deploy script (a forced SSH command), so a leaked key can't open a shell.
+name: deploy
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency: deploy # one deploy at a time, in push order
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to the VM
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          install -m 600 /dev/null key && printf '%s\n' "$DEPLOY_KEY" > key
+          printf '%s\n' "$KNOWN_HOSTS" > known_hosts
+          ssh -i key -o UserKnownHostsFile=known_hosts -o IdentitiesOnly=yes -o BatchMode=yes "deploy@$HOST" deploy
+          rm -f key

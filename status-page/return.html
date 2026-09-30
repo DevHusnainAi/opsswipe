@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Back to OpsSwipe</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0A0A0A; color: #FAFAFA;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+  main { max-width: 360px; padding: 32px 24px; text-align: center; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { color: #A1A1AA; margin: 0 0 28px; }
+  a.button { display: block; padding: 16px; border-radius: 12px; background: #10B981; color: #0A0A0A; font-weight: 700;
+    text-decoration: none; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Almost done</h1>
+  <p id="body">Tap below to finish connecting in OpsSwipe.</p>
+  <a id="open" class="button hide" href="#">Open OpsSwipe</a>
+</main>
+<script>
+  // A sign-in (Railway) that ends with a redirect Chrome won't hand to the app without a tap lands here. The app link
+  // arrives in the fragment (never sent to this server); only OpsSwipe's own links are opened.
+  var link = decodeURIComponent(location.hash.slice(1));
+  var ok = /^opsswipe:\/\/connect\?/.test(link) ||
+    /^exp:\/\/(192\.168|10|172\.(1[6-9]|2\d|3[01]))(\.\d{1,3}){2,3}:\d{2,5}\/--\/connect\?/.test(link);
+  if (ok) {
+    var a = document.getElementById('open');
+    a.href = link;
+    a.classList.remove('hide');
+    location.href = link; // works where the browser allows it; otherwise the button does
+  } else {
+    document.getElementById('title').textContent = 'Nothing to open';
+    document.getElementById('body').textContent = 'Go back to OpsSwipe and try connecting again.';
+  }
+</script>
+</body>
+</html>

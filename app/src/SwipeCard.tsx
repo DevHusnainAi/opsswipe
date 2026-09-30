@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { ArrowRight, ArrowSquareOut, Fingerprint, Flask, ListChecks, SealCheck, SealWarning, Sparkle } from 'phosphor-react-native';
+import { ArrowRight, ArrowSquareOut, Fingerprint, Flask, ListChecks, Robot, SealCheck, SealWarning, Sparkle } from 'phosphor-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -15,14 +15,14 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import type { Incident } from './api';
 import { fixFor } from './fixes';
-import { timeAgo } from './format';
+import { atRisk, timeAgo } from './format';
 import { TARGET, c, radius, space, type } from './theme';
 import { Chip } from './ui';
 
 const THRESHOLD = 0.75; // FR-07: fraction of screen width that authorizes the action
 // Springs jump straight to the end when the system "reduce motion" setting is on.
 const SPRING = { damping: 15, stiffness: 120, reduceMotion: ReduceMotion.System };
-export const PROVIDER: Record<string, string> = { gcp: 'GCP Compute', render: 'Render' };
+export const PROVIDER: Record<string, string> = { gcp: 'GCP Compute', render: 'Render', railway: 'Railway' };
 
 // Progressive haptics (Android haptics principles): subtle ticks at 1/3 and 2/3, a distinct one at the threshold.
 const tick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -35,9 +35,14 @@ type Props = {
   // done: card leaves · stay: fix ran but the incident stays open (revert PR) · failed: snap back + error haptic
   onFix: (incident: Incident, action: string) => Promise<'done' | 'stay' | 'failed'>;
   onMeasure?: (height: number) => void; // top card reports its height so the stack fits it
+  onDecline?: (incident: Incident) => void; // close without a fix: decline an agent's proposal, dismiss a false alarm
+  onOpen?: (incident: Incident) => void; // the full incident: cause, AI opinion, timeline
+  // A single card in normal layout (onboarding). Without it the card is absolutely positioned, to stack
+  // on the Incidents screen, and takes no space of its own.
+  inline?: boolean;
 };
 
-export function SwipeCard({ incident, depth, now, onFix, onMeasure }: Props) {
+export function SwipeCard({ incident, depth, now, onFix, onMeasure, onDecline, onOpen, inline }: Props) {
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const limit = width * THRESHOLD;
@@ -111,47 +116,85 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure }: Props) {
   return (
     <GestureDetector gesture={pan}>
       <Animated.View
-        style={[styles.card, { zIndex: 10 - depth, opacity: depth > 2 ? 0 : 1 - depth * 0.25 }, cardStyle]}
+        style={[
+          styles.card,
+          inline && styles.inline,
+          { zIndex: 10 - depth, opacity: depth > 2 ? 0 : 1 - depth * 0.25 },
+          cardStyle,
+        ]}
         onLayout={(e) => top && onMeasure?.(e.nativeEvent.layout.height)}
         accessible={top}
         importantForAccessibility={top ? 'yes' : 'no-hide-descendants'}
         accessibilityLabel={`${incident.severity} incident. ${incident.title} on ${incident.target_server}. ${incident.metric}. ${proofText(incident.context) ?? ''}`}
         accessibilityHint={live ? `Suggested fix: ${fix.label}. ${incident.reason ?? ''} Double tap to run it, or pick another fix from the actions menu.` : undefined}
-        accessibilityActions={live
+        // The card is one node for screen readers, so everything its buttons do is also an action here:
+        // run a fix, open the details, open the proof, and close it (decline or dismiss).
+        accessibilityActions={top
           ? [
-            { name: 'activate', label: `${fix.verb} ${incident.target_server}` },
-            ...options.filter((a) => a !== choice).map((a) => ({ name: `fix_${a}`, label: `${fixFor(a).verb} ${incident.target_server}` })),
+            ...(live
+              ? [
+                { name: 'activate', label: `${fix.verb} ${incident.target_server}` },
+                ...options.filter((a) => a !== choice).map((a) => ({ name: `fix_${a}`, label: `${fixFor(a).verb} ${incident.target_server}` })),
+              ]
+              : []),
+            ...(onOpen ? [{ name: 'details', label: 'Details: cause, AI opinion, timeline' }] : []),
             ...(incident.context?.pr ? [{ name: 'open_proof', label: 'Open the PR and its proof' }] : []),
+            ...(incident.status === 'active' && onDecline
+              ? [{ name: 'close', label: incident.suggested_by === 'agent' ? 'Decline the proposal' : 'Dismiss as a false alarm' }]
+              : []),
           ]
           : []}
         onAccessibilityAction={(e) => {
           const name = e.nativeEvent.actionName;
           if (name === 'activate') tapFix();
           else if (name.startsWith('fix_')) tapFix(name.slice(4));
+          else if (name === 'details') onOpen?.(incident);
+          else if (name === 'close') onDecline?.(incident);
           else if (name === 'open_proof') Linking.openURL(incident.context?.proof?.runUrl ?? incident.context!.pr!.url);
         }}
       >
         <View style={styles.meta}>
           <Chip label={incident.severity} color={critical ? c.red : c.amber} tint={critical ? c.redTint : c.amberTint} />
           {incident.provider && <Chip label={PROVIDER[incident.provider] ?? incident.provider} />}
+          {atRisk(incident) && <Chip label={atRisk(incident)!} color={c.amber} tint={c.amberTint} />}
+          {(incident.context?.alert_count ?? 0) > 1 && <Chip label={`×${incident.context!.alert_count} alerts, one card`} />}
           <Text style={[type.monoCaption, styles.time]}>{timeAgo(incident.created_at, now)}</Text>
         </View>
 
-        <View style={{ gap: space.xs }}>
+        <Pressable
+          onPress={() => onOpen?.(incident)}
+          disabled={!onOpen}
+          accessibilityRole="button"
+          accessibilityHint="Opens the details: cause, AI opinion and timeline"
+          style={{ gap: space.xs }}
+        >
           <Text style={type.title}>{incident.title}</Text>
           <Text style={type.monoStrong}>{incident.target_server}</Text>
-        </View>
+          {onOpen && (
+            <Text style={[type.label, { color: c.green }]}>
+              {incident.context?.pr ? 'Read the diff before you merge' : 'Details: cause, AI opinion, timeline'}
+            </Text>
+          )}
+        </Pressable>
 
         <View style={styles.evidence}>
           <Text style={type.mono}>{incident.metric}</Text>
           {incident.reason && (
             <View style={styles.reason}>
-              {incident.suggested_by === 'ai'
+              {incident.suggested_by === 'agent'
+                ? <Robot size={16} color={c.amber} weight="fill" />
+                : incident.suggested_by === 'ai'
                 ? <Sparkle size={16} color={c.green} weight="fill" />
                 : <ListChecks size={16} color={c.muted} weight="bold" />}
               <Text style={[type.body, { flex: 1, fontSize: 14, lineHeight: 20 }]}>
                 {incident.reason}
-                <Text style={type.caption}>{incident.suggested_by === 'ai' ? '  Claude' : '  Rules'}</Text>
+                <Text style={type.caption}>
+                  {incident.suggested_by === 'agent'
+                    ? `  ${incident.context?.agent?.name ?? 'AI agent'}`
+                    : incident.suggested_by === 'ai'
+                    ? '  Rules + AI'
+                    : '  Rules'}
+                </Text>
               </Text>
             </View>
           )}
@@ -203,6 +246,20 @@ export function SwipeCard({ incident, depth, now, onFix, onMeasure }: Props) {
             <Fingerprint size={24} color={live ? c.onGreen : c.muted} weight="bold" />
           </Pressable>
         </View>
+        {top && incident.status === 'active' && onDecline && (
+          <Pressable
+            onPress={() => onDecline(incident)}
+            accessibilityRole="button"
+            accessibilityLabel={incident.suggested_by === 'agent'
+              ? `Decline ${incident.context?.agent?.name ?? 'the agent'}'s proposal`
+              : `Dismiss ${incident.target_server} as a false alarm`}
+            style={styles.decline}
+          >
+            <Text style={[type.label, { color: c.muted }]}>
+              {incident.suggested_by === 'agent' ? 'Decline this proposal' : 'Dismiss, it’s a false alarm'}
+            </Text>
+          </Pressable>
+        )}
       </Animated.View>
     </GestureDetector>
   );
@@ -221,8 +278,8 @@ function proofText(ctx: Incident['context']) {
   if (!st) return null;
   const { pr, proof, samples } = st;
   if (!proof) return `PR #${pr.number}: CI is replaying ${samples} failing production request${samples === 1 ? '' : 's'}`;
-  if (proof.ok) return `${proof.passed}/${proof.total} failing production requests now pass, tests pass`;
-  return `Proof failed: ${proof.passed}/${proof.total} pass${proof.tests ? '' : ', tests fail'}`;
+  if (proof.ok) return `${proof.passed}/${proof.total} failing production requests now answer 2xx, tests pass`;
+  return `Proof failed: ${proof.passed}/${proof.total} answer 2xx${proof.tests ? '' : ', tests fail'}`;
 }
 
 function ProofStrip({ context }: { context: Incident['context'] }) {
@@ -258,6 +315,7 @@ const styles = StyleSheet.create({
     padding: space.lg,
     gap: space.lg,
   },
+  inline: { position: 'relative' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   time: { marginLeft: 'auto' },
   evidence: { backgroundColor: c.surface2, borderRadius: radius.control, padding: space.md, gap: space.sm },
@@ -308,4 +366,5 @@ const styles = StyleSheet.create({
   },
   fixDisabled: { backgroundColor: c.surface2 },
   pressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
+  decline: { alignSelf: 'center', minHeight: TARGET, justifyContent: 'center', paddingHorizontal: space.md },
 });

@@ -2,10 +2,12 @@
 // dead so the caller can forget them. https://docs.expo.dev/push-notifications/sending-notifications/
 const EXPO_PUSH = 'https://exp.host/--/api/v2/push/send';
 
-export type Push = { title: string; body: string; data?: Record<string, unknown> };
+// page: an outage that needs someone now. It goes to the app's pager channel, which rings at alarm volume with a
+// long vibration; everything else (back up, proven, weekly) uses the normal incidents channel.
+export type Push = { title: string; body: string; data?: Record<string, unknown>; page?: boolean };
 
-export const pushMessages = (tokens: string[], p: Push) =>
-  tokens.map((to) => ({ to, ...p, channelId: 'incidents', priority: 'high', sound: 'default' }));
+export const pushMessages = (tokens: string[], { page, ...p }: Push) =>
+  tokens.map((to) => ({ to, ...p, channelId: page ? 'pager' : 'incidents', priority: 'high', sound: 'default' }));
 
 // ponytail: one request, fine up to Expo's 100-per-request limit; chunk if a user ever has more phones.
 export async function sendPush(tokens: string[], p: Push): Promise<string[]> {

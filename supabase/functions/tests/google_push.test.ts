@@ -1,5 +1,16 @@
 import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
-import { consentUrl, GoogleError, grantReset, ROLE_ID, withBinding } from '../_shared/google.ts';
+import {
+  accessFromRefresh,
+  canManage,
+  consentUrl,
+  GoogleError,
+  grantReset,
+  revokeReset,
+  ROLE_ID,
+  setVmMetadata,
+  withBinding,
+  withoutBinding,
+} from '../_shared/google.ts';
 import { pushMessages, sendPush } from '../_shared/push.ts';
 
 type Call = { url: string; method: string; body?: unknown };
@@ -10,7 +21,9 @@ function mockFetch(routes: Record<string, [number, unknown]>) {
   const real = globalThis.fetch;
   globalThis.fetch = ((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
-    calls.push({ url: String(url), method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    const raw = init?.body ? String(init.body) : undefined;
+    const sent = raw?.startsWith('{') ? JSON.parse(raw) : raw; // token requests are form-encoded
+    calls.push({ url: String(url), method, body: sent });
     const key = Object.keys(routes).find((k) => {
       const [m, frag] = k.split(' ');
       return m === method && String(url).includes(frag);
@@ -39,11 +52,12 @@ Deno.test('withBinding adds our member once and leaves other bindings alone', ()
   assertEquals(withBinding(conditional, role, 'user:b').bindings!.length, 2, 'never widens a conditional binding');
 });
 
-Deno.test('consentUrl asks for no refresh token and carries state', () => {
+Deno.test('consentUrl asks for lasting (offline) access with a fresh consent and carries state', () => {
   Deno.env.set('SUPABASE_URL', 'https://ref.supabase.co');
   Deno.env.set('GOOGLE_CLIENT_ID', 'cid');
   const q = new URL(consentUrl('st4te')).searchParams;
-  assertEquals(q.get('access_type'), 'online');
+  assertEquals(q.get('access_type'), 'offline');
+  assert(q.get('prompt')!.includes('consent'), 'consent is what makes Google return a refresh token');
   assertEquals(q.get('redirect_uri'), 'https://ref.supabase.co/functions/v1/oauth-callback');
   assertEquals(q.get('state'), 'st4te');
   assert(q.get('scope')!.includes('https://www.googleapis.com/auth/cloud-platform'));
@@ -76,6 +90,14 @@ Deno.test('grantReset: missing permission and disabled API become plain sentence
   await assertRejects(() => grantReset('tok', vm, SA), GoogleError, 'Turn on the IAM API').finally(f.restore);
 });
 
+Deno.test('refresh tokens mint access tokens; a revoked one asks the user to reconnect', async () => {
+  let f = mockFetch({ 'POST oauth2.googleapis.com/token': [200, { access_token: 'fresh' }] });
+  assertEquals(await accessFromRefresh('r1').finally(f.restore), 'fresh');
+  assertEquals(f.calls[0].method, 'POST');
+  f = mockFetch({ 'POST oauth2.googleapis.com/token': [400, { error: 'invalid_grant' }] });
+  await assertRejects(() => accessFromRefresh('r1'), GoogleError, 'Connect Google Cloud again').finally(f.restore);
+});
+
 Deno.test('push: high priority on the incidents channel; dead tokens are reported back', async () => {
   const msgs = pushMessages(['ExponentPushToken[a]'], { title: 't', body: 'b' });
   assertEquals(msgs[0], {
@@ -86,6 +108,9 @@ Deno.test('push: high priority on the incidents channel; dead tokens are reporte
     priority: 'high',
     sound: 'default',
   });
+  const page = pushMessages(['ExponentPushToken[a]'], { title: 't', body: 'b', page: true })[0];
+  assertEquals(page.channelId, 'pager', 'an outage rings on the pager channel');
+  assertEquals('page' in page, false, 'the flag itself is not sent to Expo');
   const f = mockFetch({
     'POST exp.host': [200, {
       data: [{ status: 'ok' }, { status: 'error', details: { error: 'DeviceNotRegistered' } }],
@@ -101,4 +126,63 @@ Deno.test('push: high priority on the incidents channel; dead tokens are reporte
   } finally {
     f.restore();
   }
+});
+
+Deno.test('withoutBinding removes only our member; an emptied binding goes', () => {
+  const me = `serviceAccount:${SA}`;
+  const policy = { etag: 'e', bindings: [{ role, members: [me] }, { role: 'roles/owner', members: ['user:a'] }] };
+  assertEquals(withoutBinding(policy, role, me), {
+    etag: 'e',
+    bindings: [{ role: 'roles/owner', members: ['user:a'] }],
+  });
+  const shared = { bindings: [{ role, members: [me, 'user:b'] }] };
+  assertEquals(withoutBinding(shared, role, me).bindings, [{ role, members: ['user:b'] }]);
+});
+
+Deno.test('revokeReset: unbinds our identity on that VM, and deletes the role only for the last VM', async () => {
+  const routes: Record<string, [number, unknown]> = {
+    'GET /getIamPolicy': [200, { etag: 'e1', bindings: [{ role, members: [`serviceAccount:${SA}`] }] }],
+    'POST /setIamPolicy': [200, {}],
+    'DELETE /roles/': [200, {}],
+  };
+  let f = mockFetch(routes);
+  await revokeReset('tok', vm, SA, false).finally(f.restore);
+  assertEquals(f.calls.find((c) => c.url.endsWith('/setIamPolicy'))!.body, { policy: { etag: 'e1', bindings: [] } });
+  assert(!f.calls.some((c) => c.method === 'DELETE'), 'other VMs in the project still use the role');
+  f = mockFetch(routes);
+  await revokeReset('tok', vm, SA, true).finally(f.restore);
+  assert(f.calls.some((c) => c.method === 'DELETE' && c.url.endsWith(`/projects/my-proj/roles/${ROLE_ID}`)));
+});
+
+Deno.test('canManage: the owner must still hold setIamPolicy on the VM', async () => {
+  let f = mockFetch({ 'POST /testIamPermissions': [200, { permissions: ['compute.instances.setIamPolicy'] }] });
+  assertEquals(await canManage('tok', vm).finally(f.restore), true);
+  assertEquals(f.calls[0].body, { permissions: ['compute.instances.setIamPolicy'] });
+  f = mockFetch({ 'POST /testIamPermissions': [200, {}] }); // Google returns no list when none are held
+  assertEquals(await canManage('tok', vm).finally(f.restore), false);
+});
+
+Deno.test('setVmMetadata writes the report keys onto that VM, keeping its other metadata', async () => {
+  const f = mockFetch({
+    'GET /instances/web-1': [200, {
+      metadata: {
+        fingerprint: 'fp1',
+        items: [
+          { key: 'startup-script', value: 'x' },
+          { key: 'report-secret', value: 'old' },
+        ],
+      },
+    }],
+    'POST /setMetadata': [200, {}],
+  });
+  await setVmMetadata('tok', vm, { 'opsswipe-report-url': 'https://r', 'report-secret': 'new' }).finally(f.restore);
+  const set = f.calls.find((c) => c.url.endsWith('/instances/web-1/setMetadata'))!;
+  assertEquals(set.body, {
+    fingerprint: 'fp1',
+    items: [
+      { key: 'startup-script', value: 'x' },
+      { key: 'opsswipe-report-url', value: 'https://r' },
+      { key: 'report-secret', value: 'new' },
+    ],
+  });
 });

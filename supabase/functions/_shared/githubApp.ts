@@ -17,6 +17,16 @@ export const appJwt = (now = Math.floor(Date.now() / 1000)) =>
 
 export const installUrl = () => `https://github.com/apps/${env('GITHUB_APP_SLUG')}/installations/new`;
 
+// Connect starts here, not at the install page: authorizing always returns a code, while the install
+// page returns none when the app is already installed. The callback then finds the installation, or
+// sends the browser on to install it.
+export const authorizeUrl = (state: string) =>
+  `https://github.com/login/oauth/authorize?${new URLSearchParams({
+    client_id: env('GITHUB_APP_CLIENT_ID'),
+    redirect_uri: `${env('SUPABASE_URL')}/functions/v1/oauth-callback`,
+    state,
+  })}`;
+
 const cache = new Map<number, { token: string; expiresAt: number }>();
 
 export async function installationToken(installationId: number) {
@@ -32,9 +42,10 @@ export async function installationToken(installationId: number) {
   return token as string;
 }
 
-// Exchange the one-time OAuth code from the install redirect, then confirm the installation
-// belongs to that GitHub user. Returns the GitHub login for display.
-export async function verifyInstallation(code: string, installationId: number): Promise<string> {
+// Exchange the one-time OAuth code, then find the installation that belongs to that GitHub user: the
+// one named in the redirect (after a fresh install), else the one on their own account, else any they
+// can reach. Returns the GitHub login, and the installation id, or null when there is none yet.
+export async function findInstallation(code: string, installationId?: number) {
   const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -51,15 +62,29 @@ export async function verifyInstallation(code: string, installationId: number): 
     fetch(`${API}/user`, { headers: headers(userToken) }).then((r) => r.json()),
     fetch(`${API}/user/installations`, { headers: headers(userToken) }).then((r) => r.json()),
   ]);
-  const ok = (installs.installations ?? []).some((i: { id: number }) => i.id === installationId);
-  if (!ok) throw new Error('that GitHub installation does not belong to you');
-  return me.login as string;
+  const mine = (installs.installations ?? []) as { id: number; account?: { login?: string } }[];
+  if (installationId && !mine.some((i) => i.id === installationId)) {
+    throw new Error('that GitHub installation does not belong to you');
+  }
+  const found = installationId ?? (mine.find((i) => i.account?.login === me.login) ?? mine.at(0))?.id ?? null;
+  return { login: me.login as string, installationId: found };
 }
 
-export async function listRepos(installationId: number): Promise<string[]> {
+// The install redirect names its installation: it must be one the user can reach.
+export async function verifyInstallation(code: string, installationId: number): Promise<string> {
+  return (await findInstallation(code, installationId)).login;
+}
+
+export type RepoOption = { name: string; branch: string };
+
+// The repos this installation can reach, with each one's default branch.
+export async function listRepos(installationId: number): Promise<RepoOption[]> {
   const res = await fetch(`${API}/installation/repositories?per_page=100`, {
     headers: headers(await installationToken(installationId)),
   });
   if (!res.ok) throw new Error(`github repos ${res.status}`);
-  return (await res.json()).repositories.map((r: { full_name: string }) => r.full_name);
+  return (await res.json()).repositories.map((r: { full_name: string; default_branch: string }) => ({
+    name: r.full_name,
+    branch: r.default_branch,
+  }));
 }

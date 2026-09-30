@@ -1,14 +1,68 @@
-// GitHub (after installing the OpsSwipe GitHub App) and Google (after "Connect Google Cloud")
-// redirect here. We only bounce the one-time code back to the app, which hands it to /connect,
-// where the server exchanges and verifies it for the signed-in user.
-const ALLOWED = ['code', 'installation_id', 'setup_action', 'state', 'error'];
+// GitHub (after installing the OpsSwipe GitHub App), Google (after "Connect Google Cloud") and Slack/Discord
+// (after "Add to Slack/Discord") redirect here. For a state the server issued, the provider's code is
+// exchanged here and the result kept under a one-time claim that travels in the redirect to the device
+// that approved; the app of the user who started it claims it (_shared/oauthState.ts). Nothing is connected
+// on the state alone, so a link forwarded to someone else connects nothing.
+// Also Supabase sign-in from Expo Go (?to=auth): Supabase refuses redirects to raw IP hosts like
+// exp://192.168.x.x, so it lands here and we forward its one-time PKCE code.
+import { returnBase } from '../_shared/appLink.ts';
+import { installUrl } from '../_shared/githubApp.ts';
+import { exchange, newState, takeState } from '../_shared/oauthState.ts';
 
-Deno.serve((req) => {
+const returnPage = () =>
+  `${
+    (Deno.env.get('STATUS_PAGE_URL') || 'https://devhusnainai.github.io/opsswipe-status/').replace(/\/?(\?.*)?$/, '/')
+  }return.html`;
+
+const ALLOWED = ['code', 'state', 'error', 'error_code'];
+
+Deno.serve(async (req) => {
   const incoming = new URL(req.url).searchParams;
   const out = new URLSearchParams();
   for (const k of ALLOWED) {
     const v = incoming.get(k);
     if (v && /^[\w\-./~]{1,512}$/.test(v)) out.set(k, v); // Google codes look like "4/0Ab..."
   }
-  return new Response(null, { status: 302, headers: { Location: `opsswipe://connect?${out}` } });
+  const desc = incoming.get('error_description');
+  if (desc && /^[\w .,'()-]{1,300}$/.test(desc)) out.set('error_description', desc);
+  const state = incoming.get('state');
+  const base = returnBase(state);
+  // to=team: an emailed team invite (connect team_invite_email) handing its code to the app's join step.
+  const to = incoming.get('to');
+  const path = to === 'auth' ? 'auth' : to === 'team' ? 'team' : 'connect';
+
+  // A connect flow: the code is used here and never forwarded.
+  const code = out.get('code');
+  let via: string | null = null;
+  if (path === 'connect') {
+    out.delete('code');
+    const pending = code ? await takeState(state?.split('~')[0] ?? '') : null;
+    if (pending) {
+      try {
+        const installationId = Number(incoming.get('installation_id')) || undefined;
+        const r = await exchange(state!.split('~')[0], pending.kind, code!, installationId);
+        // Authorized but not installed yet: on to the install page, with a fresh one-time state (keeping
+        // the Expo Go return address, if any). Installing comes back here and finishes.
+        if (!r.installed) {
+          const next = [await newState(pending.owner, 'github'), ...(state?.split('~').slice(1) ?? [])].join('~');
+          return new Response(null, { status: 302, headers: { Location: `${installUrl()}?state=${next}` } });
+        }
+        out.set('claim', r.claim);
+        out.set('done', pending.kind);
+        via = pending.kind;
+      } catch (e) {
+        console.error('oauth exchange failed:', String(e));
+        out.set('error', `${pending.kind}_failed`);
+      }
+    } else if (code) out.set('error', 'start_in_app'); // no state we issued: start from the app
+  }
+  const app = `${base}${path}?${out}`;
+  // A plain 302 keeps the user's tap, which Chrome requires before it opens an app link. Railway submits its
+  // consent screen from script, so there's no tap to keep and Chrome won't open the app: that redirect goes
+  // through a static page with an "Open OpsSwipe" button instead (status-page/return.html, on GitHub Pages;
+  // Supabase can't serve HTML). The app link travels in the fragment, which never reaches that server.
+  if (via === 'railway') {
+    return new Response(null, { status: 302, headers: { Location: `${returnPage()}#${encodeURIComponent(app)}` } });
+  }
+  return new Response(null, { status: 302, headers: { Location: app } });
 });

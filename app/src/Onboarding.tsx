@@ -1,103 +1,324 @@
-// First launch only. Step 1 explains the value and asks for notifications in context (Android guidance:
-// request POST_NOTIFICATIONS when the user understands why). Step 2 leads into connecting something.
-import type { Icon } from 'phosphor-react-native';
-import { Bell, Cloud, Fingerprint, GithubLogo, HandSwipeRight, HardDrives, Plug } from 'phosphor-react-native';
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+// First-run screens, in the standard order: a short value tour (Welcome), then an account (Auth.tsx),
+// then the notification permission asked in context (AlertsPrimer), as Android recommends for
+// POST_NOTIFICATIONS: once the user knows why. Setup continues in the Services tab's checklist.
+import * as LocalAuthentication from 'expo-local-authentication';
+import { approve } from './api';
+import { Bell, CheckCircle, Crown, Fingerprint, LockKey, Sparkle } from 'phosphor-react-native';
+import { useEffect, useState } from 'react';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Rect } from 'react-native-svg';
+import type { Incident } from './api';
+import { SwipeCard } from './SwipeCard';
 import { c, radius, space, type } from './theme';
 import { Button } from './ui';
 
-const POINTS: { icon: Icon; title: string; body: string }[] = [
-  { icon: Bell, title: 'Paged when it breaks', body: 'Your app reports failures the moment they happen, and OpsSwipe alerts you.' },
-  { icon: HandSwipeRight, title: 'One swipe to fix', body: 'Each incident comes with one pre-approved fix, like restarting the service.' },
-  { icon: Fingerprint, title: 'Your fingerprint approves it', body: 'Nothing runs until you confirm. Every attempt lands in the audit log.' },
+const SLIDES = [
+  {
+    art: 'card' as const,
+    title: 'Production breaks.\nYour phone knows first.',
+    body: 'Failing requests become one card: what broke, the likely cause, and a fix that is already waiting.',
+  },
+  {
+    art: Sparkle,
+    title: 'AI writes the fix.\nCI proves it.',
+    body: 'A patch and a regression test, opened as a pull request. CI replays the exact requests that failed before you can merge.',
+  },
+  {
+    art: Fingerprint,
+    title: 'Swipe. Fingerprint.\nBack up.',
+    body: 'Nothing touches production until you approve it. Then a postmortem says why it broke and how to stop it happening again.',
+  },
 ];
 
-const CONNECT: { icon: Icon; title: string; body: string }[] = [
-  { icon: GithubLogo, title: 'GitHub', body: 'Revert a bad release and merge the fix once CI proves it.' },
-  { icon: Cloud, title: 'Render', body: 'Restart a service or roll back to the last good deploy.' },
-  { icon: HardDrives, title: 'Google Cloud', body: 'Reset one VM. OpsSwipe gets nothing else.' },
-];
+// The real card, drawn by the app (crisp at any size, always the current design), not a picture of one.
+const HERO: Incident = {
+  id: 'welcome',
+  title: 'Requests are failing',
+  target_server: 'checkout-api',
+  environment: 'production',
+  severity: 'CRITICAL',
+  metric: 'GET /api/price → 500',
+  action: 'merge_pr',
+  provider: 'gcp',
+  status: 'active',
+  created_at: new Date().toISOString(),
+  resolved_at: null,
+  recovered_at: null,
+  actions: ['merge_pr', 'revert_pr'],
+  reason: 'Fix ready: AI patched the release that broke pricing and added a regression test.',
+  suggested_by: 'ai',
+  context: {
+    revenue: { perHour: 38, currency: 'USD' },
+    replay: [{ method: 'GET', path: '/api/price', status: 500 }],
+    pr: { number: 7, url: 'https://github.com', headSha: 'hero' },
+    proof: { ok: true, passed: 3, total: 3, tests: true, headSha: 'hero' },
+  },
+};
+const HERO_NOW = Date.parse(HERO.created_at); // "just now"
+const noop = async () => 'stay' as const;
 
-type Props = {
-  onAlerts: (enable: boolean) => Promise<void>;
-  onSignIn: () => Promise<unknown>;
-  onDone: (openServices: boolean) => void;
+// The mark (assets/logo-mark.png) drawn as a vector: sharp at any size, and nothing to load, so it shows even
+// when the dev server can't serve images.
+export function Logo({ size = 28 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 560 560" accessibilityLabel="OpsSwipe">
+      <Rect x={48} y={72} width={250} height={400} rx={40} fill="#27272A" stroke={c.green} strokeWidth={16} transform="rotate(-8 173 272)" />
+      <Rect x={214} y={84} width={300} height={400} rx={44} fill="#ECECEC" transform="rotate(8 364 284)" />
+      <Circle cx={314} cy={141} r={25} fill={c.green} />
+    </Svg>
+  );
+}
+
+export function Welcome({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void }) {
+  const [width, setWidth] = useState(0);
+  const [page, setPage] = useState(0);
+  const last = page === SLIDES.length - 1;
+
+  return (
+    <View style={styles.root}>
+      <View style={styles.top}>
+        <View style={styles.brand}>
+          <Logo />
+          <Text style={[type.title, { fontSize: 18 }]}>OpsSwipe</Text>
+        </View>
+        {!last && (
+          <Pressable onPress={onStart} hitSlop={12} accessibilityRole="button" accessibilityLabel="Skip the tour">
+            <Text style={[type.label, { color: c.muted }]}>Skip</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={{ flex: 1 }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+        {width > 0 && (
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+          >
+            {SLIDES.map((s) => (
+              <View key={s.title} style={[styles.slide, { width }]}>
+                <View style={styles.art}>
+                  {s.art === 'card' ? (
+                    <View pointerEvents="none" style={styles.hero} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                      <SwipeCard incident={HERO} depth={0} now={HERO_NOW} onFix={noop} inline />
+                    </View>
+                  ) : (
+                    <View style={styles.badge}>
+                      <s.art size={56} color={c.green} weight="duotone" />
+                    </View>
+                  )}
+                </View>
+                <Text style={[type.display, styles.title]} accessibilityRole="header">{s.title}</Text>
+                <Text style={[type.body, { color: c.muted }]}>{s.body}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+
+      <View style={styles.dots} accessibilityLabel={`Page ${page + 1} of ${SLIDES.length}`}>
+        {SLIDES.map((s, i) => (
+          <View key={s.title} style={[styles.dot, i === page && styles.dotOn]} />
+        ))}
+      </View>
+      <View style={styles.actions}>
+        <Button label="Get started" onPress={onStart} />
+        <Button label="I already have an account" kind="secondary" onPress={onSignIn} />
+      </View>
+    </View>
+  );
+}
+
+// Asked once, right after the account exists, with the reason spelled out first.
+export function AlertsPrimer({ onDecide }: { onDecide: (enable: boolean) => Promise<void> }) {
+  // The permission dialog and the setup after it take a moment: show it, so the button never looks stuck.
+  const [busy, setBusy] = useState<boolean | null>(null);
+  const decide = (enable: boolean) => {
+    if (busy !== null) return;
+    setBusy(enable);
+    onDecide(enable).finally(() => setBusy(null));
+  };
+  return (
+    <View style={[styles.root, { justifyContent: 'center' }]}>
+      <View style={{ flex: 1, justifyContent: 'center', gap: space.lg }}>
+        <View style={styles.badge}>
+          <Bell size={56} color={c.green} weight="duotone" />
+        </View>
+        <Text style={type.display} accessibilityRole="header">Get paged when something breaks</Text>
+        <Text style={[type.body, { color: c.muted }]}>
+          OpsSwipe alerts you the moment a service fails, and again when CI proves a fix is safe to merge. Alerts reach
+          you even when the app is closed.
+        </Text>
+      </View>
+      <View style={styles.actions}>
+        <Button label={busy === true ? 'Turning on alerts…' : 'Turn on alerts'} icon={Bell} onPress={() => decide(true)} />
+        <Button label="Not now" kind="secondary" onPress={() => decide(false)} />
+      </View>
+    </View>
+  );
+}
+
+// A practice card: the real swipe and the real fingerprint, nothing sent anywhere.
+const PRACTICE: Incident = {
+  ...HERO,
+  id: 'practice',
+  title: 'Practice: your API is down',
+  target_server: 'your-api',
+  metric: 'GET /health → 503',
+  action: 'restart',
+  actions: ['restart'],
+  provider: 'render',
+  reason: 'This is a practice run. Swipe, then confirm with your fingerprint. Nothing real is touched.',
+  suggested_by: 'rules',
+  context: { revenue: { perHour: 38, currency: 'USD' } },
 };
 
-export function Onboarding({ onAlerts, onSignIn, onDone }: Props) {
-  const [step, setStep] = useState<1 | 2>(1);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type Lock = 'checking' | 'ready' | 'none';
 
-  const alerts = async (enable: boolean) => {
-    await onAlerts(enable).catch(() => {});
-    setStep(2);
-  };
-  const signIn = async () => {
-    setBusy(true);
-    setError(null);
+// Step: every fix needs the phone's fingerprint or screen lock. Found out now, not during a 3am outage,
+// and the swipe is learned on a card that touches nothing.
+export function SecureStep({ onDone }: { onDone: () => void }) {
+  const [lock, setLock] = useState<Lock>('checking');
+  const [passed, setPassed] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const check = async () =>
+    setLock((await LocalAuthentication.isEnrolledAsync()) || (await LocalAuthentication.getEnrolledLevelAsync()) > 0 ? 'ready' : 'none');
+  useEffect(() => {
+    // One async read of the phone's lock state once mounted; setState happens after the await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    check();
+  }, []);
+
+  // The practice fingerprint also sets up this phone's fix key (right after sign-in, when the server
+  // allows it), so the first real fix at 3am is just the fingerprint.
+  const practise = async () => {
     try {
-      if (await onSignIn()) onDone(true);
+      await approve('Practice: restart your-api? Nothing real is touched.');
+      setPassed(true);
+      return 'done' as const;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
+      setNote(e instanceof Error ? e.message : 'That did not work. Try again.');
+      return 'failed' as const;
     }
   };
 
-  const points = step === 1 ? POINTS : CONNECT;
   return (
     <View style={styles.root}>
-      <View style={styles.mark} />
-      <Text style={type.display} accessibilityRole="header">
-        {step === 1 ? 'Fix production from your lock screen' : 'Connect what you run'}
-      </Text>
-      <View style={styles.points}>
-        {points.map((p) => (
-          <View key={p.title} style={styles.point}>
-            <View style={styles.icon}>
-              <p.icon size={20} color={c.green} weight="bold" />
-            </View>
-            <View style={{ flex: 1, gap: space.xs }}>
-              <Text style={[type.body, { fontWeight: '600' }]}>{p.title}</Text>
-              <Text style={[type.body, { color: c.muted }]}>{p.body}</Text>
-            </View>
-          </View>
-        ))}
+      <Text style={styles.step}>Step 1 of 3</Text>
+      <View style={{ gap: space.sm }}>
+        <Text style={type.display} accessibilityRole="header">
+          {passed ? 'That is how you fix production' : 'Every fix needs your fingerprint'}
+        </Text>
+        <Text style={[type.body, { color: c.muted }]}>
+          {passed
+            ? 'A swipe picks the fix, your fingerprint approves it. A stolen phone can\'t restart your servers.'
+            : lock === 'none'
+            ? 'This phone has no fingerprint or screen lock, so it could not approve a fix. Set one up first.'
+            : 'Try it on a practice card: swipe right, then confirm. Nothing real is touched.'}
+        </Text>
       </View>
-      {error && <Text style={[type.label, { color: c.red }]} accessibilityLiveRegion="polite">{error}</Text>}
-      {step === 1
-        ? (
-          <View style={styles.actions}>
-            <Button label="Turn on alerts" icon={Bell} onPress={() => alerts(true)} />
-            <Button label="Not now" kind="secondary" onPress={() => alerts(false)} />
+      <View style={styles.art}>
+        {passed ? (
+          <View style={styles.badge}>
+            <CheckCircle size={56} color={c.green} weight="fill" />
           </View>
-        )
-        : (
-          <View style={styles.actions}>
-            <Button label={busy ? 'Opening GitHub…' : 'Sign in with GitHub'} icon={GithubLogo} onPress={signIn} />
-            <Text style={[type.caption, { textAlign: 'center' }]}>Keeps your setup when you switch phones.</Text>
-            <Button label="Connect a service" icon={Plug} kind="secondary" onPress={() => onDone(true)} />
-            <Button label="Look around first" kind="secondary" onPress={() => onDone(false)} />
+        ) : lock === 'ready' ? (
+          <View style={{ width: '100%' }}>
+            <SwipeCard incident={PRACTICE} depth={0} now={HERO_NOW} onFix={practise} inline />
           </View>
-        )}
+        ) : lock === 'none' ? (
+          <View style={styles.badge}>
+            <LockKey size={56} color={c.amber} weight="duotone" />
+          </View>
+        ) : null}
+      </View>
+      {note && !passed && <Text style={[type.label, { color: c.amber, textAlign: 'center' }]}>{note}</Text>}
+      <View style={styles.actions}>
+        {passed ? (
+          <Button label="Continue" onPress={onDone} />
+        ) : lock === 'none' ? (
+          <>
+            <Button
+              label="Set up a screen lock"
+              icon={LockKey}
+              onPress={() =>
+                Platform.OS === 'android'
+                  ? Linking.sendIntent('android.settings.SECURITY_SETTINGS').catch(() => Linking.openSettings())
+                  : Linking.openSettings()}
+            />
+            <Button label="I've set it up" kind="secondary" onPress={check} />
+          </>
+        ) : null}
+        {!passed && <Button label="Skip for now" kind="secondary" onPress={onDone} />}
+      </View>
+    </View>
+  );
+}
+
+const PERKS = [
+  'A fix ready before you wake up: AI writes it, CI proves it',
+  'AI fixes with a regression test, merged only once proven',
+  'Unlimited services, and approval for your AI coding agents',
+];
+
+// Step: the trial, offered once people have seen what a fix looks like, never mid-outage.
+export function TrialStep({ onStart, onSkip }: { onStart: () => Promise<unknown>; onSkip: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <View style={styles.root}>
+      <Text style={styles.step}>Step 2 of 3</Text>
+      <View style={{ flex: 1, justifyContent: 'center', gap: space.lg }}>
+        <View style={styles.badge}>
+          <Crown size={56} color={c.green} weight="duotone" />
+        </View>
+        <Text style={type.display} accessibilityRole="header">Try Pro free for 7 days</Text>
+        <View style={{ gap: space.sm }}>
+          {PERKS.map((p) => (
+            <View key={p} style={{ flexDirection: 'row', gap: space.sm }}>
+              <CheckCircle size={20} color={c.green} weight="fill" />
+              <Text style={[type.body, { flex: 1 }]}>{p}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={type.caption}>Your first outage is free either way. Cancel the trial any time before it ends.</Text>
+      </View>
+      <View style={styles.actions}>
+        <Button
+          label={busy ? 'Opening…' : 'Try Pro free'}
+          icon={Crown}
+          onPress={async () => {
+            setBusy(true);
+            await onStart().catch(() => {});
+            setBusy(false);
+            onSkip();
+          }}
+        />
+        <Button label="Not now" kind="secondary" onPress={onSkip} />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, justifyContent: 'center', gap: space.xl, paddingVertical: space.xxl },
-  mark: { width: 28, height: 28, borderRadius: radius.chip, backgroundColor: c.green },
-  points: { gap: space.lg },
-  point: { flexDirection: 'row', gap: space.md },
-  icon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.control,
+  root: { flex: 1, paddingVertical: space.lg, gap: space.lg },
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 48 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  slide: { justifyContent: 'flex-end', gap: space.md, paddingBottom: space.md },
+  art: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  hero: { width: '100%', transform: [{ rotate: '-2deg' }] },
+  badge: {
+    width: 112,
+    height: 112,
+    borderRadius: radius.badge,
     backgroundColor: c.greenTint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actions: { gap: space.sm, marginTop: space.sm },
+  title: { fontSize: 30, lineHeight: 36 },
+  dots: { flexDirection: 'row', gap: space.sm, justifyContent: 'center' },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.borderStrong },
+  dotOn: { width: 20, backgroundColor: c.green },
+  actions: { gap: space.sm },
+  step: { ...type.label, color: c.muted },
 });

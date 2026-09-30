@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "test": "deno test --allow-env supabase/functions/tests/",
+    "test": "deno test --allow-env --allow-read --allow-write --allow-run=node --allow-net=127.0.0.1 supabase/functions/tests/",
     "check": "deno check supabase/functions/*/index.ts evals/suggest/run.ts",
     "lint": "deno lint",
     "fmt": "deno fmt",

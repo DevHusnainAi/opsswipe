@@ -1,0 +1,35 @@
+import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { inviteMail, sendMail } from '../_shared/mail.ts';
+
+Deno.test('the invite email carries the join link and escapes the inviter', () => {
+  const m = inviteMail(
+    { name: '<b>Eve</b>', email: 'eve@x.com' },
+    'https://r.supabase.co/functions/v1/oauth-callback?to=team&code=ABCD2345',
+  );
+  assert(m.text.includes('?to=team&code=ABCD2345'), 'the link is in the text version');
+  assert(m.html.includes('?to=team&#38;code=ABCD2345'), 'and escaped in the HTML');
+  assert(!m.text.includes('Join, code'), 'no join-by-code step: the link is the way in');
+  assert(!m.html.includes('<b>Eve</b>'), 'a name is text, never markup');
+  assert(m.html.includes('&#60;b&#62;Eve') && m.html.includes('eve@x.com'), 'escaped name, and who sent it');
+});
+
+Deno.test('mail goes to Resend with the key as a bearer token and the verified sender', async () => {
+  Deno.env.set('RESEND_API_KEY', 're_test');
+  Deno.env.set('MAIL_FROM', 'invites@example.com');
+  const real = globalThis.fetch;
+  let sent: { url: string; init?: RequestInit } | undefined;
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    sent = { url, init };
+    return Promise.resolve(Response.json({ messageId: '1' }, { status: 201 }));
+  }) as typeof fetch;
+  try {
+    await sendMail('t@x.com', 's', 't', '<p>h</p>');
+  } finally {
+    globalThis.fetch = real;
+  }
+  assertEquals(sent!.url, 'https://api.resend.com/emails');
+  assertEquals(new Headers(sent!.init?.headers).get('Authorization'), 'Bearer re_test');
+  const body = JSON.parse(String(sent!.init?.body));
+  assertEquals(body.from, 'OpsSwipe <invites@example.com>');
+  assertEquals(body.to, ['t@x.com']);
+});

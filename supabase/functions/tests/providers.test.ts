@@ -1,7 +1,8 @@
 import { assert, assertEquals, assertRejects, assertThrows } from 'jsr:@std/assert@1';
-import { isActive } from '../_shared/entitlement.ts';
+import { isActive, planFromEvent, proFromRow } from '../_shared/entitlement.ts';
+import { timingSafeEqual } from '../_shared/hmac.ts';
 import { resetInstance, type ServiceAccount, signJwt } from '../_shared/gcp.ts';
-import { restartService } from '../_shared/render.ts';
+import { restartService, setRenderEnv } from '../_shared/render.ts';
 import { actionsFor, validateTarget } from '../_shared/targets.ts';
 
 const b64 = (s: string) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
@@ -38,24 +39,38 @@ Deno.test('validateTarget accepts both providers and maps the fixes each allows'
   const web = validateTarget('render', { serviceId: 'srv-abc123', url: 'https://x.onrender.com/' });
   assertEquals(actionsFor(vm), ['reset']);
   assertEquals(actionsFor(web), ['restart', 'rollback']);
-  assertEquals(actionsFor(validateTarget('render', { serviceId: 'srv-abc123', url: 'https://x/', repo: 'me/app' })), [
-    'restart',
-    'rollback',
-    'revert_pr',
-    'merge_pr',
-  ]);
+  assertEquals(
+    actionsFor(validateTarget('render', { serviceId: 'srv-abc123', url: 'https://x.onrender.com/', repo: 'me/app' })),
+    [
+      'restart',
+      'rollback',
+      'revert_pr',
+      'fix_pr',
+      'merge_pr',
+    ],
+  );
+  // A VM linked to its repo gets the same code fixes; the reset stays the instant one.
+  const linkedVm = validateTarget('gcp', {
+    project: 'my-proj-1',
+    zone: 'us-central1-a',
+    instance: 'vm-1',
+    url: 'http://1.2.3.4/',
+    repo: 'me/app',
+    branch: 'main',
+  });
+  assertEquals(actionsFor(linkedVm), ['reset', 'revert_pr', 'fix_pr', 'merge_pr']);
 });
 
 Deno.test('validateTarget rejects anything that could reach the wrong resource', () => {
   assertThrows(() => validateTarget('aws', { url: 'u' }), Error, 'unknown provider');
-  assertThrows(() => validateTarget('render', { url: 'https://x/' }), Error, 'missing serviceId');
+  assertThrows(() => validateTarget('render', { url: 'https://x.onrender.com/' }), Error, 'missing serviceId');
   assertThrows(
-    () => validateTarget('render', { serviceId: 'srv-1/../x', url: 'https://x/' }),
+    () => validateTarget('render', { serviceId: 'srv-1/../x', url: 'https://x.onrender.com/' }),
     Error,
     'invalid serviceId',
   );
   assertThrows(
-    () => validateTarget('render', { serviceId: 'srv-1', url: 'https://x/', repo: 'nope' }),
+    () => validateTarget('render', { serviceId: 'srv-1', url: 'https://x.onrender.com/', repo: 'nope' }),
     Error,
     'invalid repo',
   );
@@ -123,4 +138,65 @@ Deno.test('isActive: lifetime, future and expired entitlements', () => {
   assert(isActive({ expires_date: '2026-10-27T00:00:00Z' }, now));
   assert(!isActive({ expires_date: '2026-09-01T00:00:00Z' }, now));
   assert(!isActive(undefined, now));
+});
+
+Deno.test('RevenueCat webhook events become a plan row; anonymous ids and other entitlements are ignored', () => {
+  const uid = '11111111-2222-4333-8444-555555555555';
+  assertEquals(
+    planFromEvent({
+      type: 'RENEWAL',
+      app_user_id: uid,
+      entitlement_ids: ['pro'],
+      expiration_at_ms: 1790000000000,
+      event_timestamp_ms: 1780000000000,
+    }),
+    { owner: uid, pro_until: new Date(1790000000000).toISOString(), event_at: new Date(1780000000000).toISOString() },
+  );
+  assertEquals(
+    planFromEvent({ app_user_id: uid, entitlement_ids: ['pro'], expiration_at_ms: null })?.pro_until,
+    'infinity',
+  );
+  assertEquals(planFromEvent({ app_user_id: '$RCAnonymousID:abc', entitlement_ids: ['pro'] }), null);
+  assertEquals(planFromEvent({ app_user_id: uid, entitlement_ids: ['other'] }), null);
+  assertEquals(
+    planFromEvent({ app_user_id: uid, entitlement_ids: ['team'], expiration_at_ms: null })?.pro_until,
+    'infinity',
+  );
+  assertEquals(planFromEvent({ type: 'TEST' }), null);
+});
+
+Deno.test('the webhook copy decides Pro when RevenueCat is down: active, lifetime, expired, none', () => {
+  const now = new Date('2026-09-28T00:00:00Z');
+  assert(proFromRow({ pro_until: '2026-10-28T00:00:00Z' }, now));
+  assert(proFromRow({ pro_until: 'infinity' }, now));
+  assert(!proFromRow({ pro_until: '2026-09-01T00:00:00Z' }, now));
+  assert(!proFromRow(null, now));
+});
+
+Deno.test('shared secrets compare in constant time and only when equal', () => {
+  assert(timingSafeEqual('Bearer abc', 'Bearer abc'));
+  assert(!timingSafeEqual('Bearer abc', 'Bearer abd'));
+  assert(!timingSafeEqual('Bearer ab', 'Bearer abc'));
+  assert(!timingSafeEqual('', 'x'));
+  assert(!timingSafeEqual('', ''), 'an unset secret never matches');
+});
+
+Deno.test('setRenderEnv sets each variable, then deploys so the app starts with them', async () => {
+  const sent: { url: string; method: string; body: string }[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    sent.push({ url: String(url), method: init?.method ?? 'GET', body: String(init?.body ?? '') });
+    return Promise.resolve(Response.json({}));
+  }) as typeof fetch;
+  try {
+    await setRenderEnv('srv-1', 'key', { OPSSWIPE_REPORT_URL: 'https://r', REPORT_SECRET: 's' });
+  } finally {
+    globalThis.fetch = real;
+  }
+  assertEquals(sent.map((c) => `${c.method} ${c.url.replace('https://api.render.com/v1', '')}`), [
+    'PUT /services/srv-1/env-vars/OPSSWIPE_REPORT_URL',
+    'PUT /services/srv-1/env-vars/REPORT_SECRET',
+    'POST /services/srv-1/deploys',
+  ]);
+  assertEquals(JSON.parse(sent[1].body), { value: 's' });
 });

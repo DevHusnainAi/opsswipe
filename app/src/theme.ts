@@ -20,7 +20,7 @@ export const c = {
 };
 
 // One radius scale, used everywhere.
-export const radius = { card: 16, control: 12, chip: 6 };
+export const radius = { card: 16, control: 12, chip: 6, badge: 28 }; // badge: the round icon tiles
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 export const TARGET = 48; // Android minimum touch target, dp
 
