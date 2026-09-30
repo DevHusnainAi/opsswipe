@@ -224,7 +224,7 @@ export function AddService({ start, status, existing, onClose }: Props) {
   const addRailway = () =>
     run('addrailway', async () => {
       setCreated(
-        await connect<NewService>('add_railway', {
+        await connect<NewService & { onVm: boolean }>('add_railway', {
           ...railway,
           ...(rwPick ? { projectId: rwPick.s.projectId, serviceId: rwPick.s.serviceId, environmentId: rwPick.env } : {}),
           token: railway.token.trim(),

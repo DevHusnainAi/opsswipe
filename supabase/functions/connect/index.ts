@@ -31,6 +31,7 @@ import {
   listRailwayServices,
   railwayAuthorizeUrl,
   railwayOAuthEnabled,
+  setRailwayVariables,
 } from '../_shared/railway.ts';
 import { keyProject, RevenueError, revenuePerHour } from '../_shared/revenue.ts';
 import { getRenderService, listServices } from '../_shared/render.ts';
@@ -50,7 +51,7 @@ import {
   storeSecret,
   toTarget,
 } from '../_shared/services.ts';
-import { validateTarget } from '../_shared/targets.ts';
+import { type RailwayTarget, validateTarget } from '../_shared/targets.ts';
 
 const inboxUrl = (key: string) => `${env('SUPABASE_URL')}/functions/v1/alerts?k=${key}`;
 
@@ -108,6 +109,28 @@ const reportToVm = (owner: string, config: Record<string, string>, report: { url
       })
     )
     .then(() => true, (e) => (console.error('vm metadata:', String(e)), false));
+
+// Railway the same way: the URL and secret become the service's variables (Railway redeploys it). False when
+// Railway refused; the app then shows the values to copy.
+const reportToRailway = (owner: string, config: Record<string, string>, report: { url: string; secret: string }) =>
+  railwayToken(owner)
+    .then((token) =>
+      setRailwayVariables(config as unknown as RailwayTarget, token, {
+        OPSSWIPE_REPORT_URL: report.url,
+        REPORT_SECRET: report.secret,
+      })
+    )
+    .then(() => true, (e) => (console.error('railway variables:', String(e)), false));
+
+const reportToHost = (owner: string, s: { provider: string; config: Record<string, string> }, report: {
+  url: string;
+  secret: string;
+}) =>
+  s.provider === 'gcp'
+    ? reportToVm(owner, s.config, report)
+    : s.provider === 'railway'
+    ? reportToRailway(owner, s.config, report)
+    : Promise.resolve(false);
 
 async function addService(
   owner: string,
@@ -330,7 +353,8 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
       const config: Record<string, string> = { ...ids!, url };
       const picked = await chosenRepo(owner, p);
       if (picked) Object.assign(config, picked);
-      return await addService(owner, String(p.name ?? '').toLowerCase(), 'railway', config);
+      const added = await addService(owner, String(p.name ?? '').toLowerCase(), 'railway', config);
+      return { ...added, onVm: await reportToHost(owner, added.service, added.report) };
     }
 
     // The Client Secret of the user's Sentry Internal Integration, which signs its alert webhooks.
@@ -747,7 +771,7 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
         .eq('id', s!.id);
       await deleteSecret(s!.report_secret_id);
       const report = { url: `${functionUrl('report')}?service=${s!.id}`, secret };
-      return { report, onVm: s!.provider === 'gcp' ? await reportToVm(owner, s!.config, report) : false };
+      return { report, onVm: await reportToHost(owner, s!, report) };
     }
 
     case 'remove_service': {

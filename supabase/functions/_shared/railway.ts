@@ -53,6 +53,16 @@ export async function rollbackRailway(t: RailwayTarget, token: string) {
   return `rolled back to deployment ${previous.id.slice(0, 8)}`;
 }
 
+// Sets variables on the service; Railway redeploys it with them. Used to hand the app its report URL and secret, so
+// there's nothing to copy (like the VM metadata on Google Cloud).
+export async function setRailwayVariables(t: RailwayTarget, token: string, variables: Record<string, string>) {
+  await gql(
+    token,
+    `mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }`,
+    { input: { projectId: t.projectId, environmentId: t.environmentId, serviceId: t.serviceId, variables } },
+  );
+}
+
 // The ids come from the service's dashboard link, which users can copy from the browser:
 // https://railway.com/project/<projectId>/service/<serviceId>?environmentId=<environmentId>
 const ID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';

@@ -1,5 +1,11 @@
 import { assert, assertEquals } from 'jsr:@std/assert@1';
-import { accessFromGrant, isGrant, listRailwayServices, railwayAuthorizeUrl } from '../_shared/railway.ts';
+import {
+  accessFromGrant,
+  isGrant,
+  listRailwayServices,
+  railwayAuthorizeUrl,
+  setRailwayVariables,
+} from '../_shared/railway.ts';
 
 Deno.env.set('SUPABASE_URL', 'https://x.supabase.co');
 Deno.env.set('RAILWAY_CLIENT_ID', 'rw-id');
@@ -67,4 +73,25 @@ Deno.test('the shared projects become project/service choices with their environ
     f.restore();
   }
   assertEquals(f.calls.length, 2, 'the shared projects, then each project for its services');
+});
+
+Deno.test('the report URL and secret are set as the Railway service variables, with the user token', async () => {
+  const f = mockFetch(() => ({ data: { variableCollectionUpsert: true } }));
+  try {
+    await setRailwayVariables({ projectId: 'p1', environmentId: 'e1', serviceId: 's1' } as never, 'tok', {
+      OPSSWIPE_REPORT_URL: 'https://x.supabase.co/functions/v1/report?service=1',
+      REPORT_SECRET: 'sec',
+    });
+  } finally {
+    f.restore();
+  }
+  const { query, variables } = JSON.parse(String(f.calls[0].init?.body));
+  assert(query.includes('variableCollectionUpsert'));
+  assertEquals(variables.input, {
+    projectId: 'p1',
+    environmentId: 'e1',
+    serviceId: 's1',
+    variables: { OPSSWIPE_REPORT_URL: 'https://x.supabase.co/functions/v1/report?service=1', REPORT_SECRET: 'sec' },
+  });
+  assertEquals(new Headers(f.calls[0].init?.headers).get('Authorization'), 'Bearer tok');
 });

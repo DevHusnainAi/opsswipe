@@ -1,5 +1,6 @@
 // Where a service's failure reports go and how to check they arrive: the URL and secret (shown once), a
-// one-line test to run on the server, and for a Google Cloud VM the ready gcloud command to set them.
+// one-line test to run on the server, and for a Google Cloud VM the ready gcloud command to set them (on a VM or
+// Railway, OpsSwipe usually sets them itself: onVm).
 // A report that never arrives (an app still holding an old secret) otherwise fails silently.
 import { StyleSheet, Text, View } from 'react-native';
 import { CopyRow } from './ui';
@@ -25,8 +26,9 @@ export function ReportSetup(
       {onVm
         ? (
           <Text style={[type.caption, { color: c.green }]}>
-            Already on {instance}: OpsSwipe wrote the URL and secret onto the VM&apos;s metadata. An app that reads them
-            from there (like the demo) needs nothing else; one that reads environment variables needs the values below.
+            {service.provider === 'railway'
+              ? 'Already on Railway: OpsSwipe set OPSSWIPE_REPORT_URL and REPORT_SECRET on the service, and Railway is redeploying it. Nothing to copy.'
+              : `Already on ${instance}: OpsSwipe wrote the URL and secret onto the VM's metadata. An app that reads them from there (like the demo) needs nothing else; one that reads environment variables needs the values below.`}
           </Text>
         )
         : (
