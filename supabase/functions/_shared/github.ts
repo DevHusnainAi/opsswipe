@@ -57,6 +57,24 @@ export async function openRevertPr(
     }),
   });
   const firstLine = String(bad.message).split('\n')[0];
+  // What the reviewer is undoing: the commit's author, message and files. Best effort: a PR without it still proves.
+  const files = ((await gh(`${repo}/commits/${commitSha}`, token).catch(() => null))?.files ?? []) as {
+    filename: string;
+    additions: number;
+    deletions: number;
+  }[];
+  const rest = String(bad.message).split('\n').slice(1).join('\n').trim();
+  const reverted = [
+    '\n',
+    '### The commit this reverts',
+    `\`${short}\` **${firstLine}**${bad.author?.name ? ` by ${bad.author.name}` : ''}${
+      bad.author?.date ? `, ${bad.author.date.replace('T', ' ').replace(/:\d\dZ$/, ' UTC')}` : ''
+    }`,
+    rest ? `\n${rest.split('\n').map((l) => `> ${l}`).join('\n')}` : null,
+    files.length ? '\nFiles it changed, restored here:' : null,
+    ...files.slice(0, 20).map((f) => `- \`${f.filename}\` (+${f.additions} −${f.deletions})`),
+    files.length > 20 ? `- and ${files.length - 20} more` : null,
+  ].filter((l) => l !== null).join('\n');
   const revert = await gh(`${repo}/git/commits`, token, {
     method: 'POST',
     body: JSON.stringify({
@@ -70,7 +88,7 @@ export async function openRevertPr(
   await upsertRef(repo, branchName, revert.sha, token);
   const pr = await openPull(
     repo,
-    { title: `Revert "${firstLine}"`, head: branchName, base: branch, body },
+    { title: `Revert "${firstLine}"`, head: branchName, base: branch, body: body + reverted },
     token,
   );
   return { repo, number: pr.number, headSha: revert.sha, url: pr.html_url, branch: branchName };

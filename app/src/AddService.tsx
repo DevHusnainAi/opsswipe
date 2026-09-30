@@ -211,7 +211,13 @@ export function AddService({ start, status, existing, onClose }: Props) {
       const r = await WebBrowser.openAuthSessionAsync(url, appLink('connect'));
       if (r.type === 'success') await claimFrom(r.url);
       setChanged(true);
-      const list = (await connect<{ services: RailwayService[] }>('railway_services')).services;
+      // "Open OpsSwipe" on Railway's last page arrives through the app's link handler, which may still be claiming.
+      const services = () => connect<{ services: RailwayService[] }>('railway_services');
+      const list = (await services().catch(async (e) => {
+        if (r.type === 'success') throw e;
+        await new Promise((ok) => setTimeout(ok, 2000));
+        return services();
+      })).services;
       setRwServices(list);
       if (list.length === 1) pickRailway(list[0]);
     });

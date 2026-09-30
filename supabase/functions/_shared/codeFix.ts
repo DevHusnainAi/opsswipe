@@ -105,6 +105,9 @@ export async function aiFixPr(
       `**Broke in:** \`${short}\` ${commit.split('\n')[0]}`,
       `**Fix:** ${patch.summary}`,
       '',
+      '### The requests that failed in production',
+      ...failingTable(input.failing),
+      '',
       '### How this is proven',
       test
         ? `- Your test suite runs, including a new regression test for the failing requests: \`${test.path}\``
@@ -126,6 +129,21 @@ export async function aiFixPr(
 
 const carried = (samples: ReplaySample[]) => samples.map(({ method, path, status }) => ({ method, path, status }));
 
+// The production requests CI will replay, as a table the reviewer can read without opening the JSON.
+export function failingTable(samples: ReplaySample[]) {
+  if (!samples.length) return ['_No failing requests were captured; CI runs your tests only._'];
+  const cell = (s: string) => s.replace(/[|`\n]/g, ' ');
+  return [
+    '| Request | Production answered | Seen at |',
+    '| --- | --- | --- |',
+    ...samples.map((s) =>
+      `| \`${cell(s.method)} ${cell(s.path)}\` | ${s.status} | ${
+        s.at.replace('T', ' ').replace(/(:\d\d)(\.\d+)?Z$/, ' UTC')
+      } |`
+    ),
+  ];
+}
+
 export async function revertPr(t: Target, sha: string, inc: Incident, token: string): Promise<Outcome> {
   const pr = await openRevertPr({
     repo: t.repo!,
@@ -138,9 +156,16 @@ export async function revertPr(t: Target, sha: string, inc: Incident, token: str
       `**Symptom:** ${inc.metric}`,
       inc.reason ? `**Why this commit:** ${inc.reason} _(suggested by ${inc.suggested_by ?? 'rules'})_` : null,
       '',
-      `Merging deploys the code from before \`${sha.slice(0, 7)}\`.`,
-      `CI replays the ${inc.context.replay?.length ?? 0} failing production request(s) against this PR;`,
-      'OpsSwipe only lets you merge once they all pass.',
+      '### The requests that failed in production',
+      ...failingTable(inc.context.replay ?? []),
+      '',
+      '### How this is proven',
+      `- CI starts this PR's build and replays each request above; every one must now answer 2xx`,
+      '- Your test suite runs',
+      `- They stay in \`.opsswipe/replays/${sha.slice(0, 7)}.json\`, so every future PR is checked against them too`,
+      '',
+      `Merging deploys the code from before \`${sha.slice(0, 7)}\`. OpsSwipe only lets you merge once CI passes,`,
+      'and pins the merge to the exact commit CI proved.',
     ].filter((l) => l !== null).join('\n'),
     replay: inc.context.replay ?? [],
   }, token);

@@ -287,9 +287,14 @@ async function handle(owner: string, action: string, p: Record<string, unknown>)
     }
 
     // The services in the projects the user shared, to pick from instead of pasting a dashboard link.
+    // Not connected yet: the consent screen was closed before "Open OpsSwipe", so the app never claimed it.
     case 'railway_services':
+      need(
+        (await connection(owner, 'railway'))?.secret_id,
+        'Railway isn\'t connected yet. Tap Connect Railway again, and on the last page tap "Open OpsSwipe" instead of closing it.',
+      );
       return {
-        services: await listRailwayServices(await railwayToken(owner)).catch((e) => {
+        services: await railwayToken(owner).then(listRailwayServices).catch((e) => {
           console.error('railway_services:', String(e));
           throw new UserError(`Railway didn't list your services: ${String((e as Error).message).slice(0, 160)}`);
         }),

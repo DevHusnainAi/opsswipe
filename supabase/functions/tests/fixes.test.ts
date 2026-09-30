@@ -88,7 +88,12 @@ Deno.test('rollbackToPrevious refuses when there is nothing to roll back to', as
 Deno.test('openRevertPr: parent tree + replay file, then commit, branch, PR', async () => {
   const f = mockFetch({
     'GET /git/ref/heads/main': { object: { sha: 'bad0000' } },
-    'GET /git/commits/bad0000': { message: 'Break the homepage\n\nlong body', parents: [{ sha: 'good000' }] },
+    'GET /git/commits/bad0000': {
+      message: 'Break the homepage\n\nlong body',
+      parents: [{ sha: 'good000' }],
+      author: { name: 'Ada', date: '2026-09-27T09:58:00Z' },
+    },
+    'GET /repos/me/app/commits/bad0000': { files: [{ filename: 'server.js', additions: 3, deletions: 1 }] },
     'GET /git/commits/good000': { tree: { sha: 'tree-good' } },
     'POST /git/trees': { sha: 'tree-with-replay' },
     'POST /git/commits': { sha: 'rev0000' },
@@ -124,7 +129,14 @@ Deno.test('openRevertPr: parent tree + replay file, then commit, branch, PR', as
     title: 'Revert "Break the homepage"',
     head: 'opsswipe/revert-bad0000',
     base: 'main',
-    body: 'why',
+    body: [
+      'why',
+      '### The commit this reverts',
+      '`bad0000` **Break the homepage** by Ada, 2026-09-27 09:58 UTC',
+      '\n> long body',
+      '\nFiles it changed, restored here:',
+      '- `server.js` (+3 −1)',
+    ].join('\n').replace('why\n', 'why\n\n'),
   });
 });
 

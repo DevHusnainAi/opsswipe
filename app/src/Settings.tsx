@@ -169,7 +169,12 @@ export function Settings(p: Props) {
             icon={Crown}
             tint={p.pro ? c.green : undefined}
             title={p.team ? 'OpsSwipe Team' : p.pro ? 'OpsSwipe Pro' : 'Free'}
-            body={p.planBody}
+            body={
+              // A teammate's fixes on the owner's incidents run on the owner's plan (execute bills inc.owner).
+              team.teams.length && !p.pro
+                ? `On ${team.teams.map((t) => t.email).join(', ')}'s team: their incidents are fixed on their plan. ${p.planBody}`
+                : p.planBody
+            }
           />
           {!p.pro && (
             <Action icon={Crown} label="Try Pro free" primary onPress={() => run('upgrade', p.onUpgrade)} />
