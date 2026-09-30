@@ -177,10 +177,10 @@ Connect everything from the app's **Services** screen:
 | --- | --- | --- |
 | **Account** | Continue with GitHub, or email and password | Your services, fixes and plan on any phone |
 | **GitHub** | Install the OpsSwipe GitHub App on the repos you choose | 1-hour tokens to open and merge PRs there |
-| **Google Cloud** | Sign in with Google, then pick a project and a VM | A custom role on each VM you add: read its status and reboot it; the report URL and secret are written to the VM for you |
-| **Render** | Paste an API key (Render has no OAuth for outside apps) | Restart, roll back and read deploys |
-| **Railway** | Connect Railway and choose projects on Railway's consent screen, or paste a token | Restart the live deployment or roll back |
-| **Failure reports** | Two environment variables and a small snippet (below) | Your app's 5xx responses the moment they happen |
+| **Google Cloud** | Sign in with Google, then pick a project and a VM | A custom role on each VM you add: read its status and reboot it |
+| **Render** | Paste an API key (Render has no OAuth for outside apps) | Restart, roll back, read deploys, and set the service's report URL and secret |
+| **Railway** | Connect Railway and choose projects on Railway's consent screen, or paste a token | Restart the live deployment, roll back, and set the service's report URL and secret |
+| **Failure reports** | Set for you on Render, Railway and Google Cloud VMs; elsewhere, two environment variables and a small snippet (below) | Your app's 5xx responses the moment they happen |
 | **Sentry** | An Internal Integration with the webhook URL the app shows | Sentry issue alerts open incidents |
 | **Slack or Discord** | Settings → Add to Slack / Add to Discord | Alerts in the channel you pick |
 | **Proof in CI** | Services → Add proof to repo, then merge the PR | A workflow that replays saved production failures on every PR |
@@ -214,8 +214,8 @@ webhook so a billing outage never blocks a fix.
 
 | Plan | What you get |
 | --- | --- |
-| **Free** | One service; your first outage start to finish (the revert, the proof and the merge); status page; weekly report |
-| **Pro** ($14.99/month or $119.99/year) | Every outage, AI fixes with regression tests, fix ready before you wake up, alert inbox, agent approvals |
+| **Free** | Your first outage start to finish (the revert, the proof and the merge); status page; weekly report |
+| **Pro** ($14.99/month or $119.99/year) | Every outage and unlimited services, AI fixes with regression tests, fix ready before you wake up, alert inbox, agent approvals |
 | **Team** ($39.99/month or $359.99/year, up to 10 people) | Everything in Pro, teammates who can fix your incidents, 5-minute escalation |
 
 Every paid plan starts with a 7-day free trial, offered once during onboarding and never in the middle of an outage.
@@ -231,7 +231,7 @@ OpsSwipe can restart services, reboot machines and merge code, so it is built to
 | The client choosing what runs | The phone sends only an incident id and a fix name; the server decides from validated config |
 | Another user's data | Row-level security on every table; a SQL test grants clients full rights and checks every write is still refused |
 | Cloud keys | Kept in Supabase Vault and read only by server code. Google Cloud access is a custom reset-only role, re-checked against your own account before every reset and removed when you disconnect |
-| A connect link sent to someone else | Connections finish only on the phone that approved them, for the account that started them |
+| A connect link sent to someone else | Connections finish only on the phone that approved them, for the account that started them (Railway, whose consent page never returns to the app, finishes for the account that started it) |
 | Crafted sign-in links | Sign-in uses PKCE; tokens in a link are never accepted |
 | Forged or gamed CI proofs | OIDC-signed, bound to the commit OpsSwipe opened, PR code in locked-down containers, graded by OpsSwipe (a 4xx is not a fix) |
 | Probing internal networks | Service URLs must be public, re-checked after DNS before every probe |
@@ -249,7 +249,7 @@ deno task eval                                                            # fix 
 cd app && npm run typecheck && npm run lint && npm test                   # app
 ```
 
-- **108 backend tests** (Deno): providers, OAuth completion, proof grading, recovery checks, paging, the incident state
+- **112 backend tests** (Deno): providers, OAuth completion, proof grading, recovery checks, paging, the incident state
   machine, signing, scrubbing, network guard and more.
 - **SQL tests** on Postgres 17: row-level security, the free-outage meter, and client writes refused under full grants.
 - **Eval**: 15 labeled incidents score fix suggestions on safety (must be 100%), correctness and concision; any model
@@ -299,4 +299,4 @@ Built for the [RevenueCat Shipaton 2026](https://www.revenuecat.com/shipaton/) (
 
 ### Demo
 
-> Demo video: _link_
+> Demo video: ⟨YouTube link⟩

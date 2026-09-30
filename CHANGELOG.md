@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Report settings set for you on Render and Railway**: adding a service (or issuing a new report secret) sets
+  `OPSSWIPE_REPORT_URL` and `REPORT_SECRET` on the service through the host's API, like the VM metadata on Google Cloud.
+- Fix PRs list the failing production requests, how the fix is proven, and the reverted commit's author, message and files.
+- Settings tells a teammate on the Free plan that the owner's incidents are fixed on the owner's plan.
+
+### Fixed
+
+- **Railway rollback**: Railway marks a replaced deployment `REMOVED`, so rollback found nothing; it now uses Railway's
+  `canRollback`. Railway's deploy history also feeds the suggestion, so a failure right after a deploy suggests Roll back.
+- **Connect Railway** finishes when Railway's window is closed (its consent page never returns to the app), for the
+  account that started it, once, within 15 minutes.
+- A clear message instead of a generic error when Railway isn't connected yet.
+
 ## [1.0.0] - 2026-09-30
 
 First public release, built for the RevenueCat Shipaton 2026.
@@ -24,7 +39,6 @@ First public release, built for the RevenueCat Shipaton 2026.
 - The Discord connection shows the server's name.
 - **Shareable incident reports**: each resolved incident gets a public link (like the status page) with share
   buttons for X and LinkedIn; only names, times and what fixed it are public.
-- **Connect Railway** finishes with an Open OpsSwipe button when the browser won't open the app by itself.
 
 ### Changed
 

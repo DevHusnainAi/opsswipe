@@ -284,7 +284,8 @@ minutes later brings the card back once, with the production fixes ("Merged, but
 ## 36. Railway through OAuth, Render through a key
 
 Railway now offers OAuth with project-scoped consent (`project:member`): the user chooses which projects OpsSwipe may
-touch, which beats an account-wide token, so Connect Railway uses it (same claim flow as Google), keeping the grant in
+touch, which beats an account-wide token, so Connect Railway uses it (same claim flow as Google; since Railway's consent page
+never returns to the app, the app may also finish the flow it started, once, within 15 minutes), keeping the grant in
 Vault and saving each rotated refresh token. Render has no OAuth for outside apps; its API key is the only way, so it
 stays a pasted key, encrypted and used only for restart, rollback and reading deploys.
 

@@ -167,8 +167,8 @@ gh secret set DEPLOY_HOST --repo $R --body <VM IP>
 ```
 
 Render and Railway have their own demo repos, `opsswipe-demo-render` (with a `render.yaml`) and `opsswipe-demo-railway`:
-create a web service from the repo, set `CHAOS_KEY`, and after adding it in OpsSwipe set `OPSSWIPE_REPORT_URL` and
-`REPORT_SECRET` in the host's environment.
+create a web service from the repo and set `CHAOS_KEY`. When you add it in OpsSwipe, OpsSwipe sets `OPSSWIPE_REPORT_URL`
+and `REPORT_SECRET` on the service itself and it redeploys (for a Railway web service, also generate a public domain).
 
 ### 9. Connect everything from the app
 
