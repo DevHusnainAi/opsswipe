@@ -19,7 +19,7 @@ Everything is real: a real Android phone, real cloud services, real pull request
 | Google Cloud VM | A bad release breaks `GET /api/price` (500). The card suggests Revert PR; the PR carries the failing request; CI proves `500 → 200`; merge from the phone. **Back up after 2m 44s** in total | [opsswipe-demo-target PR #6](https://github.com/DevHusnainAi/opsswipe-demo-target/pull/6): the failing-requests table and the passing proof check |
 | Railway | A deploy just landed, so the card suggests Roll back. The free outage is used, so the **RevenueCat paywall** appears; after the Test Store purchase the rollback runs. **Back up after 52 s** | [opsswipe-demo-railway](https://github.com/DevHusnainAi/opsswipe-demo-railway) |
 | Render | Rolled back from the phone. **Back up after 50 s** | [opsswipe-demo-render](https://github.com/DevHusnainAi/opsswipe-demo-render) |
-| Team and users | Slack or Discord alerts, the public status page, the postmortem | [Live status page](https://devhusnainai.github.io/opsswipe-status/?s=pitan9ffp6) |
+| Team and users | Slack or Discord alerts, the public status page, the postmortem | [Status page](https://devhusnainai.github.io/opsswipe-status/?s=pitan9ffp6) (the demo services were shut down after recording to save cost; the page shows them as paused, with their incident history) |
 
 ## The four criteria
 
@@ -62,7 +62,7 @@ records, including an independent security audit and how each finding was fixed 
 
 ## Quality
 
-- 112 backend tests (Deno), SQL tests on Postgres 17 for tenant isolation and the free-outage meter.
+- 114 backend tests (Deno), SQL tests on Postgres 17 for tenant isolation and the free-outage meter.
 - A 15-case labeled eval that must score 100% on safety for every fix suggestion (`deno task eval`).
 - CI on every push: format, lint, typecheck, tests, eval, shellcheck, SQL tests. CD deploys when `main` is green.
 

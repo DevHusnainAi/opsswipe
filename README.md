@@ -267,7 +267,7 @@ deno task eval                                                            # fix 
 cd app && npm run typecheck && npm run lint && npm test                   # app
 ```
 
-- **112 backend tests** (Deno): providers, OAuth completion, proof grading, recovery checks, paging, the incident state
+- **114 backend tests** (Deno): providers, OAuth completion, proof grading, recovery checks, paging, the incident state
   machine, signing, scrubbing, network guard and more.
 - **SQL tests** on Postgres 17: row-level security, the free-outage meter, and client writes refused under full grants.
 - **Eval**: 15 labeled incidents score fix suggestions on safety (must be 100%), correctness and concision; any model
