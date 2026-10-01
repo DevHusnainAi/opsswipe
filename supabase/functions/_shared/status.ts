@@ -1,6 +1,6 @@
 // The public status page's numbers: per service, up or down now and 90 days of daily downtime; plus
 // recent incidents. Only names, times and titles leave the server: no paths, errors or configs.
-export type StatusService = { id: string; name: string };
+export type StatusService = { id: string; name: string; paused?: boolean };
 export type StatusIncident = {
   service_id: string;
   title: string;
@@ -40,6 +40,7 @@ export function statusReport(services: StatusService[], incidents: StatusInciden
         up: !mine.some((i) => i.status !== 'resolved' && !i.recovered_at),
         uptime: Math.max(0, Math.round((1 - minutes / span) * 10_000) / 100), // percent, 2 decimals
         days: down.map((m) => Math.round(m)),
+        ...(s.paused ? { paused: true } : {}), // not being checked: the page says so instead of "up"
       };
     }),
     incidents: incidents

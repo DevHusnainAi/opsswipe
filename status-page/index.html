@@ -28,6 +28,7 @@
     border-color: color-mix(in srgb, var(--down) 40%, transparent); }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--up); flex: none; }
   .down .dot, .dot.down { background: var(--down); }
+  .dot.paused { background: var(--muted); }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; margin-top: 16px; }
   .svc { padding: 16px 20px; border-top: 1px solid var(--border); }
   .svc:first-child { border-top: 0; }
@@ -78,16 +79,18 @@
   }
 
   function render(d) {
-    const down = d.services.filter((s) => !s.up);
+    const live = d.services.filter((s) => !s.paused);
+    const down = live.filter((s) => !s.up);
     $('banner').className = down.length ? 'banner down' : 'banner';
     $('headline').textContent = !d.services.length ? 'No services yet'
       : down.length ? `${down.map((s) => s.name).join(', ')} ${down.length === 1 ? 'is' : 'are'} down. A fix is in progress.`
+      : !live.length ? 'Monitoring is paused'
       : 'All systems operational';
     $('services').innerHTML = d.services.map((s) => `
       <div class="svc">
         <div class="row">
-          <span class="name"><span class="dot ${s.up ? '' : 'down'}"></span>${esc(s.name)}</span>
-          <span class="muted">${s.uptime.toFixed(2)}% uptime</span>
+          <span class="name"><span class="dot ${s.paused ? 'paused' : s.up ? '' : 'down'}"></span>${esc(s.name)}</span>
+          <span class="muted">${s.paused ? 'Monitoring paused · ' : ''}${s.uptime.toFixed(2)}% uptime</span>
         </div>
         <div class="bars">${s.days.map((m, i) => `<i class="${m > 30 ? 'bad' : m > 0 ? 'warn' : ''}" title="${dayLabel(i)}: ${m ? mins(m) + ' down' : 'no downtime'}"></i>`).join('')}</div>
         <div class="scale muted"><span>90 days ago</span><span>Today</span></div>

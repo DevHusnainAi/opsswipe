@@ -14,7 +14,7 @@ import {
   sweepStaleClaims,
 } from '../_shared/incidents.ts';
 import { sweepStates } from '../_shared/oauthState.ts';
-import { confirmedProbe, isUp } from '../_shared/probe.ts';
+import { confirmedProbe, isUp, monitored } from '../_shared/probe.ts';
 import { scrubSample } from '../_shared/replay.ts';
 import { allServices, type Service } from '../_shared/services.ts';
 
@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
     return json(403, { error: 'forbidden' });
   }
   const results = await Promise.allSettled([
-    ...(await allServices()).map(check),
+    ...(await allServices()).filter(monitored).map(check),
     escalate(),
     repage(),
     sweepStaleClaims(),

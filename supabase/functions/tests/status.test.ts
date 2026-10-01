@@ -42,6 +42,11 @@ Deno.test('nothing leaves the server but names, times and titles', () => {
   assertEquals(r.services[0].uptime, 100);
 });
 
+Deno.test('a paused service is marked paused, and only then', () => {
+  const r = statusReport([api, { ...web, paused: true }], [], now);
+  assertEquals(r.services.map((s) => 'paused' in s), [false, true]);
+});
+
 Deno.test('a shared incident report shows what happened and what fixed it, never paths or errors', () => {
   const r = publicIncident({
     service_id: 's',

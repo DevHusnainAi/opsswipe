@@ -16,6 +16,10 @@ export async function probe(url: string, method = 'GET'): Promise<Probe> {
   return { status, ms: Date.now() - t0 };
 }
 
+// A paused service (config.paused) is not probed: no incident, no page. For a service that was shut down
+// on purpose but whose history should stay on the status page.
+export const monitored = (s: { config: { paused?: string } }) => !s.config.paused;
+
 // A 2xx or a redirect: the server is answering.
 export const isUp = (p: Probe) => /^[23]\d\d$/.test(p.status);
 

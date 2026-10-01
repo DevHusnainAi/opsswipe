@@ -24,8 +24,24 @@ your swipe and fingerprint.
 
 </div>
 
+## For judges: try it in 3 minutes
+
+OpsSwipe is a **Next Gen Award** entry for the RevenueCat Shipaton 2026, built solo by a student.
+
+1. **Install** the Android app: [opsswipe-1.0.0.apk](https://github.com/DevHusnainAi/opsswipe/releases/latest/download/opsswipe-1.0.0.apk)
+   (the same build as the video; allow installs from your browser when Android asks).
+2. **Sign in** with GitHub, Google, or any email and password. No cloud account or setup is needed for the next step.
+3. **Swipe the practice card.** Onboarding shows an outage card: swipe right and confirm with your fingerprint. It is
+   the real swipe and the real fingerprint check, and nothing real is touched.
+4. **See the paywall.** Onboarding then offers the 7-day trial through RevenueCat (Test Store: no real charge).
+
+A real outage needs a service of your own to break, so the full loop (break, page, swipe, proof in CI, merge, back up)
+is in the [2-minute video](https://youtu.be/kKa17His_c4), and every pull request and CI run it shows is public. The four
+judging criteria, mapped to the video and the code: **[docs/SUBMISSION.md](docs/SUBMISSION.md)**.
+
 ## Table of contents
 
+- [For judges](#for-judges-try-it-in-3-minutes)
 - [About](#about)
 - [Features](#features)
 - [How it works](#how-it-works)

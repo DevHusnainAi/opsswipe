@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@1';
-import { confirmedProbe } from '../_shared/probe.ts';
+import { confirmedProbe, monitored } from '../_shared/probe.ts';
 
 // Answers each probe with the next status in the list.
 function statuses(...codes: number[]) {
@@ -33,4 +33,9 @@ Deno.test('a failure confirmed twice is an outage; a healthy first probe is not 
   } finally {
     f.restore();
   }
+});
+
+Deno.test('a paused service is not health-checked; every other one is', () => {
+  const services = [{ config: { url: 'https://a.example' } }, { config: { url: 'https://b.example', paused: 'on' } }];
+  assertEquals(services.filter(monitored).map((s) => s.config.url), ['https://a.example']);
 });
