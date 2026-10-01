@@ -17,7 +17,7 @@ your swipe and fingerprint.
 
 ![OpsSwipe: a phone card showing a failing service with an AI fix proven in CI, ready to swipe to merge](docs/brand/banner.png)
 
-**[▶ Watch the 2-minute demo](https://youtu.be/kKa17His_c4)**
+**[▶ Watch the 2-minute demo](https://youtu.be/iTIDR-VaMnQ)**
 
 [Features](#features) · [How it works](#how-it-works) · [Getting started](#getting-started) ·
 [Security](#security) · [Contributing](#contributing) · [Demo video](#demo)
@@ -36,7 +36,7 @@ OpsSwipe is a **Next Gen Award** entry for the RevenueCat Shipaton 2026, built s
 4. **See the paywall.** Onboarding then offers the 7-day trial through RevenueCat (Test Store: no real charge).
 
 A real outage needs a service of your own to break, so the full loop (break, page, swipe, proof in CI, merge, back up)
-is in the [2-minute video](https://youtu.be/kKa17His_c4), and every pull request and CI run it shows is public. The four
+is in the [2-minute video](https://youtu.be/iTIDR-VaMnQ), and every pull request and CI run it shows is public. The four
 judging criteria, mapped to the video and the code: **[docs/SUBMISSION.md](docs/SUBMISSION.md)**.
 
 ## Table of contents
@@ -324,7 +324,7 @@ Built for the [RevenueCat Shipaton 2026](https://www.revenuecat.com/shipaton/) (
 
 ### Demo
 
-[![OpsSwipe demo video: fix production from your phone, and prove it worked](https://img.youtube.com/vi/kKa17His_c4/maxresdefault.jpg)](https://youtu.be/kKa17His_c4)
+[![OpsSwipe demo video: fix production from your phone, and prove it worked](https://img.youtube.com/vi/iTIDR-VaMnQ/maxresdefault.jpg)](https://youtu.be/iTIDR-VaMnQ)
 
 Everything in the video is real: a real Android phone, a Google Cloud VM, Render and Railway services, real pull
 requests and real CI runs (for example [the revert PR with its passing proof](https://github.com/DevHusnainAi/opsswipe-demo-target/pull/6)).

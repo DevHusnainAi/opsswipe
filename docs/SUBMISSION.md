@@ -3,7 +3,7 @@
 OpsSwipe was built for the [RevenueCat Shipaton 2026](https://revenuecat-shipaton-2026.devpost.com/) (Next Gen Award).
 This page maps the four criteria to what the video shows and where to check it in the code.
 
-**Demo video (1:52):** https://youtu.be/kKa17His_c4
+**Demo video (1:56):** https://youtu.be/iTIDR-VaMnQ
 
 ## In one line
 
